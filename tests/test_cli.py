@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
 
 from wildedge import cli
 from wildedge.runtime import bootstrap
+from wildedge.runtime import runner as runtime_runner
 
 
 def test_cli_run_script_invokes_runner(monkeypatch):
@@ -49,6 +51,46 @@ def test_cli_run_script_invokes_runner(monkeypatch):
     assert captured["env"][bootstrap.RUN_DSN_ENV] == "https://secret@ingest.wildedge.dev/key"
     assert captured["env"][bootstrap.RUN_APP_VERSION_ENV] == "1.2.3"
     assert captured["env"][bootstrap.RUN_DEBUG_ENV] == "1"
+    assert captured["env"][bootstrap.RUN_PROPAGATE_ENV] == "1"
+    assert captured["env"][bootstrap.RUN_STRICT_INTEGRATIONS_ENV] == "0"
+
+
+def test_cli_run_sets_no_propagate_and_strict(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, env, check):  # type: ignore[no-untyped-def]
+        captured["cmd"] = cmd
+        captured["env"] = env
+        captured["check"] = check
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    rc = cli.main(
+        [
+            "run",
+            "--strict-integrations",
+            "--no-propagate",
+            "--",
+            "python",
+            "-m",
+            "pkg.main",
+            "--foo",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["cmd"][1:8] == [
+        "-m",
+        "wildedge.runtime.runner",
+        "--mode",
+        "module",
+        "--target",
+        "pkg.main",
+        "--",
+    ]
+    assert captured["env"][bootstrap.RUN_PROPAGATE_ENV] == "0"
+    assert captured["env"][bootstrap.RUN_STRICT_INTEGRATIONS_ENV] == "1"
 
 
 def test_cli_rejects_non_python_command(capsys):
@@ -100,3 +142,59 @@ def test_install_runtime_instruments_requested_integrations(monkeypatch):
 
     assert ("flush", "7.5") in events
     assert ("close", "") in events
+
+
+def test_install_runtime_strict_integrations_raises(monkeypatch):
+    class FakeWildEdge:
+        SUPPORTED_INTEGRATIONS = {"onnx"}
+
+        def __init__(self, *, dsn, app_version, debug):  # type: ignore[no-untyped-def]
+            pass
+
+        def instrument(self, name):  # type: ignore[no-untyped-def]
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
+    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(bootstrap.RUN_INTEGRATIONS_ENV, "onnx")
+    monkeypatch.setenv(bootstrap.RUN_STRICT_INTEGRATIONS_ENV, "1")
+
+    with pytest.raises(RuntimeError):
+        bootstrap.install_runtime()
+
+
+def test_doctor_reports_missing_dsn_and_unknown_integration(monkeypatch, capsys):
+    monkeypatch.delenv("WILDEDGE_DSN", raising=False)
+    rc = cli.main(["doctor", "--integrations", "madeup"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "dsn: FAIL" in out
+    assert "integration[madeup]: FAIL" in out
+    assert "doctor: FAIL" in out
+
+
+def test_doctor_passes_for_available_module(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    rc = cli.main(["doctor", "--integrations", "huggingface"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "integration[huggingface]: OK" in out
+    assert "doctor: PASS" in out
+
+
+def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):
+    class FakeContext:
+        def shutdown(self):  # type: ignore[no-untyped-def]
+            return None
+
+    monkeypatch.setenv(bootstrap.RUN_PROPAGATE_ENV, "0")
+    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(bootstrap.RUN_INTEGRATIONS_ENV, "all")
+    monkeypatch.setattr(runtime_runner, "install_runtime", lambda: FakeContext())
+    monkeypatch.setattr(runtime_runner.runpy, "run_path", lambda *a, **k: None)
+
+    rc = runtime_runner.main(["--mode", "script", "--target", "app.py"])
+    assert rc == 0
+    assert bootstrap.RUN_DSN_ENV not in os.environ
+    assert bootstrap.RUN_INTEGRATIONS_ENV not in os.environ

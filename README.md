@@ -40,6 +40,16 @@ Module entrypoints are supported:
 wildedge run -- python -m your_package.main --arg value
 ```
 
+Validate local runtime readiness:
+
+```bash
+wildedge doctor --integrations all
+```
+
+Useful run flags:
+- `--strict-integrations`: fail startup if a requested integration cannot be instrumented.
+- `--no-propagate`: do not propagate WildEdge runtime env vars to nested child processes.
+
 ## Integrations
 
 Call `client.instrument()` to activate auto-tracking for a supported library. Models created afterwards are registered and timed automatically with no changes to existing call sites.

@@ -10,12 +10,15 @@ from dataclasses import dataclass, field
 
 from wildedge.client import WildEdge
 from wildedge.config import ENV_DSN
+from wildedge.integrations.registry import supported_integrations
 
 RUN_DSN_ENV = "WILDEDGE_RUN_DSN"
 RUN_APP_VERSION_ENV = "WILDEDGE_RUN_APP_VERSION"
 RUN_DEBUG_ENV = "WILDEDGE_RUN_DEBUG"
 RUN_FLUSH_TIMEOUT_ENV = "WILDEDGE_RUN_FLUSH_TIMEOUT"
 RUN_INTEGRATIONS_ENV = "WILDEDGE_RUN_INTEGRATIONS"
+RUN_STRICT_INTEGRATIONS_ENV = "WILDEDGE_RUN_STRICT_INTEGRATIONS"
+RUN_PROPAGATE_ENV = "WILDEDGE_RUN_PROPAGATE"
 
 SUPPORTED_SIGNALS = [signal.SIGINT, signal.SIGTERM]
 
@@ -26,8 +29,22 @@ def _as_bool(value: str | None) -> bool:
 
 def _integration_list(value: str | None) -> list[str]:
     if not value or value == "all":
-        return sorted(WildEdge.SUPPORTED_INTEGRATIONS)
+        return sorted(supported_integrations())
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def clear_runtime_env() -> None:
+    """Remove run-scoped env vars so nested processes do not inherit runtime config."""
+    for key in (
+        RUN_DSN_ENV,
+        RUN_APP_VERSION_ENV,
+        RUN_DEBUG_ENV,
+        RUN_FLUSH_TIMEOUT_ENV,
+        RUN_INTEGRATIONS_ENV,
+        RUN_STRICT_INTEGRATIONS_ENV,
+        RUN_PROPAGATE_ENV,
+    ):
+        os.environ.pop(key, None)
 
 
 @dataclass
@@ -59,6 +76,7 @@ def install_runtime() -> RuntimeContext:
 
     app_version = os.environ.get(RUN_APP_VERSION_ENV)
     debug = _as_bool(os.environ.get(RUN_DEBUG_ENV))
+    strict_integrations = _as_bool(os.environ.get(RUN_STRICT_INTEGRATIONS_ENV))
     flush_timeout = float(os.environ.get(RUN_FLUSH_TIMEOUT_ENV, "5.0"))
 
     client = WildEdge(dsn=dsn, app_version=app_version, debug=debug)
@@ -67,6 +85,10 @@ def install_runtime() -> RuntimeContext:
         try:
             client.instrument(integration)
         except Exception as exc:
+            if strict_integrations:
+                raise RuntimeError(
+                    f"Failed to instrument integration {integration!r}: {exc}"
+                ) from exc
             if debug:
                 print(
                     f"wildedge: instrument({integration!r}) failed: {exc}",

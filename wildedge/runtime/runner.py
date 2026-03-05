@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import os
 import runpy
 import sys
 
-from wildedge.runtime.bootstrap import install_runtime
+from wildedge.runtime.bootstrap import (
+    RUN_PROPAGATE_ENV,
+    _as_bool,
+    clear_runtime_env,
+    install_runtime,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -25,6 +31,8 @@ def main(argv: list[str] | None = None) -> int:
         args = args[1:]
 
     context = install_runtime()
+    if not _as_bool(os.environ.get(RUN_PROPAGATE_ENV, "1")):
+        clear_runtime_env()
     try:
         if parsed.mode == "script":
             sys.argv = [parsed.target, *args]
@@ -39,4 +47,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
