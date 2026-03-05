@@ -1,6 +1,6 @@
 # WildEdge Python SDK
 
-[![CI](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml/badge.svg)](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml)
+[![CI](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml)
 [![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org/project/wildedge-sdk/)
 [![Tested on Linux](https://img.shields.io/badge/tested%20on-linux-blue)](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml)
 [![Tested on macOS](https://img.shields.io/badge/tested%20on-macOS-blue)](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml)
