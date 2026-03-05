@@ -267,7 +267,11 @@ class TestGgufExtractor:
     def test_detect_accelerator_non_cpu_when_gpu_layers_offloaded(self):
         llm = Llama()
         llm.n_gpu_layers = 32
-        assert gguf_detect_accelerator(llm) != "cpu"
+        with patch(
+            "wildedge.integrations.gguf.CURRENT_PLATFORM.gpu_accelerator_for_offload",
+            return_value="cuda",
+        ):
+            assert gguf_detect_accelerator(llm) == "cuda"
 
     def test_extract_info_uses_filename_stem_as_model_id(self):
         model_id, info = self.extractor.extract_info(Llama(), {})
@@ -403,7 +407,11 @@ class TestKerasExtractor:
     def test_detect_accelerator_gpu_from_weight_device(self):
         model = _FakeKerasModel()
         model.weights = [MagicMock(device="/GPU:0")]
-        assert keras_detect_accelerator(model) != "cpu"
+        with patch(
+            "wildedge.integrations.keras.CURRENT_PLATFORM.gpu_accelerator_for_offload",
+            return_value="cuda",
+        ):
+            assert keras_detect_accelerator(model) == "cuda"
 
     def test_install_hooks_publishes_inference_on_call(self, publish_spy):
         model = _FakeKerasModel()
