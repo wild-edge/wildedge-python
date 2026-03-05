@@ -93,6 +93,12 @@ class WildEdge:
         "tensorflow",
         "huggingface",
     }
+    PATCH_INSTALLERS = {
+        "gguf": GgufExtractor.install_auto_load_patch,
+        "onnx": OnnxExtractor.install_auto_load_patch,
+        "timm": PytorchExtractor.install_timm_patch,
+        "tensorflow": TensorflowExtractor.install_auto_load_patch,
+    }
 
     def __init__(
         self,
@@ -243,12 +249,6 @@ class WildEdge:
 
         return handle
 
-    PATCH_INSTALLERS = {
-        "gguf": GgufExtractor.install_auto_load_patch,
-        "onnx": OnnxExtractor.install_auto_load_patch,
-        "timm": PytorchExtractor.install_timm_patch,
-        "tensorflow": TensorflowExtractor.install_auto_load_patch,
-    }
     def _find_extractor(self, model_obj: object) -> BaseExtractor | None:
         for candidate in DEFAULT_EXTRACTORS:
             if candidate.can_handle(model_obj):
