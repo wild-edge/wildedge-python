@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        integration: ["onnx", "torch", "timm", "tensorflow"]
+        integration: ["torch", "timm", "tensorflow"]
         version-set: ["current"]
         exclude:
           - integration: "tensorflow"

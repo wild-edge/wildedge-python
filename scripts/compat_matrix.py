@@ -32,6 +32,44 @@ SUPPORTED_PYTHON = {
     "tensorflow": ["3.10", "3.11", "3.12"],
 }
 
+# Interpreter-specific overrides where upstream wheels are unavailable for older pins.
+PYTHON_DEP_OVERRIDES = {
+    "onnx": {
+        "min": {
+            "3.13": ["onnxruntime==1.20.1", "numpy==2.1.3"],
+        }
+    },
+    "torch": {
+        "min": {
+            "3.13": ["torch==2.5.0", "numpy==2.1.3"],
+            "3.14": ["torch==2.5.0", "numpy==2.1.3"],
+        },
+        "current": {
+            "3.14": ["torch==2.10.0", "numpy==2.1.3"],
+        }
+    },
+    "timm": {
+        "min": {
+            "3.13": ["torch==2.5.0", "timm==1.0.11", "numpy==2.1.3"],
+            "3.14": ["torch==2.5.0", "timm==1.0.11", "numpy==2.1.3"],
+        },
+        "current": {
+            "3.14": ["torch==2.10.0", "timm==1.0.15", "numpy==2.1.3"],
+        }
+    },
+}
+
+
+def resolve_deps(integration: str, version_set: str, python_version: str) -> list[str]:
+    override = (
+        PYTHON_DEP_OVERRIDES.get(integration, {})
+        .get(version_set, {})
+        .get(python_version)
+    )
+    if override:
+        return override
+    return MATRIX[integration][version_set]
+
 
 def print_deps(integration: str, version_set: str, python_version: str) -> int:
     if integration not in MATRIX:
@@ -46,7 +84,7 @@ def print_deps(integration: str, version_set: str, python_version: str) -> int:
             file=sys.stderr,
         )
         return 3
-    print("\n".join(MATRIX[integration][version_set]))
+    print("\n".join(resolve_deps(integration, version_set, python_version)))
     return 0
 
 
@@ -58,6 +96,13 @@ def print_table() -> int:
         for version_set, deps in sets.items():
             dep_str = ", ".join(f"`{d}`" for d in deps)
             print(f"| `{integration}` | `{version_set}` | {dep_str} | {supported} |")
+            overrides = PYTHON_DEP_OVERRIDES.get(integration, {}).get(version_set, {})
+            for py, override_deps in sorted(overrides.items()):
+                override_str = ", ".join(f"`{d}`" for d in override_deps)
+                print(
+                    f"| `{integration}` | `{version_set}` (`py{py}` override) | "
+                    f"{override_str} | {py} |"
+                )
     return 0
 
 
