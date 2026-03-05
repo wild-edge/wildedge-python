@@ -18,6 +18,7 @@ from wildedge.integrations.hf import install_patch as _hf_install_patch
 from wildedge.integrations.keras import KerasExtractor
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
+from wildedge.integrations.tensorflow import TensorflowExtractor
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
 from wildedge.queue import EventQueue, QueuePolicy
@@ -48,6 +49,7 @@ LOG_INSTRUMENT_TORCH_KERAS = (
     "wildedge: instrument(%r) - inference hooks fire automatically "
     "on register_model(); use client.load() for load/unload tracking"
 )
+NOOP_INTEGRATIONS = {"torch", "keras"}
 
 
 def parse_dsn(dsn: str) -> tuple[str, str]:
@@ -65,6 +67,7 @@ DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     OnnxExtractor(),
     GgufExtractor(),
     PytorchExtractor(),
+    TensorflowExtractor(),
     KerasExtractor(),
 ]
 
@@ -230,7 +233,21 @@ class WildEdge:
 
         return handle
 
-    SUPPORTED_INTEGRATIONS = {"gguf", "onnx", "timm", "torch", "keras", "huggingface"}
+    SUPPORTED_INTEGRATIONS = {
+        "gguf",
+        "onnx",
+        "timm",
+        "torch",
+        "keras",
+        "tensorflow",
+        "huggingface",
+    }
+    PATCH_INSTALLERS = {
+        "gguf": GgufExtractor.install_auto_load_patch,
+        "onnx": OnnxExtractor.install_auto_load_patch,
+        "timm": PytorchExtractor.install_timm_patch,
+        "tensorflow": TensorflowExtractor.install_auto_load_patch,
+    }
 
     def _find_extractor(self, model_obj: object) -> BaseExtractor | None:
         for candidate in DEFAULT_EXTRACTORS:
@@ -243,6 +260,10 @@ class WildEdge:
         if extractor is None:
             return None
         return extractor.memory_bytes(model_obj)
+
+    def _instrument_huggingface(self) -> None:
+        _hf_install_patch()
+        self._hf_instrumented = True
 
     def instrument(self, integration: str) -> None:
         """
@@ -261,6 +282,9 @@ class WildEdge:
             Requires ``onnxruntime``.
         ``"timm"``
             Patches ``timm.create_model``. Requires ``timm``.
+        ``"tensorflow"``
+            Patches ``tf.keras.models.load_model`` and ``tf.saved_model.load``.
+            Requires ``tensorflow``.
         ``"torch"`` / ``"keras"``
             No global constructor to patch; models are user-defined subclasses.
             This call succeeds and is a no-op: inference is tracked automatically
@@ -284,7 +308,7 @@ class WildEdge:
                     available=sorted(self.SUPPORTED_INTEGRATIONS),
                 )
             )
-        if integration in ("torch", "keras"):
+        if integration in NOOP_INTEGRATIONS:
             # Models are user-defined subclasses; no global constructor to patch.
             # Inference is tracked automatically once a model is registered via
             # client.load() or register_model(); load/unload requires client.load().
@@ -295,16 +319,10 @@ class WildEdge:
                 )
             return
         if integration == "huggingface":
-            _hf_install_patch()
-            self._hf_instrumented = True
+            self._instrument_huggingface()
             return
-        client_ref = weakref.ref(self)
-        if integration == "gguf":
-            GgufExtractor.install_auto_load_patch(client_ref)
-        elif integration == "onnx":
-            OnnxExtractor.install_auto_load_patch(client_ref)
-        elif integration == "timm":
-            PytorchExtractor.install_timm_patch(client_ref)
+        installer = self.PATCH_INSTALLERS[integration]
+        installer(weakref.ref(self))
 
     def _on_model_auto_loaded(
         self,
