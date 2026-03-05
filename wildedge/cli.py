@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import platform
+import socket
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
+from wildedge import config
 from wildedge.client import parse_dsn
+from wildedge.device import get_device_id_path
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.runtime.bootstrap import (
     RUN_APP_VERSION_ENV,
@@ -28,7 +34,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wildedge")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run = sub.add_parser("run", help="Run a Python program with WildEdge runtime enabled.")
+    run = sub.add_parser(
+        "run", help="Run a Python program with WildEdge runtime enabled."
+    )
     run.add_argument("--dsn", default=None, help="DSN override for this command.")
     run.add_argument(
         "--app-version",
@@ -82,11 +90,42 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     doctor = sub.add_parser("doctor", help="Validate local WildEdge runtime readiness.")
-    doctor.add_argument("--dsn", default=None, help="DSN to validate (or use WILDEDGE_DSN).")
+    doctor.add_argument(
+        "--dsn", default=None, help="DSN to validate (or use WILDEDGE_DSN)."
+    )
     doctor.add_argument(
         "--integrations",
         default="all",
         help="Comma-separated integrations to validate imports for. Default: all.",
+    )
+    doctor.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format.",
+    )
+    doctor.add_argument(
+        "--network-check",
+        action="store_true",
+        help="Attempt TCP reachability check to DSN host:port.",
+    )
+    doctor.add_argument(
+        "--batch-size",
+        type=int,
+        default=config.DEFAULT_BATCH_SIZE,
+        help="Validate intended batch size against SDK limits.",
+    )
+    doctor.add_argument(
+        "--flush-interval",
+        type=float,
+        default=config.DEFAULT_FLUSH_INTERVAL_SEC,
+        help="Validate intended flush interval against SDK limits.",
+    )
+    doctor.add_argument(
+        "--max-queue-size",
+        type=int,
+        default=config.DEFAULT_MAX_QUEUE_SIZE,
+        help="Validate intended queue size against SDK limits.",
     )
     return parser
 
@@ -168,47 +207,177 @@ def _integration_list(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _doctor(parsed: argparse.Namespace) -> int:
+def _check_writable_dir(path: Path) -> tuple[bool, str]:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".wildedge_doctor_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True, str(path)
+    except Exception as exc:
+        return False, f"{path} ({exc})"
+
+
+def _validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
+    if not (config.BATCH_SIZE_MIN <= parsed.batch_size <= config.BATCH_SIZE_MAX):
+        return False, "batch_size out of range"
+    if not (
+        config.FLUSH_INTERVAL_MIN <= parsed.flush_interval <= config.FLUSH_INTERVAL_MAX
+    ):
+        return False, "flush_interval out of range"
+    if not (
+        config.MAX_QUEUE_SIZE_MIN <= parsed.max_queue_size <= config.MAX_QUEUE_SIZE_MAX
+    ):
+        return False, "max_queue_size out of range"
+    return True, "OK"
+
+
+def _network_reachability_check(host_url: str) -> tuple[bool, str]:
+    parsed = urlparse(host_url)
+    host = parsed.hostname
+    if not host:
+        return False, "missing host"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            return True, f"{host}:{port}"
+    except OSError as exc:
+        return False, f"{host}:{port} ({exc})"
+
+
+def _doctor_report(parsed: argparse.Namespace) -> dict:
+    report: dict[str, object] = {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "checks": [],
+        "integrations": [],
+    }
+    checks: list[dict[str, str]] = report["checks"]  # type: ignore[assignment]
+    integrations: list[dict[str, str]] = report["integrations"]  # type: ignore[assignment]
+
     ok = True
     dsn = parsed.dsn or os.environ.get("WILDEDGE_DSN")
-    print(f"python: {platform.python_version()}")
-    print(f"platform: {platform.platform()}")
 
     if not dsn:
         ok = False
-        print("dsn: FAIL (missing WILDEDGE_DSN or --dsn)")
+        checks.append(
+            {
+                "name": "dsn",
+                "status": "FAIL",
+                "detail": "missing WILDEDGE_DSN or --dsn",
+            }
+        )
     else:
         try:
-            parse_dsn(dsn)
-            print("dsn: OK")
+            _, host_url = parse_dsn(dsn)
+            checks.append({"name": "dsn", "status": "OK", "detail": host_url})
+            if parsed.network_check:
+                reachable, detail = _network_reachability_check(host_url)
+                checks.append(
+                    {
+                        "name": "network",
+                        "status": "OK" if reachable else "FAIL",
+                        "detail": detail,
+                    }
+                )
+                ok = ok and reachable
         except Exception as exc:
             ok = False
-            print(f"dsn: FAIL ({exc})")
+            checks.append({"name": "dsn", "status": "FAIL", "detail": str(exc)})
+
+    temp_ok, temp_detail = _check_writable_dir(Path(tempfile.gettempdir()))
+    checks.append(
+        {
+            "name": "writable_tempdir",
+            "status": "OK" if temp_ok else "FAIL",
+            "detail": temp_detail,
+        }
+    )
+    ok = ok and temp_ok
+
+    config_ok, config_detail = _validate_runtime_config(parsed)
+    checks.append(
+        {
+            "name": "runtime_config",
+            "status": "OK" if config_ok else "FAIL",
+            "detail": config_detail,
+        }
+    )
+    ok = ok and config_ok
+
+    device_dir_ok, device_dir_detail = _check_writable_dir(get_device_id_path().parent)
+    checks.append(
+        {
+            "name": "writable_device_config_dir",
+            "status": "OK" if device_dir_ok else "FAIL",
+            "detail": device_dir_detail,
+        }
+    )
+    ok = ok and device_dir_ok
 
     for integration in _integration_list(parsed.integrations):
         spec = INTEGRATIONS_BY_NAME.get(integration)
         if spec is None:
             ok = False
-            print(f"integration[{integration}]: FAIL (unknown integration)")
+            integrations.append(
+                {
+                    "name": integration,
+                    "status": "FAIL",
+                    "detail": "unknown integration",
+                }
+            )
             continue
 
         missing = [
-            module for module in spec.required_modules if importlib.util.find_spec(module) is None
+            module
+            for module in spec.required_modules
+            if importlib.util.find_spec(module) is None
         ]
         if missing:
             ok = False
-            print(
-                f"integration[{integration}]: FAIL "
-                f"(missing modules: {', '.join(missing)})"
+            integrations.append(
+                {
+                    "name": integration,
+                    "status": "FAIL",
+                    "detail": f"missing modules: {', '.join(missing)}",
+                }
             )
         else:
-            print(f"integration[{integration}]: OK")
+            integrations.append({"name": integration, "status": "OK", "detail": ""})
 
-    if ok:
-        print("doctor: PASS")
-        return 0
-    print("doctor: FAIL")
-    return 1
+    report["status"] = "PASS" if ok else "FAIL"
+    return report
+
+
+def _print_doctor_text(report: dict) -> None:
+    print(f"python: {report['python']}")
+    print(f"platform: {report['platform']}")
+    for check in report["checks"]:
+        name = check["name"]
+        status = check["status"]
+        detail = check["detail"]
+        if detail:
+            print(f"{name}: {status} ({detail})")
+        else:
+            print(f"{name}: {status}")
+    for integration in report["integrations"]:
+        name = integration["name"]
+        status = integration["status"]
+        detail = integration["detail"]
+        if detail:
+            print(f"integration[{name}]: {status} ({detail})")
+        else:
+            print(f"integration[{name}]: {status}")
+    print(f"doctor: {report['status']}")
+
+
+def _doctor(parsed: argparse.Namespace) -> int:
+    report = _doctor_report(parsed)
+    if parsed.format == "json":
+        print(json.dumps(report, sort_keys=True))
+    else:
+        _print_doctor_text(report)
+    return 0 if report["status"] == "PASS" else 1
 
 
 def main(argv: list[str] | None = None) -> int:

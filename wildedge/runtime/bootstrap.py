@@ -172,11 +172,7 @@ def install_runtime() -> RuntimeContext:
                 )
 
     if strict_integrations:
-        failures = [
-            row
-            for row in statuses
-            if row["status"] in STRICT_FAILURE_STATUSES
-        ]
+        failures = [row for row in statuses if row["status"] in STRICT_FAILURE_STATUSES]
         if failures:
             fail_detail = ", ".join(
                 f"{row['name']}={row['status']}" for row in failures

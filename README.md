@@ -46,6 +46,18 @@ Validate local runtime readiness:
 wildedge doctor --integrations all
 ```
 
+Machine-readable diagnostics:
+
+```bash
+wildedge doctor --format json --integrations all
+```
+
+Optional DSN reachability probe:
+
+```bash
+wildedge doctor --network-check --dsn "https://<secret>@ingest.wildedge.dev/<key>"
+```
+
 Useful run flags:
 - `--strict-integrations`: fail startup if a requested integration cannot be instrumented.
 - `--no-propagate`: do not propagate WildEdge runtime env vars to nested child processes.

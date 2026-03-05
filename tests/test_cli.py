@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from types import SimpleNamespace
 
@@ -49,7 +50,10 @@ def test_cli_run_script_invokes_runner(monkeypatch):
         "--",
     ]
     assert captured["cmd"][8:] == ["--foo", "bar"]
-    assert captured["env"][bootstrap.RUN_DSN_ENV] == "https://secret@ingest.wildedge.dev/key"
+    assert (
+        captured["env"][bootstrap.RUN_DSN_ENV]
+        == "https://secret@ingest.wildedge.dev/key"
+    )
     assert captured["env"][bootstrap.RUN_APP_VERSION_ENV] == "1.2.3"
     assert captured["env"][bootstrap.RUN_DEBUG_ENV] == "1"
     assert captured["env"][bootstrap.RUN_PROPAGATE_ENV] == "1"
@@ -192,11 +196,56 @@ def test_doctor_reports_missing_dsn_and_unknown_integration(monkeypatch, capsys)
 def test_doctor_passes_for_available_module(monkeypatch, capsys):
     monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
     monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
     rc = cli.main(["doctor", "--integrations", "huggingface"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "integration[huggingface]: OK" in out
     assert "doctor: PASS" in out
+
+
+def test_doctor_json_output_schema(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
+    rc = cli.main(["doctor", "--format", "json", "--integrations", "onnx"])
+    out = capsys.readouterr().out.strip()
+    payload = json.loads(out)
+    assert rc == 0
+    assert sorted(payload.keys()) == [
+        "checks",
+        "integrations",
+        "platform",
+        "python",
+        "status",
+    ]
+    assert payload["status"] == "PASS"
+    assert payload["integrations"][0]["name"] == "onnx"
+
+
+def test_doctor_network_check_failure(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
+    monkeypatch.setattr(
+        cli, "_network_reachability_check", lambda _: (False, "unreachable")
+    )
+
+    rc = cli.main(["doctor", "--network-check", "--integrations", "onnx"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "network: FAIL (unreachable)" in out
+    assert "doctor: FAIL" in out
+
+
+def test_doctor_runtime_config_fail(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
+    rc = cli.main(["doctor", "--batch-size", "0", "--integrations", "onnx"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "runtime_config: FAIL (batch_size out of range)" in out
 
 
 def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):

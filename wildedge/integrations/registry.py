@@ -40,4 +40,3 @@ def supported_integrations() -> set[str]:
 def noop_integrations() -> set[str]:
     """Return integrations that intentionally perform no global patching."""
     return {name for name, spec in INTEGRATIONS_BY_NAME.items() if spec.kind == "noop"}
-
