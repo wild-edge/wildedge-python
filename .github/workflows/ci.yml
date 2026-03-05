@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        exclude:
+          # Python 3.14 may not be available on all runners yet
+          - os: ubuntu-latest
+            python-version: '3.14'
+          - os: windows-latest
+            python-version: '3.14'
+          - os: macos-latest
+            python-version: '3.14'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install uv
+      run: |
+        pip install uv
+    - name: Install dependencies
+      run: |
+        uv sync --group dev
+    - name: Run tests
+      run: uv run pytest
+
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install uv
+      run: |
+        pip install uv
+    - name: Install dependencies
+      run: |
+        uv sync --group dev
+    - name: Run coverage
+      run: |
+        uv run coverage run -m pytest
+        uv run coverage report -m | tee coverage-report.txt
+        uv run coverage xml -o coverage.xml
+        uv run coverage json -o coverage.json
+    - name: Build PR coverage comment
+      if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')
+      run: python scripts/build_coverage_comment.py
+    - name: Post sticky PR coverage comment
+      if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: coverage-report
+        path: coverage-comment.md
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: coverage.xml
+        fail_ci_if_error: false
+        use_oidc: true
