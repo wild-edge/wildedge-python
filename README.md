@@ -26,6 +26,20 @@ client = wildedge.WildEdge(
 )
 ```
 
+## CLI wrapper
+
+Use `wildedge run` to execute an existing Python entrypoint with WildEdge runtime initialization and integration instrumentation enabled before user code starts:
+
+```bash
+wildedge run --dsn "https://<secret>@ingest.wildedge.dev/<key>" -- python app.py
+```
+
+Module entrypoints are supported:
+
+```bash
+wildedge run -- python -m your_package.main --arg value
+```
+
 ## Integrations
 
 Call `client.instrument()` to activate auto-tracking for a supported library. Models created afterwards are registered and timed automatically with no changes to existing call sites.
