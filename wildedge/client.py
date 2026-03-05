@@ -84,6 +84,22 @@ class WildEdge:
         # inference is now tracked automatically
     """
 
+    SUPPORTED_INTEGRATIONS = {
+        "gguf",
+        "onnx",
+        "timm",
+        "torch",
+        "keras",
+        "tensorflow",
+        "huggingface",
+    }
+    PATCH_INSTALLERS = {
+        "gguf": GgufExtractor.install_auto_load_patch,
+        "onnx": OnnxExtractor.install_auto_load_patch,
+        "timm": PytorchExtractor.install_timm_patch,
+        "tensorflow": TensorflowExtractor.install_auto_load_patch,
+    }
+
     def __init__(
         self,
         *,
@@ -232,22 +248,6 @@ class WildEdge:
             )
 
         return handle
-
-    SUPPORTED_INTEGRATIONS = {
-        "gguf",
-        "onnx",
-        "timm",
-        "torch",
-        "keras",
-        "tensorflow",
-        "huggingface",
-    }
-    PATCH_INSTALLERS = {
-        "gguf": GgufExtractor.install_auto_load_patch,
-        "onnx": OnnxExtractor.install_auto_load_patch,
-        "timm": PytorchExtractor.install_timm_patch,
-        "tensorflow": TensorflowExtractor.install_auto_load_patch,
-    }
 
     def _find_extractor(self, model_obj: object) -> BaseExtractor | None:
         for candidate in DEFAULT_EXTRACTORS:

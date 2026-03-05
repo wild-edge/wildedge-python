@@ -1,0 +1,75 @@
+name: Compatibility
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  compat:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'compat')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        integration: ["onnx", "torch", "timm", "tensorflow"]
+        version-set: ["min", "current"]
+        exclude:
+          - python-version: "3.13"
+            integration: "tensorflow"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+      - name: Install compatibility dependencies
+        run: |
+          python scripts/compat_matrix.py deps \
+            --integration "${{ matrix.integration }}" \
+            --version-set "${{ matrix.version-set }}" \
+            --python-version "${{ matrix.python-version }}" > compat-requirements.txt
+          pip install -r compat-requirements.txt
+      - name: Run compatibility test
+        run: python -m pytest "tests/compat/test_${{ matrix.integration }}_compat.py" -q
+
+  compat-canary-314:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'compat')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        integration: ["torch", "timm", "tensorflow"]
+        version-set: ["current"]
+        exclude:
+          - integration: "tensorflow"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+      - name: Install compatibility dependencies
+        run: |
+          python scripts/compat_matrix.py deps \
+            --integration "${{ matrix.integration }}" \
+            --version-set "${{ matrix.version-set }}" \
+            --python-version "3.14" > compat-requirements.txt
+          pip install -r compat-requirements.txt
+      - name: Run compatibility test
+        run: python -m pytest "tests/compat/test_${{ matrix.integration }}_compat.py" -q

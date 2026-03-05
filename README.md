@@ -167,6 +167,20 @@ uv sync --group dev
 tox
 ```
 
+Compatibility matrix details are documented in `docs/compatibility.md`.
+
+Run the compatibility matrix locally with one command:
+
+```bash
+python3 scripts/run_compat_local.py
+```
+
+To fail when a dependency row is unsupported on your local platform, use:
+
+```bash
+python3 scripts/run_compat_local.py --strict-unsupported
+```
+
 ## Security
 
 WildEdge SDK privacy model:
@@ -181,6 +195,7 @@ If you discover a security issue, please email security@wildedge.dev instead of 
 
 - [Full Documentation](https://docs.wildedge.dev)
 - [Website](https://wildedge.dev)
+- [Compatibility Matrix](docs/compatibility.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [License](LICENSE)
