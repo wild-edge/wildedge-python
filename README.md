@@ -167,6 +167,8 @@ uv sync --group dev
 tox
 ```
 
+Compatibility matrix details are documented in `docs/compatibility.md`.
+
 ## Security
 
 WildEdge SDK privacy model:
@@ -181,6 +183,7 @@ If you discover a security issue, please email security@wildedge.dev instead of 
 
 - [Full Documentation](https://docs.wildedge.dev)
 - [Website](https://wildedge.dev)
+- [Compatibility Matrix](docs/compatibility.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [License](LICENSE)
