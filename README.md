@@ -74,6 +74,19 @@ outputs = session.run(None, {"input": image})  # tracked automatically
 
 See `examples/onnx_example.py` for a complete example.
 
+### TensorFlow
+
+```python
+import tensorflow as tf
+
+client.instrument("tensorflow")
+
+model = tf.keras.models.load_model("model.keras")  # tracked automatically
+output = model(batch, training=False)  # tracked automatically
+```
+
+See `examples/tensorflow_example.py` for a complete example.
+
 ### timm
 
 ```python
