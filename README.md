@@ -49,6 +49,7 @@ wildedge doctor --integrations all
 Useful run flags:
 - `--strict-integrations`: fail startup if a requested integration cannot be instrumented.
 - `--no-propagate`: do not propagate WildEdge runtime env vars to nested child processes.
+- `--print-startup-report`: print startup diagnostics with per-integration status.
 
 ## Integrations
 

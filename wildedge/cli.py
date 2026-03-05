@@ -18,6 +18,7 @@ from wildedge.runtime.bootstrap import (
     RUN_DSN_ENV,
     RUN_FLUSH_TIMEOUT_ENV,
     RUN_INTEGRATIONS_ENV,
+    RUN_PRINT_STARTUP_REPORT_ENV,
     RUN_PROPAGATE_ENV,
     RUN_STRICT_INTEGRATIONS_ENV,
 )
@@ -49,6 +50,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help="Enable WildEdge debug logging in child process.",
+    )
+    run.add_argument(
+        "--print-startup-report",
+        action="store_true",
+        help="Print runtime startup diagnostics before target execution.",
     )
     run.add_argument(
         "--strict-integrations",
@@ -139,6 +145,7 @@ def _run_command(parsed: argparse.Namespace) -> int:
     env[RUN_FLUSH_TIMEOUT_ENV] = str(parsed.flush_timeout)
     env[RUN_PROPAGATE_ENV] = "1" if parsed.propagate else "0"
     env[RUN_STRICT_INTEGRATIONS_ENV] = "1" if parsed.strict_integrations else "0"
+    env[RUN_PRINT_STARTUP_REPORT_ENV] = "1" if parsed.print_startup_report else "0"
 
     cmd = [
         python_exe,
