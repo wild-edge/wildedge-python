@@ -16,8 +16,18 @@ MATRIX = {
         "current": ["torch==2.6.0", "numpy==2.1.3"],
     },
     "timm": {
-        "min": ["torch==2.4.1", "timm==1.0.11", "numpy==1.26.4"],
-        "current": ["torch==2.6.0", "timm==1.0.15", "numpy==2.1.3"],
+        "min": [
+            "torch==2.4.1",
+            "torchvision==0.19.1",
+            "timm==1.0.11",
+            "numpy==1.26.4",
+        ],
+        "current": [
+            "torch==2.6.0",
+            "torchvision==0.21.0",
+            "timm==1.0.15",
+            "numpy==2.1.3",
+        ],
     },
     "tensorflow": {
         "min": ["tensorflow==2.16.1", "keras==3.3.3", "numpy==1.26.4"],
@@ -41,7 +51,7 @@ PYTHON_DEP_OVERRIDES = {
     },
     "torch": {
         "min": {
-            "3.13": ["torch==2.5.0", "numpy==2.1.3"],
+            "3.13": ["torch==2.6.0", "numpy==2.1.3"],
             "3.14": ["torch==2.5.0", "numpy==2.1.3"],
         },
         "current": {
@@ -50,11 +60,26 @@ PYTHON_DEP_OVERRIDES = {
     },
     "timm": {
         "min": {
-            "3.13": ["torch==2.5.0", "timm==1.0.11", "numpy==2.1.3"],
-            "3.14": ["torch==2.5.0", "timm==1.0.11", "numpy==2.1.3"],
+            "3.13": [
+                "torch==2.6.0",
+                "torchvision==0.21.0",
+                "timm==1.0.11",
+                "numpy==2.1.3",
+            ],
+            "3.14": [
+                "torch==2.5.0",
+                "torchvision==0.19.1",
+                "timm==1.0.11",
+                "numpy==2.1.3",
+            ],
         },
         "current": {
-            "3.14": ["torch==2.10.0", "timm==1.0.15", "numpy==2.1.3"],
+            "3.14": [
+                "torch==2.10.0",
+                "torchvision==0.25.0",
+                "timm==1.0.15",
+                "numpy==2.1.3",
+            ],
         }
     },
 }
