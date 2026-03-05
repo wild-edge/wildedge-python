@@ -1,5 +1,6 @@
 """Tests for device detection."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 from wildedge.device import (
@@ -7,6 +8,7 @@ from wildedge.device import (
     LinuxPlatform,
     MacOSPlatform,
     detect_device,
+    get_device_id_path,
     hmac_device_id,
 )
 
@@ -87,3 +89,12 @@ class TestDetectDevice:
         assert d["device_type"] == "linux"
         assert d["app_version"] == "2.0.0"
         assert "sdk_version" in d
+
+    def test_get_device_id_path_uses_config_constants(self):
+        class _FakePlatform:
+            def config_base(self):
+                return Path("/tmp/test-config")
+
+        with patch("wildedge.device.CURRENT_PLATFORM", _FakePlatform()):
+            path = get_device_id_path()
+        assert path == Path("/tmp/test-config/wildedge/device_id")

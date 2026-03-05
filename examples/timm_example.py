@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["wildedge", "torch", "timm"]
+# dependencies = ["wildedge-sdk", "torch", "timm"]
 #
 # [tool.uv.sources]
-# wildedge = { path = "..", editable = true }
+# wildedge-sdk = { path = "..", editable = true }
 # ///
 """
 timm integration example — run with: uv run timm_example.py

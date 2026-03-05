@@ -22,6 +22,10 @@ IDLE_POLL_INTERVAL = 5.0
 ERROR_MSG_MAX_LEN = 200
 
 # Device ID persistence
+DEVICE_ID_DIR = "wildedge"
+DEVICE_ID_FILE = "device_id"
+
+# Runtime validation limits
 BATCH_SIZE_MIN = 1
 BATCH_SIZE_MAX = 100
 FLUSH_INTERVAL_MIN = 1

@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["wildedge", "onnxruntime", "huggingface_hub", "numpy"]
+# dependencies = ["wildedge-sdk", "onnxruntime", "huggingface_hub", "numpy"]
 #
 # [tool.uv.sources]
-# wildedge = { path = "..", editable = true }
+# wildedge-sdk = { path = "..", editable = true }
 # ///
 """ONNX Runtime integration example — run with: uv run onnx_example.py"""
 

@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["wildedge", "llama-cpp-python", "huggingface_hub"]
+# dependencies = ["wildedge-sdk", "llama-cpp-python", "huggingface_hub"]
 #
 # [tool.uv.sources]
-# wildedge = { path = "..", editable = true }
+# wildedge-sdk = { path = "..", editable = true }
 # ///
 """GGUF / llama.cpp integration example — run with: uv run gguf_example.py"""
 

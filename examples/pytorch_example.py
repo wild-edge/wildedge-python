@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["wildedge", "torch"]
+# dependencies = ["wildedge-sdk", "torch", "numpy"]
 #
 # [tool.uv.sources]
-# wildedge = { path = "..", editable = true }
+# wildedge-sdk = { path = "..", editable = true }
 # ///
 """PyTorch integration example — run with: uv run pytorch_example.py"""
 

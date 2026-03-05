@@ -1,9 +1,9 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["wildedge", "llama-cpp-python", "huggingface_hub"]
+# dependencies = ["wildedge-sdk", "llama-cpp-python", "huggingface_hub"]
 #
 # [tool.uv.sources]
-# wildedge = { path = "..", editable = true }
+# wildedge-sdk = { path = "..", editable = true }
 # ///
 """Gemma 2 GGUF — fully manual integration, no auto-instrumentation.
 
