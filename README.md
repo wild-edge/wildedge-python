@@ -32,6 +32,13 @@ Call `client.instrument()` to activate auto-tracking for a supported library. Mo
 
 See the `examples/` folder for complete working examples.
 
+### Integration initialization
+
+Initialize integrations at process startup, before model loading begins. Instrumentation patches are applied per process and should be installed before imports and constructor calls on instrumented libraries.
+
+For high-priority paths, keep explicit registration with `client.load(...)` or `client.register_model(...)` as a fallback when model creation does not go through a patched API.
+For an explicit fallback pattern, see `examples/gguf_gemma_manual_example.py`.
+
 ### PyTorch (custom models)
 
 PyTorch models are user-defined subclasses, so there is no single constructor to patch. Use `client.load()` to time construction and track load/unload automatically; inference is tracked via forward hooks once the model is registered.
@@ -66,6 +73,19 @@ outputs = session.run(None, {"input": image})  # tracked automatically
 ```
 
 See `examples/onnx_example.py` for a complete example.
+
+### TensorFlow
+
+```python
+import tensorflow as tf
+
+client.instrument("tensorflow")
+
+model = tf.keras.models.load_model("model.keras")  # tracked automatically
+output = model(batch, training=False)  # tracked automatically
+```
+
+See `examples/tensorflow_example.py` for a complete example.
 
 ### timm
 
