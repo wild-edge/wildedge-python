@@ -1,16 +1,14 @@
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["wildedge-sdk", "torch", "timm"]
-#
-# [tool.uv.sources]
-# wildedge-sdk = { path = "..", editable = true }
-# ///
 """CLI wrapper example.
 
-Run:
-  WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
-  wildedge run --print-startup-report --integrations timm -- \
-  python examples/cli_wrapper_example.py
+Recommended:
+  export WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>"
+  ./examples/cli/demo.sh
+
+Direct:
+  cd examples/cli
+  uv sync
+  uv run wildedge run --print-startup-report --integrations timm -- \
+    ./cli_wrapper_example.py
 """
 
 import timm
