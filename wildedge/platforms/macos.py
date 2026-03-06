@@ -14,6 +14,12 @@ class MacOSPlatform:
     def config_base(self) -> Path:
         return Path.home() / ".config"
 
+    def state_base(self) -> Path:
+        return Path.home() / "Library" / "Application Support"
+
+    def cache_base(self) -> Path:
+        return Path.home() / "Library" / "Caches"
+
     def device_model(self) -> str | None:
         try:
             buf = ctypes.create_string_buffer(128)

@@ -58,6 +58,24 @@ class TestBuildBatch:
         )
         assert batch["events"] == events
 
+    def test_internal_queue_fields_are_not_sent(self):
+        events = [
+            {
+                "event_type": "inference",
+                "__we_first_queued_at": 1.0,
+                "__we_attempts": 3,
+            }
+        ]
+        batch = build_batch(
+            device=make_device(),
+            models={},
+            events=events,
+            session_id="sess-1",
+            created_at=datetime.now(timezone.utc),
+        )
+        assert "__we_first_queued_at" not in batch["events"][0]
+        assert "__we_attempts" not in batch["events"][0]
+
     def test_batch_id_is_unique(self):
         now = datetime.now(timezone.utc)
         b1 = build_batch(make_device(), {}, [], "s", now)

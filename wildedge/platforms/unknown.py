@@ -13,6 +13,12 @@ class UnknownPlatform:
     def config_base(self) -> Path:
         return Path.home() / ".config"
 
+    def state_base(self) -> Path:
+        return Path.home() / ".local" / "state"
+
+    def cache_base(self) -> Path:
+        return Path.home() / ".cache"
+
     def device_model(self) -> str | None:
         return None
 

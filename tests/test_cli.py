@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from wildedge import cli
+from wildedge import cli, config
 from wildedge.integrations.registry import IntegrationSpec
 from wildedge.runtime import bootstrap
 from wildedge.runtime import runner as runtime_runner
@@ -59,6 +59,9 @@ def test_cli_run_script_invokes_runner(monkeypatch):
     assert captured["env"][bootstrap.RUN_PROPAGATE_ENV] == "1"
     assert captured["env"][bootstrap.RUN_STRICT_INTEGRATIONS_ENV] == "0"
     assert captured["env"][bootstrap.RUN_PRINT_STARTUP_REPORT_ENV] == "0"
+    assert captured["env"][bootstrap.RUN_FLUSH_TIMEOUT_ENV] == str(
+        config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
+    )
 
 
 def test_cli_run_sets_no_propagate_and_strict(monkeypatch):
@@ -124,6 +127,34 @@ def test_install_runtime_requires_dsn(monkeypatch):
     monkeypatch.delenv("WILDEDGE_DSN", raising=False)
     with pytest.raises(RuntimeError):
         bootstrap.install_runtime()
+
+
+def test_install_runtime_default_flush_timeout_is_shutdown_budget(monkeypatch):
+    class FakeWildEdge:
+        SUPPORTED_INTEGRATIONS = {"onnx"}
+
+        def __init__(self, *, dsn, app_version, debug):  # type: ignore[no-untyped-def]
+            pass
+
+        def instrument(self, name):  # type: ignore[no-untyped-def]
+            pass
+
+        def flush(self, timeout):  # type: ignore[no-untyped-def]
+            pass
+
+        def close(self):  # type: ignore[no-untyped-def]
+            pass
+
+    monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
+    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.delenv(bootstrap.RUN_FLUSH_TIMEOUT_ENV, raising=False)
+    monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: object())
+
+    context = bootstrap.install_runtime()
+    try:
+        assert context.flush_timeout == config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
+    finally:
+        context.shutdown()
 
 
 def test_install_runtime_instruments_requested_integrations(monkeypatch):
@@ -246,6 +277,53 @@ def test_doctor_runtime_config_fail(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert rc == 1
     assert "runtime_config: FAIL (batch_size out of range)" in out
+
+
+def test_doctor_reports_offline_and_dead_letter_checks(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda _: (True, "ok"))
+    rc = cli.main(["doctor", "--integrations", "onnx"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "offline_queue_capacity: OK" in out
+    assert "dead_letter_capacity: OK" in out
+    assert "writable_offline_queue_dir: OK (ok)" in out
+    assert "writable_dead_letter_dir: SKIP" in out
+
+
+def test_doctor_reports_dead_letter_dir_when_enabled(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda _: (True, "ok"))
+    rc = cli.main(["doctor", "--integrations", "onnx", "--dead-letter-persistence"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "writable_dead_letter_dir: OK (ok)" in out
+
+
+def test_doctor_uses_project_key_for_default_namespace(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/test-prod")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda path: (True, str(path)))
+    monkeypatch.delenv("WILDEDGE_APP_IDENTITY", raising=False)
+    rc = cli.main(["doctor", "--integrations", "onnx"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "/test-prod/pending_queue" in out
+    assert "/test-prod/dead_letters" in out
+
+
+def test_doctor_uses_app_identity_override_for_namespace(monkeypatch, capsys):
+    monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/test-prod")
+    monkeypatch.setenv("WILDEDGE_APP_IDENTITY", "my-app")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda path: (True, str(path)))
+    rc = cli.main(["doctor", "--integrations", "onnx"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "/my-app/pending_queue" in out
+    assert "/my-app/dead_letters" in out
 
 
 def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):

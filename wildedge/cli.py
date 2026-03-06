@@ -18,6 +18,7 @@ from wildedge import config
 from wildedge.client import parse_dsn
 from wildedge.device import get_device_id_path
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
+from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
 from wildedge.runtime.bootstrap import (
     RUN_APP_VERSION_ENV,
     RUN_DEBUG_ENV,
@@ -51,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--flush-timeout",
         type=float,
-        default=5.0,
+        default=config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,
         help="Flush timeout (seconds) for shutdown.",
     )
     run.add_argument(
@@ -126,6 +127,61 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=config.DEFAULT_MAX_QUEUE_SIZE,
         help="Validate intended queue size against SDK limits.",
+    )
+    doctor.add_argument(
+        "--max-event-age-sec",
+        type=float,
+        default=config.DEFAULT_MAX_EVENT_AGE_SEC,
+        help="Validate queued event age cap (seconds).",
+    )
+    doctor.add_argument(
+        "--max-dead-letter-batches",
+        type=int,
+        default=config.DEFAULT_MAX_DEAD_LETTER_BATCHES,
+        help="Validate dead-letter retention cap (batch files).",
+    )
+    doctor.add_argument(
+        "--offline-queue-dir",
+        default=None,
+        help="Offline queue persistence directory.",
+    )
+    doctor.add_argument(
+        "--dead-letter-dir",
+        default=None,
+        help="Dead-letter directory.",
+    )
+    doctor.add_argument(
+        "--app-identity",
+        default=None,
+        help="Namespace for offline/dead-letter paths (defaults to DSN project key).",
+    )
+    offline_persistence = doctor.add_mutually_exclusive_group()
+    offline_persistence.add_argument(
+        "--offline-persistence",
+        dest="offline_persistence",
+        action="store_true",
+        default=config.DEFAULT_ENABLE_OFFLINE_PERSISTENCE,
+        help="Enable offline queue persistence checks.",
+    )
+    offline_persistence.add_argument(
+        "--no-offline-persistence",
+        dest="offline_persistence",
+        action="store_false",
+        help="Disable offline queue persistence checks.",
+    )
+    dead_letter_persistence = doctor.add_mutually_exclusive_group()
+    dead_letter_persistence.add_argument(
+        "--dead-letter-persistence",
+        dest="dead_letter_persistence",
+        action="store_true",
+        default=config.DEFAULT_ENABLE_DEAD_LETTER_PERSISTENCE,
+        help="Enable dead-letter persistence checks.",
+    )
+    dead_letter_persistence.add_argument(
+        "--no-dead-letter-persistence",
+        dest="dead_letter_persistence",
+        action="store_false",
+        help="Disable dead-letter persistence checks.",
     )
     return parser
 
@@ -229,6 +285,10 @@ def validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
         config.MAX_QUEUE_SIZE_MIN <= parsed.max_queue_size <= config.MAX_QUEUE_SIZE_MAX
     ):
         return False, "max_queue_size out of range"
+    if parsed.max_event_age_sec <= 0:
+        return False, "max_event_age_sec must be > 0"
+    if parsed.max_dead_letter_batches < 0:
+        return False, "max_dead_letter_batches must be >= 0"
     return True, "OK"
 
 
@@ -258,6 +318,7 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
     ok = True
     dsn = parsed.dsn or os.environ.get("WILDEDGE_DSN")
 
+    project_key = "default"
     if not dsn:
         ok = False
         checks.append(
@@ -269,7 +330,7 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
         )
     else:
         try:
-            _, host_url = parse_dsn(dsn)
+            _, host_url, project_key = parse_dsn(dsn)
             checks.append({"name": "dsn", "status": "OK", "detail": host_url})
             if parsed.network_check:
                 reachable, detail = network_reachability_check(host_url)
@@ -284,6 +345,16 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
         except Exception as exc:
             ok = False
             checks.append({"name": "dsn", "status": "FAIL", "detail": str(exc)})
+
+    app_identity = (
+        parsed.app_identity or os.environ.get(config.ENV_APP_IDENTITY) or project_key
+    )
+    resolved_offline_queue_dir = parsed.offline_queue_dir or str(
+        default_pending_queue_dir(app_identity)
+    )
+    resolved_dead_letter_dir = parsed.dead_letter_dir or str(
+        default_dead_letter_dir(app_identity)
+    )
 
     temp_ok, temp_detail = check_writable_dir(Path(tempfile.gettempdir()))
     checks.append(
@@ -314,6 +385,61 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
         }
     )
     ok = ok and device_dir_ok
+
+    checks.append(
+        {
+            "name": "offline_queue_capacity",
+            "status": "OK",
+            "detail": f"max_queue_size={parsed.max_queue_size}; max_event_age_sec={parsed.max_event_age_sec}",
+        }
+    )
+    checks.append(
+        {
+            "name": "dead_letter_capacity",
+            "status": "OK",
+            "detail": f"max_dead_letter_batches={parsed.max_dead_letter_batches}",
+        }
+    )
+
+    if parsed.offline_persistence:
+        offline_ok, offline_detail = check_writable_dir(
+            Path(resolved_offline_queue_dir)
+        )
+        checks.append(
+            {
+                "name": "writable_offline_queue_dir",
+                "status": "OK" if offline_ok else "FAIL",
+                "detail": offline_detail,
+            }
+        )
+        ok = ok and offline_ok
+    else:
+        checks.append(
+            {
+                "name": "writable_offline_queue_dir",
+                "status": "SKIP",
+                "detail": f"disabled ({resolved_offline_queue_dir})",
+            }
+        )
+
+    if parsed.dead_letter_persistence:
+        dl_ok, dl_detail = check_writable_dir(Path(resolved_dead_letter_dir))
+        checks.append(
+            {
+                "name": "writable_dead_letter_dir",
+                "status": "OK" if dl_ok else "FAIL",
+                "detail": dl_detail,
+            }
+        )
+        ok = ok and dl_ok
+    else:
+        checks.append(
+            {
+                "name": "writable_dead_letter_dir",
+                "status": "SKIP",
+                "detail": f"disabled ({resolved_dead_letter_dir})",
+            }
+        )
 
     for integration in integration_list(parsed.integrations):
         spec = INTEGRATIONS_BY_NAME.get(integration)

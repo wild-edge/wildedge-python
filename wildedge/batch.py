@@ -7,6 +7,10 @@ from wildedge import config
 from wildedge.device import DeviceInfo
 
 
+def _sanitize_event(event: dict) -> dict:
+    return {k: v for k, v in event.items() if not k.startswith("__we_")}
+
+
 def build_batch(
     device: DeviceInfo,
     models: dict[str, dict],
@@ -23,5 +27,5 @@ def build_batch(
         "batch_id": str(uuid.uuid4()),
         "created_at": created_at.isoformat(),
         "sent_at": datetime.now(timezone.utc).isoformat(),
-        "events": events,
+        "events": [_sanitize_event(event) for event in events],
     }

@@ -4,12 +4,14 @@ import os
 import time
 import uuid
 import weakref
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
 from wildedge import config
 from wildedge.consumer import Consumer
+from wildedge.dead_letters import DeadLetterStore
 from wildedge.device import DeviceInfo, detect_device
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.gguf import GgufExtractor
@@ -22,6 +24,11 @@ from wildedge.integrations.registry import noop_integrations, supported_integrat
 from wildedge.integrations.tensorflow import TensorflowExtractor
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
+from wildedge.paths import (
+    default_dead_letter_dir,
+    default_model_registry_path,
+    default_pending_queue_dir,
+)
 from wildedge.queue import EventQueue, QueuePolicy
 from wildedge.timing import Timer, elapsed_ms
 from wildedge.transmitter import Transmitter
@@ -42,6 +49,8 @@ ERROR_MAX_QUEUE_SIZE_RANGE = (
     "max_queue_size must be between "
     f"{config.MAX_QUEUE_SIZE_MIN} and {config.MAX_QUEUE_SIZE_MAX}"
 )
+ERROR_MAX_EVENT_AGE = "max_event_age_sec must be greater than 0"
+ERROR_MAX_DEAD_LETTER_BATCHES = "max_dead_letter_batches must be >= 0"
 ERROR_UNKNOWN_INTEGRATION = (
     "Unknown integration {integration!r}. Available: {available}"
 )
@@ -52,15 +61,18 @@ LOG_INSTRUMENT_TORCH_KERAS = (
 )
 
 
-def parse_dsn(dsn: str) -> tuple[str, str]:
-    """Parse 'https://<project-secret>@ingest.wildedge.dev/<project-key>' → (secret, host)."""
+def parse_dsn(dsn: str) -> tuple[str, str, str]:
+    """Parse DSN into (secret, host, project_key)."""
     parsed = urlparse(dsn)
     if not parsed.username:
         raise ValueError(ERROR_DSN_MISSING_SECRET)
+    project_key = parsed.path.lstrip("/").split("/", 1)[0]
+    if not project_key:
+        raise ValueError(f"DSN must include a project key path: {DSN_FORMAT}")
     host = f"{parsed.scheme}://{parsed.hostname}"
     if parsed.port:
         host += f":{parsed.port}"
-    return parsed.username, host
+    return parsed.username, host, project_key
 
 
 DEFAULT_EXTRACTORS: list[BaseExtractor] = [
@@ -104,13 +116,25 @@ class WildEdge:
         batch_size: int = config.DEFAULT_BATCH_SIZE,
         flush_interval_sec: float = config.DEFAULT_FLUSH_INTERVAL_SEC,
         debug: bool | None = None,
+        max_event_age_sec: float = config.DEFAULT_MAX_EVENT_AGE_SEC,
+        enable_offline_persistence: bool = config.DEFAULT_ENABLE_OFFLINE_PERSISTENCE,
+        app_identity: str | None = None,
+        offline_queue_dir: str | None = None,
+        enable_dead_letter_persistence: bool = (
+            config.DEFAULT_ENABLE_DEAD_LETTER_PERSISTENCE
+        ),
+        dead_letter_dir: str | None = None,
+        max_dead_letter_batches: int = config.DEFAULT_MAX_DEAD_LETTER_BATCHES,
+        on_delivery_failure: Callable[[str, int, int], None] | None = None,
     ):
         dsn = dsn or os.environ.get(config.ENV_DSN)
         if not dsn:
             raise ValueError(ERROR_DSN_REQUIRED)
-        api_key, host = parse_dsn(dsn)
+        api_key, host, project_key = parse_dsn(dsn)
         if debug is None:
             debug = os.environ.get(config.ENV_DEBUG, "").lower() in ("1", "true", "yes")
+        if app_identity is None:
+            app_identity = os.environ.get(config.ENV_APP_IDENTITY) or project_key
 
         # Validate configuration ranges
         if not (config.BATCH_SIZE_MIN <= batch_size <= config.BATCH_SIZE_MAX):
@@ -123,6 +147,10 @@ class WildEdge:
             config.MAX_QUEUE_SIZE_MIN <= max_queue_size <= config.MAX_QUEUE_SIZE_MAX
         ):
             raise ValueError(ERROR_MAX_QUEUE_SIZE_RANGE)
+        if max_event_age_sec <= 0:
+            raise ValueError(ERROR_MAX_EVENT_AGE)
+        if max_dead_letter_batches < 0:
+            raise ValueError(ERROR_MAX_DEAD_LETTER_BATCHES)
 
         self.api_key = api_key
         self.debug = debug
@@ -135,9 +163,30 @@ class WildEdge:
         self.device = device or detect_device(api_key=api_key, app_version=app_version)
         self.session_id = str(uuid.uuid4())
         self.created_at = datetime.now(timezone.utc)
-        self.queue = EventQueue(max_size=max_queue_size, policy=queue_policy)
-        self.registry = ModelRegistry()
+        resolved_offline_queue_dir = offline_queue_dir or str(
+            default_pending_queue_dir(app_identity)
+        )
+        resolved_dead_letter_dir = dead_letter_dir or str(
+            default_dead_letter_dir(app_identity)
+        )
+        resolved_model_registry_path = str(default_model_registry_path(app_identity))
+        self.queue = EventQueue(
+            max_size=max_queue_size,
+            policy=queue_policy,
+            persist_to_disk=enable_offline_persistence,
+            disk_dir=resolved_offline_queue_dir,
+        )
+        self.registry = ModelRegistry(
+            persist_path=resolved_model_registry_path
+            if enable_offline_persistence
+            else None
+        )
         self.transmitter = Transmitter(api_key=api_key, host=host)
+        self.dead_letter_store = DeadLetterStore(
+            enabled=enable_dead_letter_persistence,
+            directory=resolved_dead_letter_dir,
+            max_batches=max_dead_letter_batches,
+        )
         self.consumer = Consumer(
             queue=self.queue,
             transmitter=self.transmitter,
@@ -147,6 +196,9 @@ class WildEdge:
             batch_size=batch_size,
             flush_interval_sec=flush_interval_sec,
             debug=debug,
+            max_event_age_sec=max_event_age_sec,
+            dead_letter_store=self.dead_letter_store,
+            on_delivery_failure=on_delivery_failure,
         )
 
         self._auto_loaded: set[str] = set()
@@ -165,6 +217,8 @@ class WildEdge:
                 event_dict.get("event_type"),
                 event_dict.get("model_id"),
             )
+        event_dict.setdefault("__we_first_queued_at", time.time())
+        event_dict.setdefault("__we_attempts", 0)
         self.queue.add(event_dict)
 
     def register_model(
@@ -425,10 +479,13 @@ class WildEdge:
         """Block until the event queue drains or timeout expires."""
         self.consumer.flush(timeout=timeout)
 
-    def close(self) -> None:
-        """Flush remaining events and stop the consumer thread."""
+    def close(self, timeout: float | None = None) -> None:
+        """Best-effort shutdown; pass timeout to attempt bounded flush first."""
         self.closed = True
-        self.consumer.close()
+        if timeout is None:
+            self.consumer.close()
+        else:
+            self.consumer.close(timeout=timeout)
 
     def pending_count(self) -> int:
         """Return the number of events currently buffered."""

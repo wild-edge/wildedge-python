@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from importlib import metadata
 
 from wildedge.client import WildEdge
-from wildedge.config import ENV_DSN
+from wildedge.config import DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC, ENV_DSN
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 
 RUN_DSN_ENV = "WILDEDGE_RUN_DSN"
@@ -121,7 +121,12 @@ def install_runtime() -> RuntimeContext:
     print_startup_report = _as_bool(os.environ.get(RUN_PRINT_STARTUP_REPORT_ENV))
     strict_integrations = _as_bool(os.environ.get(RUN_STRICT_INTEGRATIONS_ENV))
     try:
-        flush_timeout = float(os.environ.get(RUN_FLUSH_TIMEOUT_ENV, "5.0"))
+        flush_timeout = float(
+            os.environ.get(
+                RUN_FLUSH_TIMEOUT_ENV,
+                str(DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC),
+            )
+        )
     except ValueError as exc:
         raise RuntimeConfigError("invalid flush timeout") from exc
 

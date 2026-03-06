@@ -68,3 +68,14 @@ def test_base_cuda_device_count_init_failure_returns_zero(monkeypatch):
 
     monkeypatch.setattr("ctypes.CDLL", lambda _name: FakeCudaLib())
     assert cuda_device_count("libcuda.so.1") == 0
+
+
+def test_platform_adapters_expose_state_and_cache_paths():
+    for adapter in (
+        LinuxPlatform(),
+        MacOSPlatform(),
+        WindowsPlatform(),
+        UnknownPlatform(),
+    ):
+        assert adapter.state_base()
+        assert adapter.cache_base()
