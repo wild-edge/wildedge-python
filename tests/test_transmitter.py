@@ -182,3 +182,44 @@ class TestTransmitter:
             resp = t.send({"batch_id": "b-1", "events": []})
 
         assert resp.status == "error"
+
+
+@pytest.mark.parametrize("status_code", [200, 201, 203, 206])
+def test_send_unexpected_status_raises_transmit_error(status_code):
+    # Regression: any status not explicitly handled must raise TransmitError rather
+    # than falling through the elif chain and returning None. A None return would
+    # cause AttributeError in the consumer (response.status), silently killing the
+    # background thread and freezing the queue.
+    t = Transmitter(api_key="test-key", host="https://app.wildedge.dev")
+    with patch.object(
+        t._opener, "open", return_value=_make_response(status_code, {"status": "ok"})
+    ):
+        with pytest.raises(TransmitError, match=f"Unexpected HTTP {status_code}"):
+            t.send({"batch_id": "b-1", "events": []})
+
+
+def test_unexpected_status_keeps_events_in_consumer_queue():
+    # End-to-end regression: TransmitError from an unexpected status must cause the
+    # consumer to retain events for retry, not lose them.
+    from wildedge.consumer import Consumer
+    from wildedge.device import DeviceInfo
+    from wildedge.queue import EventQueue
+
+    queue = EventQueue(max_size=100)
+    queue.add({"event_id": "e1", "event_type": "inference", "model_id": "m"})
+
+    mock_transmitter = MagicMock(spec=Transmitter)
+    mock_transmitter.send.side_effect = TransmitError("Unexpected HTTP 200")
+
+    consumer = Consumer(
+        queue=queue,
+        transmitter=mock_transmitter,
+        device=DeviceInfo(device_id="d", device_type="linux"),
+        get_models=lambda: {},
+        session_id="sess-1",
+    )
+    result = consumer.drain_once()
+    consumer.stop()
+
+    assert result is False
+    assert queue.length() == 1
