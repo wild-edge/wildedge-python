@@ -56,7 +56,7 @@ PYTHON_DEP_OVERRIDES = {
         },
         "current": {
             "3.14": ["torch==2.10.0", "numpy==2.1.3"],
-        }
+        },
     },
     "timm": {
         "min": {
@@ -80,7 +80,7 @@ PYTHON_DEP_OVERRIDES = {
                 "timm==1.0.15",
                 "numpy==2.1.3",
             ],
-        }
+        },
     },
 }
 

@@ -26,6 +26,55 @@ client = wildedge.WildEdge(
 )
 ```
 
+## CLI wrapper
+
+Use `wildedge run` to execute an existing Python entrypoint with WildEdge runtime initialization and integration instrumentation enabled before user code starts:
+
+```bash
+wildedge run --dsn "https://<secret>@ingest.wildedge.dev/<key>" -- python app.py
+```
+
+End-to-end CLI wrapper example:
+
+```bash
+WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
+wildedge run --print-startup-report --integrations timm -- \
+python examples/cli/cli_wrapper_example.py
+```
+
+See `examples/cli/cli_wrapper_example.py` for a script that has no WildEdge SDK calls in user code.
+Use `examples/cli/demo.sh` for a single-script linear flow (sync, doctor, run).
+This demo uses `examples/cli/pyproject.toml`, so dependency management is delegated to `uv`.
+
+Module entrypoints are supported:
+
+```bash
+wildedge run -- python -m your_package.main --arg value
+```
+
+Validate local runtime readiness:
+
+```bash
+wildedge doctor --integrations all
+```
+
+Machine-readable diagnostics:
+
+```bash
+wildedge doctor --format json --integrations all
+```
+
+Optional DSN reachability probe:
+
+```bash
+wildedge doctor --network-check --dsn "https://<secret>@ingest.wildedge.dev/<key>"
+```
+
+Useful run flags:
+- `--strict-integrations`: fail startup if a requested integration cannot be instrumented.
+- `--no-propagate`: do not propagate WildEdge runtime env vars to nested child processes.
+- `--print-startup-report`: print startup diagnostics with per-integration status.
+
 ## Integrations
 
 Call `client.instrument()` to activate auto-tracking for a supported library. Models created afterwards are registered and timed automatically with no changes to existing call sites.

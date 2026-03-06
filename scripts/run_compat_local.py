@@ -29,10 +29,7 @@ WORKFLOW_ROWS: list[Row] = [
         if not (py == "3.13" and integration == "tensorflow")
     ],
     # compat-canary-314 job
-    *[
-        Row("3.14", integration, "current")
-        for integration in ("torch", "timm")
-    ],
+    *[Row("3.14", integration, "current") for integration in ("torch", "timm")],
 ]
 
 
@@ -55,7 +52,9 @@ def get_deps(row: Row) -> list[str]:
         "--python-version",
         row.python_version,
     ]
-    result = subprocess.run(cmd, check=False, capture_output=True, text=True, cwd=REPO_ROOT)
+    result = subprocess.run(
+        cmd, check=False, capture_output=True, text=True, cwd=REPO_ROOT
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
@@ -75,9 +74,19 @@ def run_row(row: Row) -> tuple[str, str]:
     ]
     for dep in deps:
         cmd.extend(["--with", dep])
-    cmd.extend(["python", "-m", "pytest", f"tests/compat/test_{row.integration}_compat.py", "-q"])
+    cmd.extend(
+        [
+            "python",
+            "-m",
+            "pytest",
+            f"tests/compat/test_{row.integration}_compat.py",
+            "-q",
+        ]
+    )
 
-    result = subprocess.run(cmd, check=False, capture_output=True, text=True, cwd=REPO_ROOT)
+    result = subprocess.run(
+        cmd, check=False, capture_output=True, text=True, cwd=REPO_ROOT
+    )
     output = f"{result.stdout}\n{result.stderr}".strip()
 
     if result.returncode == 0:

@@ -18,6 +18,7 @@ from wildedge.integrations.hf import install_patch as _hf_install_patch
 from wildedge.integrations.keras import KerasExtractor
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
+from wildedge.integrations.registry import noop_integrations, supported_integrations
 from wildedge.integrations.tensorflow import TensorflowExtractor
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
@@ -49,7 +50,6 @@ LOG_INSTRUMENT_TORCH_KERAS = (
     "wildedge: instrument(%r) - inference hooks fire automatically "
     "on register_model(); use client.load() for load/unload tracking"
 )
-NOOP_INTEGRATIONS = {"torch", "keras"}
 
 
 def parse_dsn(dsn: str) -> tuple[str, str]:
@@ -84,15 +84,8 @@ class WildEdge:
         # inference is now tracked automatically
     """
 
-    SUPPORTED_INTEGRATIONS = {
-        "gguf",
-        "onnx",
-        "timm",
-        "torch",
-        "keras",
-        "tensorflow",
-        "huggingface",
-    }
+    SUPPORTED_INTEGRATIONS = supported_integrations()
+    NOOP_INTEGRATIONS = noop_integrations()
     PATCH_INSTALLERS = {
         "gguf": GgufExtractor.install_auto_load_patch,
         "onnx": OnnxExtractor.install_auto_load_patch,
@@ -308,7 +301,7 @@ class WildEdge:
                     available=sorted(self.SUPPORTED_INTEGRATIONS),
                 )
             )
-        if integration in NOOP_INTEGRATIONS:
+        if integration in self.NOOP_INTEGRATIONS:
             # Models are user-defined subclasses; no global constructor to patch.
             # Inference is tracked automatically once a model is registered via
             # client.load() or register_model(); load/unload requires client.load().
