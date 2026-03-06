@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 import uuid
 import weakref
@@ -9,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from wildedge import config
+from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.dead_letters import DeadLetterStore
 from wildedge.device import DeviceInfo, detect_device
@@ -30,24 +29,23 @@ from wildedge.paths import (
     default_pending_queue_dir,
 )
 from wildedge.queue import EventQueue, QueuePolicy
+from wildedge.settings import read_client_env, resolve_app_identity
 from wildedge.timing import Timer, elapsed_ms
 from wildedge.transmitter import Transmitter
 
 DSN_FORMAT = "'https://<project-secret>@ingest.wildedge.dev/<project-key>'"
 ERROR_DSN_MISSING_SECRET = f"DSN must include a project secret: {DSN_FORMAT}"
 ERROR_DSN_REQUIRED = (
-    f"DSN is required. Pass dsn= or set {config.ENV_DSN}. Format: {DSN_FORMAT}"
+    f"DSN is required. Pass dsn= or set {constants.ENV_DSN}. Format: {DSN_FORMAT}"
 )
-ERROR_BATCH_SIZE_RANGE = (
-    f"batch_size must be between {config.BATCH_SIZE_MIN} and {config.BATCH_SIZE_MAX}"
-)
+ERROR_BATCH_SIZE_RANGE = f"batch_size must be between {constants.BATCH_SIZE_MIN} and {constants.BATCH_SIZE_MAX}"
 ERROR_FLUSH_INTERVAL_RANGE = (
     "flush_interval_sec must be between "
-    f"{config.FLUSH_INTERVAL_MIN} and {config.FLUSH_INTERVAL_MAX}"
+    f"{constants.FLUSH_INTERVAL_MIN} and {constants.FLUSH_INTERVAL_MAX}"
 )
 ERROR_MAX_QUEUE_SIZE_RANGE = (
     "max_queue_size must be between "
-    f"{config.MAX_QUEUE_SIZE_MIN} and {config.MAX_QUEUE_SIZE_MAX}"
+    f"{constants.MAX_QUEUE_SIZE_MIN} and {constants.MAX_QUEUE_SIZE_MAX}"
 )
 ERROR_MAX_EVENT_AGE = "max_event_age_sec must be greater than 0"
 ERROR_MAX_DEAD_LETTER_BATCHES = "max_dead_letter_batches must be >= 0"
@@ -112,39 +110,45 @@ class WildEdge:
         app_version: str | None = None,
         device: DeviceInfo | None = None,
         queue_policy: QueuePolicy = QueuePolicy.OPPORTUNISTIC,
-        max_queue_size: int = config.DEFAULT_MAX_QUEUE_SIZE,
-        batch_size: int = config.DEFAULT_BATCH_SIZE,
-        flush_interval_sec: float = config.DEFAULT_FLUSH_INTERVAL_SEC,
+        max_queue_size: int = constants.DEFAULT_MAX_QUEUE_SIZE,
+        batch_size: int = constants.DEFAULT_BATCH_SIZE,
+        flush_interval_sec: float = constants.DEFAULT_FLUSH_INTERVAL_SEC,
         debug: bool | None = None,
-        max_event_age_sec: float = config.DEFAULT_MAX_EVENT_AGE_SEC,
-        enable_offline_persistence: bool = config.DEFAULT_ENABLE_OFFLINE_PERSISTENCE,
+        max_event_age_sec: float = constants.DEFAULT_MAX_EVENT_AGE_SEC,
+        enable_offline_persistence: bool = constants.DEFAULT_ENABLE_OFFLINE_PERSISTENCE,
         app_identity: str | None = None,
         offline_queue_dir: str | None = None,
         enable_dead_letter_persistence: bool = (
-            config.DEFAULT_ENABLE_DEAD_LETTER_PERSISTENCE
+            constants.DEFAULT_ENABLE_DEAD_LETTER_PERSISTENCE
         ),
         dead_letter_dir: str | None = None,
-        max_dead_letter_batches: int = config.DEFAULT_MAX_DEAD_LETTER_BATCHES,
+        max_dead_letter_batches: int = constants.DEFAULT_MAX_DEAD_LETTER_BATCHES,
         on_delivery_failure: Callable[[str, int, int], None] | None = None,
     ):
-        dsn = dsn or os.environ.get(config.ENV_DSN)
+        env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
+        dsn = env.dsn
         if not dsn:
             raise ValueError(ERROR_DSN_REQUIRED)
         api_key, host, project_key = parse_dsn(dsn)
-        if debug is None:
-            debug = os.environ.get(config.ENV_DEBUG, "").lower() in ("1", "true", "yes")
-        if app_identity is None:
-            app_identity = os.environ.get(config.ENV_APP_IDENTITY) or project_key
+        debug = env.debug
+        app_identity = resolve_app_identity(
+            explicit=env.app_identity,
+            project_key=project_key,
+        )
 
         # Validate configuration ranges
-        if not (config.BATCH_SIZE_MIN <= batch_size <= config.BATCH_SIZE_MAX):
+        if not (constants.BATCH_SIZE_MIN <= batch_size <= constants.BATCH_SIZE_MAX):
             raise ValueError(ERROR_BATCH_SIZE_RANGE)
         if not (
-            config.FLUSH_INTERVAL_MIN <= flush_interval_sec <= config.FLUSH_INTERVAL_MAX
+            constants.FLUSH_INTERVAL_MIN
+            <= flush_interval_sec
+            <= constants.FLUSH_INTERVAL_MAX
         ):
             raise ValueError(ERROR_FLUSH_INTERVAL_RANGE)
         if not (
-            config.MAX_QUEUE_SIZE_MIN <= max_queue_size <= config.MAX_QUEUE_SIZE_MAX
+            constants.MAX_QUEUE_SIZE_MIN
+            <= max_queue_size
+            <= constants.MAX_QUEUE_SIZE_MAX
         ):
             raise ValueError(ERROR_MAX_QUEUE_SIZE_RANGE)
         if max_event_age_sec <= 0:

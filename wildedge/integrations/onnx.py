@@ -7,7 +7,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from wildedge import config
+from wildedge import constants
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     HistogramSummary,
@@ -279,7 +279,7 @@ class OnnxExtractor(BaseExtractor):
             except Exception as exc:
                 handle.track_error(
                     error_code="UNKNOWN",
-                    error_message=str(exc)[: config.ERROR_MSG_MAX_LEN],
+                    error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
                 )
                 raise
 

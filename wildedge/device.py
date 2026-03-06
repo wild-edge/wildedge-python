@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from wildedge import config
+from wildedge import constants
 from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.platforms import PLATFORMS as _PLATFORMS
 from wildedge.platforms.base import debug_detection_failure
@@ -45,7 +45,11 @@ def get_device_id_path() -> Path:
     """
     Returns the path to the device ID file for the current platform.
     """
-    return CURRENT_PLATFORM.config_base() / config.DEVICE_ID_DIR / config.DEVICE_ID_FILE
+    return (
+        CURRENT_PLATFORM.config_base()
+        / constants.DEVICE_ID_DIR
+        / constants.DEVICE_ID_FILE
+    )
 
 
 def load_or_create_device_uuid() -> str:
@@ -105,7 +109,7 @@ def detect_timezone() -> str | None:
 class DeviceInfo:
     device_id: str
     device_type: str
-    sdk_version: str = config.SDK_VERSION
+    sdk_version: str = constants.SDK_VERSION
     device_model: str | None = None
     os_version: str | None = None
     locale: str | None = None

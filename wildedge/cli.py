@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-from wildedge import config
+from wildedge import constants
 from wildedge.client import parse_dsn
 from wildedge.device import get_device_id_path
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
@@ -29,6 +29,7 @@ from wildedge.runtime.bootstrap import (
     RUN_PROPAGATE_ENV,
     RUN_STRICT_INTEGRATIONS_ENV,
 )
+from wildedge.settings import read_client_env, resolve_app_identity
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--flush-timeout",
         type=float,
-        default=config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,
+        default=constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,
         help="Flush timeout (seconds) for shutdown.",
     )
     run.add_argument(
@@ -113,31 +114,31 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument(
         "--batch-size",
         type=int,
-        default=config.DEFAULT_BATCH_SIZE,
+        default=constants.DEFAULT_BATCH_SIZE,
         help="Validate intended batch size against SDK limits.",
     )
     doctor.add_argument(
         "--flush-interval",
         type=float,
-        default=config.DEFAULT_FLUSH_INTERVAL_SEC,
+        default=constants.DEFAULT_FLUSH_INTERVAL_SEC,
         help="Validate intended flush interval against SDK limits.",
     )
     doctor.add_argument(
         "--max-queue-size",
         type=int,
-        default=config.DEFAULT_MAX_QUEUE_SIZE,
+        default=constants.DEFAULT_MAX_QUEUE_SIZE,
         help="Validate intended queue size against SDK limits.",
     )
     doctor.add_argument(
         "--max-event-age-sec",
         type=float,
-        default=config.DEFAULT_MAX_EVENT_AGE_SEC,
+        default=constants.DEFAULT_MAX_EVENT_AGE_SEC,
         help="Validate queued event age cap (seconds).",
     )
     doctor.add_argument(
         "--max-dead-letter-batches",
         type=int,
-        default=config.DEFAULT_MAX_DEAD_LETTER_BATCHES,
+        default=constants.DEFAULT_MAX_DEAD_LETTER_BATCHES,
         help="Validate dead-letter retention cap (batch files).",
     )
     doctor.add_argument(
@@ -160,7 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--offline-persistence",
         dest="offline_persistence",
         action="store_true",
-        default=config.DEFAULT_ENABLE_OFFLINE_PERSISTENCE,
+        default=constants.DEFAULT_ENABLE_OFFLINE_PERSISTENCE,
         help="Enable offline queue persistence checks.",
     )
     offline_persistence.add_argument(
@@ -174,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--dead-letter-persistence",
         dest="dead_letter_persistence",
         action="store_true",
-        default=config.DEFAULT_ENABLE_DEAD_LETTER_PERSISTENCE,
+        default=constants.DEFAULT_ENABLE_DEAD_LETTER_PERSISTENCE,
         help="Enable dead-letter persistence checks.",
     )
     dead_letter_persistence.add_argument(
@@ -275,14 +276,18 @@ def check_writable_dir(path: Path) -> tuple[bool, str]:
 
 
 def validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
-    if not (config.BATCH_SIZE_MIN <= parsed.batch_size <= config.BATCH_SIZE_MAX):
+    if not (constants.BATCH_SIZE_MIN <= parsed.batch_size <= constants.BATCH_SIZE_MAX):
         return False, "batch_size out of range"
     if not (
-        config.FLUSH_INTERVAL_MIN <= parsed.flush_interval <= config.FLUSH_INTERVAL_MAX
+        constants.FLUSH_INTERVAL_MIN
+        <= parsed.flush_interval
+        <= constants.FLUSH_INTERVAL_MAX
     ):
         return False, "flush_interval out of range"
     if not (
-        config.MAX_QUEUE_SIZE_MIN <= parsed.max_queue_size <= config.MAX_QUEUE_SIZE_MAX
+        constants.MAX_QUEUE_SIZE_MIN
+        <= parsed.max_queue_size
+        <= constants.MAX_QUEUE_SIZE_MAX
     ):
         return False, "max_queue_size out of range"
     if parsed.max_event_age_sec <= 0:
@@ -316,7 +321,8 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
     integrations: list[dict[str, str]] = report["integrations"]  # type: ignore[assignment]
 
     ok = True
-    dsn = parsed.dsn or os.environ.get("WILDEDGE_DSN")
+    client_env = read_client_env(dsn=parsed.dsn)
+    dsn = client_env.dsn
 
     project_key = "default"
     if not dsn:
@@ -346,8 +352,9 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
             ok = False
             checks.append({"name": "dsn", "status": "FAIL", "detail": str(exc)})
 
-    app_identity = (
-        parsed.app_identity or os.environ.get(config.ENV_APP_IDENTITY) or project_key
+    app_identity = resolve_app_identity(
+        explicit=parsed.app_identity,
+        project_key=project_key,
     )
     resolved_offline_queue_dir = parsed.offline_queue_dir or str(
         default_pending_queue_dir(app_identity)

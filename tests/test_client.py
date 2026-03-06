@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wildedge import config
+from wildedge import constants
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +26,7 @@ def test_batch_size_too_low():
 
     with pytest.raises(
         ValueError,
-        match=f"batch_size must be between {config.BATCH_SIZE_MIN} and {config.BATCH_SIZE_MAX}",
+        match=f"batch_size must be between {constants.BATCH_SIZE_MIN} and {constants.BATCH_SIZE_MAX}",
     ):
         WildEdge(dsn="https://test@test.com/key", batch_size=0)
 
@@ -36,7 +36,7 @@ def test_batch_size_too_high():
 
     with pytest.raises(
         ValueError,
-        match=f"batch_size must be between {config.BATCH_SIZE_MIN} and {config.BATCH_SIZE_MAX}",
+        match=f"batch_size must be between {constants.BATCH_SIZE_MIN} and {constants.BATCH_SIZE_MAX}",
     ):
         WildEdge(dsn="https://test@test.com/key", batch_size=101)
 
@@ -46,7 +46,7 @@ def test_flush_interval_too_low():
 
     with pytest.raises(
         ValueError,
-        match=f"flush_interval_sec must be between {config.FLUSH_INTERVAL_MIN} and {config.FLUSH_INTERVAL_MAX}",
+        match=f"flush_interval_sec must be between {constants.FLUSH_INTERVAL_MIN} and {constants.FLUSH_INTERVAL_MAX}",
     ):
         WildEdge(dsn="https://test@test.com/key", flush_interval_sec=0)
 
@@ -56,7 +56,7 @@ def test_flush_interval_too_high():
 
     with pytest.raises(
         ValueError,
-        match=f"flush_interval_sec must be between {config.FLUSH_INTERVAL_MIN} and {config.FLUSH_INTERVAL_MAX}",
+        match=f"flush_interval_sec must be between {constants.FLUSH_INTERVAL_MIN} and {constants.FLUSH_INTERVAL_MAX}",
     ):
         WildEdge(dsn="https://test@test.com/key", flush_interval_sec=3601)
 
@@ -66,7 +66,7 @@ def test_max_queue_size_too_low():
 
     with pytest.raises(
         ValueError,
-        match=f"max_queue_size must be between {config.MAX_QUEUE_SIZE_MIN} and {config.MAX_QUEUE_SIZE_MAX}",
+        match=f"max_queue_size must be between {constants.MAX_QUEUE_SIZE_MIN} and {constants.MAX_QUEUE_SIZE_MAX}",
     ):
         WildEdge(dsn="https://test@test.com/key", max_queue_size=9)
 
@@ -76,7 +76,7 @@ def test_max_queue_size_too_high():
 
     with pytest.raises(
         ValueError,
-        match=f"max_queue_size must be between {config.MAX_QUEUE_SIZE_MIN} and {config.MAX_QUEUE_SIZE_MAX}",
+        match=f"max_queue_size must be between {constants.MAX_QUEUE_SIZE_MIN} and {constants.MAX_QUEUE_SIZE_MAX}",
     ):
         WildEdge(dsn="https://test@test.com/key", max_queue_size=10001)
 
@@ -147,7 +147,7 @@ def test_app_identity_override_used_for_paths():
 def test_app_identity_env_override_used_for_paths(monkeypatch):
     from wildedge.client import WildEdge
 
-    monkeypatch.setenv(config.ENV_APP_IDENTITY, "env-app")
+    monkeypatch.setenv(constants.ENV_APP_IDENTITY, "env-app")
     with (
         patch(
             "wildedge.client.default_pending_queue_dir", return_value="pending-dir"

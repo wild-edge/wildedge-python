@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from wildedge import config
+from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.device import DeviceInfo
 from wildedge.queue import EventQueue
@@ -334,4 +334,4 @@ class TestConsumerFlush:
         mock_transmitter = MagicMock(spec=Transmitter)
         consumer = self._make_consumer(queue, mock_transmitter)
         assert registered["fn"] == consumer.flush
-        assert registered["args"] == (config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,)
+        assert registered["args"] == (constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,)

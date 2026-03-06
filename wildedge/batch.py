@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from wildedge import config
+from wildedge import constants
 from wildedge.device import DeviceInfo
 
 
@@ -20,7 +20,7 @@ def build_batch(
 ) -> dict:
     """Build a protocol-compliant batch envelope."""
     return {
-        "protocol_version": config.PROTOCOL_VERSION,
+        "protocol_version": constants.PROTOCOL_VERSION,
         "device": device.to_dict(),
         "models": models,
         "session_id": session_id,

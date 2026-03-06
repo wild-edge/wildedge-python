@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from wildedge import cli, config
+from wildedge import cli, constants
 from wildedge.integrations.registry import IntegrationSpec
 from wildedge.runtime import bootstrap
 from wildedge.runtime import runner as runtime_runner
@@ -60,7 +60,7 @@ def test_cli_run_script_invokes_runner(monkeypatch):
     assert captured["env"][bootstrap.RUN_STRICT_INTEGRATIONS_ENV] == "0"
     assert captured["env"][bootstrap.RUN_PRINT_STARTUP_REPORT_ENV] == "0"
     assert captured["env"][bootstrap.RUN_FLUSH_TIMEOUT_ENV] == str(
-        config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
+        constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
     )
 
 
@@ -152,7 +152,7 @@ def test_install_runtime_default_flush_timeout_is_shutdown_budget(monkeypatch):
 
     context = bootstrap.install_runtime()
     try:
-        assert context.flush_timeout == config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
+        assert context.flush_timeout == constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
     finally:
         context.shutdown()
 

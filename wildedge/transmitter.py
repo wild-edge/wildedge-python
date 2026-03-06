@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from wildedge import config
+from wildedge import constants
 from wildedge.logging import logger
 
 
@@ -37,12 +37,12 @@ class Transmitter:
     """Sends batch envelopes to the WildEdge ingest endpoint (stdlib urllib)."""
 
     def __init__(
-        self, api_key: str, host: str, timeout: float = config.DEFAULT_HTTP_TIMEOUT
+        self, api_key: str, host: str, timeout: float = constants.DEFAULT_HTTP_TIMEOUT
     ):
         self.host = host.rstrip("/")
         self.timeout = timeout
         self.headers = {
-            "User-Agent": config.SDK_VERSION,
+            "User-Agent": constants.SDK_VERSION,
             "X-Project-Secret": api_key,
             "Content-Type": "application/json",
         }
@@ -82,7 +82,7 @@ class Transmitter:
         if status_code == 400:
             logger.warning(
                 "wildedge: batch rejected (400) - discarding: %s",
-                raw[: config.ERROR_MSG_MAX_LEN],
+                raw[: constants.ERROR_MSG_MAX_LEN],
             )
             return IngestResponse(
                 status="rejected",
@@ -106,7 +106,7 @@ class Transmitter:
             logger.error(
                 "wildedge: unexpected redirect (%d) to %s; check WILDEDGE_DSN",
                 status_code,
-                raw[: config.ERROR_MSG_MAX_LEN],
+                raw[: constants.ERROR_MSG_MAX_LEN],
             )
             return IngestResponse(
                 status="error",
@@ -128,7 +128,7 @@ class Transmitter:
 
         if status_code == 429 or status_code >= 500:
             raise TransmitError(
-                f"HTTP {status_code}: {raw[: config.ERROR_MSG_MAX_LEN]!r}"
+                f"HTTP {status_code}: {raw[: constants.ERROR_MSG_MAX_LEN]!r}"
             )
 
         if 400 <= status_code < 500:
@@ -136,7 +136,7 @@ class Transmitter:
             logger.warning(
                 "wildedge: batch rejected (%d) - discarding: %s",
                 status_code,
-                raw[: config.ERROR_MSG_MAX_LEN],
+                raw[: constants.ERROR_MSG_MAX_LEN],
             )
             return IngestResponse(
                 status="rejected",

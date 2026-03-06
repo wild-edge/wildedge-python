@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from wildedge import config
+from wildedge import constants
 from wildedge.batch import build_batch
 from wildedge.device import DeviceInfo
 
@@ -24,7 +24,7 @@ class TestBuildBatch:
             session_id="sess-1",
             created_at=datetime.now(timezone.utc),
         )
-        assert batch["protocol_version"] == config.PROTOCOL_VERSION
+        assert batch["protocol_version"] == constants.PROTOCOL_VERSION
 
     def test_includes_device(self):
         batch = build_batch(

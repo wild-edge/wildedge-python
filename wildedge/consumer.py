@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from wildedge import config
+from wildedge import constants
 from wildedge.batch import build_batch
 from wildedge.dead_letters import DeadLetterStore
 from wildedge.logging import logger
@@ -32,7 +32,7 @@ class Consumer:
         batch_size: int = 10,
         flush_interval_sec: float = 60.0,
         debug: bool = False,
-        max_event_age_sec: float = config.DEFAULT_MAX_EVENT_AGE_SEC,
+        max_event_age_sec: float = constants.DEFAULT_MAX_EVENT_AGE_SEC,
         dead_letter_store: DeadLetterStore | None = None,
         on_delivery_failure: Callable[[str, int, int], None] | None = None,
     ):
@@ -50,14 +50,14 @@ class Consumer:
 
         self.stop_event = threading.Event()
         self.stopped = False
-        self.backoff = config.BACKOFF_MIN
+        self.backoff = constants.BACKOFF_MIN
         self.created_at = datetime.now(timezone.utc)
 
         self.thread = threading.Thread(
             target=self.run, daemon=True, name="wildedge-consumer"
         )
         self.thread.start()
-        atexit.register(self.flush, config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC)
+        atexit.register(self.flush, constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC)
 
     def run(self) -> None:
         last_flush = time.monotonic()
@@ -70,7 +70,7 @@ class Consumer:
                 sent = self.drain_once()
                 if sent:
                     last_flush = time.monotonic()
-                    self.backoff = config.BACKOFF_MIN
+                    self.backoff = constants.BACKOFF_MIN
                 else:
                     wait_s, self.backoff = self.next_retry_delay(
                         self.backoff,
@@ -78,7 +78,7 @@ class Consumer:
                     )
                     self.stop_event.wait(timeout=wait_s)
             else:
-                self.stop_event.wait(timeout=config.IDLE_POLL_INTERVAL)
+                self.stop_event.wait(timeout=constants.IDLE_POLL_INTERVAL)
 
     def next_retry_delay(
         self,
@@ -89,10 +89,12 @@ class Consumer:
     ) -> tuple[float, float]:
         delay = backoff
         if jitter:
-            delay += random.uniform(0, backoff * config.BACKOFF_JITTER_RATIO)
+            delay += random.uniform(0, backoff * constants.BACKOFF_JITTER_RATIO)
         if max_wait is not None:
             delay = min(delay, max_wait)
-        next_backoff = min(backoff * config.BACKOFF_MULTIPLIER, config.BACKOFF_MAX)
+        next_backoff = min(
+            backoff * constants.BACKOFF_MULTIPLIER, constants.BACKOFF_MAX
+        )
         return delay, next_backoff
 
     def strip_internal_fields(
@@ -214,7 +216,7 @@ class Consumer:
         if self.stopped:
             return
         deadline = time.monotonic() + timeout
-        backoff = config.BACKOFF_MIN
+        backoff = constants.BACKOFF_MIN
         while self.queue.length() > 0 and time.monotonic() < deadline:
             progressed = self.drain_once()
             if self.queue.length() == 0:
@@ -223,7 +225,7 @@ class Consumer:
             if remaining <= 0:
                 break
             if progressed:
-                backoff = config.BACKOFF_MIN
+                backoff = constants.BACKOFF_MIN
                 continue
             sleep_for, backoff = self.next_retry_delay(
                 backoff,
@@ -240,7 +242,7 @@ class Consumer:
 
     def close(self, timeout: float | None = None) -> None:
         if timeout is None:
-            timeout = config.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
+            timeout = constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
         self.flush(timeout=timeout)
         self.stop()
         self.transmitter.close()
