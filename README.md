@@ -34,6 +34,17 @@ Use `wildedge run` to execute an existing Python entrypoint with WildEdge runtim
 wildedge run --dsn "https://<secret>@ingest.wildedge.dev/<key>" -- python app.py
 ```
 
+End-to-end CLI wrapper example:
+
+```bash
+WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
+wildedge run --print-startup-report --integrations timm -- \
+python examples/cli/cli_wrapper_example.py
+```
+
+See `examples/cli/cli_wrapper_example.py` for a script that has no WildEdge SDK calls in user code.
+Use `examples/cli/run_cli_wrapper_example.sh` for a ready-to-run command wrapper.
+
 Module entrypoints are supported:
 
 ```bash
