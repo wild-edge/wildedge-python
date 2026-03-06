@@ -19,12 +19,14 @@ from wildedge.client import parse_dsn
 from wildedge.device import get_device_id_path
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
+from wildedge.settings import RUN_HUBS_ENV
 from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
 from wildedge.runtime.bootstrap import (
     RUN_APP_VERSION_ENV,
     RUN_DEBUG_ENV,
     RUN_DSN_ENV,
     RUN_FLUSH_TIMEOUT_ENV,
+    RUN_HUBS_ENV,
     RUN_INTEGRATIONS_ENV,
     RUN_PRINT_STARTUP_REPORT_ENV,
     RUN_PROPAGATE_ENV,
@@ -49,7 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--integrations",
         default="all",
-        help="Comma-separated integrations to enable. Default: all.",
+        help="Comma-separated framework integrations to enable (gguf, onnx, timm, …). Default: all.",
+    )
+    run.add_argument(
+        "--hubs",
+        default="none",
+        help="Comma-separated hub trackers to enable (huggingface, torchhub). Default: none.",
     )
     run.add_argument(
         "--flush-timeout",
@@ -99,7 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument(
         "--integrations",
         default="all",
-        help="Comma-separated integrations to validate imports for. Default: all.",
+        help="Comma-separated framework integrations to validate imports for. Default: all.",
+    )
+    doctor.add_argument(
+        "--hubs",
+        default="none",
+        help="Comma-separated hub trackers to validate imports for (huggingface, torchhub). Default: none.",
     )
     doctor.add_argument(
         "--format",
@@ -239,6 +251,7 @@ def run_command(parsed: argparse.Namespace) -> int:
     if parsed.debug:
         env[RUN_DEBUG_ENV] = "1"
     env[RUN_INTEGRATIONS_ENV] = parsed.integrations
+    env[RUN_HUBS_ENV] = parsed.hubs
     env[RUN_FLUSH_TIMEOUT_ENV] = str(parsed.flush_timeout)
     env[RUN_PROPAGATE_ENV] = "1" if parsed.propagate else "0"
     env[RUN_STRICT_INTEGRATIONS_ENV] = "1" if parsed.strict_integrations else "0"
@@ -261,7 +274,15 @@ def run_command(parsed: argparse.Namespace) -> int:
 
 def integration_list(value: str | None) -> list[str]:
     if not value or value == "all":
-        return sorted(supported_integrations() | supported_hubs())
+        return sorted(supported_integrations())
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def hub_list(value: str | None) -> list[str]:
+    if not value or value == "none":
+        return []
+    if value == "all":
+        return sorted(supported_hubs())
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
@@ -317,9 +338,11 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
         "platform": platform.platform(),
         "checks": [],
         "integrations": [],
+        "hubs": [],
     }
     checks: list[dict[str, str]] = report["checks"]  # type: ignore[assignment]
     integrations: list[dict[str, str]] = report["integrations"]  # type: ignore[assignment]
+    hubs: list[dict[str, str]] = report["hubs"]  # type: ignore[assignment]
 
     ok = True
     client_env = read_client_env(dsn=parsed.dsn)
@@ -450,22 +473,15 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
         )
 
     for integration in integration_list(parsed.integrations):
-        spec = INTEGRATIONS_BY_NAME.get(integration) or HUBS_BY_NAME.get(integration)
+        spec = INTEGRATIONS_BY_NAME.get(integration)
         if spec is None:
             ok = False
             integrations.append(
-                {
-                    "name": integration,
-                    "status": "FAIL",
-                    "detail": "unknown integration",
-                }
+                {"name": integration, "status": "FAIL", "detail": "unknown integration"}
             )
             continue
-
         missing = [
-            module
-            for module in spec.required_modules
-            if importlib.util.find_spec(module) is None
+            m for m in spec.required_modules if importlib.util.find_spec(m) is None
         ]
         if missing:
             ok = False
@@ -478,6 +494,27 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
             )
         else:
             integrations.append({"name": integration, "status": "OK", "detail": ""})
+
+    for hub_name in hub_list(parsed.hubs):
+        spec = HUBS_BY_NAME.get(hub_name)
+        if spec is None:
+            ok = False
+            hubs.append({"name": hub_name, "status": "FAIL", "detail": "unknown hub"})
+            continue
+        missing = [
+            m for m in spec.required_modules if importlib.util.find_spec(m) is None
+        ]
+        if missing:
+            ok = False
+            hubs.append(
+                {
+                    "name": hub_name,
+                    "status": "FAIL",
+                    "detail": f"missing modules: {', '.join(missing)}",
+                }
+            )
+        else:
+            hubs.append({"name": hub_name, "status": "OK", "detail": ""})
 
     report["status"] = "PASS" if ok else "FAIL"
     return report
@@ -502,6 +539,14 @@ def print_doctor_text(report: dict) -> None:
             print(f"integration[{name}]: {status} ({detail})")
         else:
             print(f"integration[{name}]: {status}")
+    for hub in report["hubs"]:
+        name = hub["name"]
+        status = hub["status"]
+        detail = hub["detail"]
+        if detail:
+            print(f"hub[{name}]: {status} ({detail})")
+        else:
+            print(f"hub[{name}]: {status}")
     print(f"doctor: {report['status']}")
 
 
