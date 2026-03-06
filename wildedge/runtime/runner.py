@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import argparse
-import os
 import runpy
 import sys
 
 from wildedge.runtime.bootstrap import (
-    RUN_PRINT_STARTUP_REPORT_ENV,
-    RUN_PROPAGATE_ENV,
     RuntimeConfigError,
     RuntimeStrictIntegrationError,
-    _as_bool,
     clear_runtime_env,
     format_startup_report,
     install_runtime,
 )
+from wildedge.settings import read_runner_env
 
 EXIT_CONFIG_ERROR = 120
 EXIT_STRICT_INTEGRATION_ERROR = 121
@@ -50,14 +47,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"wildedge: bootstrap internal error: {exc}", file=sys.stderr)
         return EXIT_BOOTSTRAP_INTERNAL_ERROR
 
+    runner_env = read_runner_env()
     if (
         getattr(context, "debug", False)
         or getattr(context, "print_startup_report", False)
-        or _as_bool(os.environ.get(RUN_PRINT_STARTUP_REPORT_ENV))
+        or runner_env.print_startup_report
     ):
         print(format_startup_report(context), file=sys.stderr)
 
-    if not _as_bool(os.environ.get(RUN_PROPAGATE_ENV, "1")):
+    if not runner_env.propagate:
         clear_runtime_env()
     try:
         if parsed.mode == "script":

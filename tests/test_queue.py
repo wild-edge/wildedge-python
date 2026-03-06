@@ -106,3 +106,35 @@ class TestEventQueue:
 
         assert not errors
         assert q.length() <= 1000
+
+    def test_persistent_queue_rehydrates_from_disk(self, tmp_path):
+        q1 = EventQueue(
+            max_size=10,
+            policy=QueuePolicy.OPPORTUNISTIC,
+            persist_to_disk=True,
+            disk_dir=str(tmp_path),
+        )
+        q1.add(make_event(1))
+        q1.add(make_event(2))
+
+        q2 = EventQueue(
+            max_size=10,
+            policy=QueuePolicy.OPPORTUNISTIC,
+            persist_to_disk=True,
+            disk_dir=str(tmp_path),
+        )
+        assert q2.length() == 2
+        assert q2.peek() == make_event(1)
+
+    def test_persistent_queue_remove_deletes_files(self, tmp_path):
+        q = EventQueue(
+            max_size=10,
+            policy=QueuePolicy.OPPORTUNISTIC,
+            persist_to_disk=True,
+            disk_dir=str(tmp_path),
+        )
+        q.add(make_event(1))
+        q.add(make_event(2))
+        assert len(list(tmp_path.glob("*.json"))) == 2
+        q.remove_first()
+        assert len(list(tmp_path.glob("*.json"))) == 1

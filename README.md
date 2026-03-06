@@ -191,10 +191,17 @@ with wildedge.track(handle):
 |---|---|---|---|
 | `dsn` | `-` | `WILDEDGE_DSN` | Required. `https://<secret>@ingest.wildedge.dev/<key>` |
 | `app_version` | `None` | `-` | Optional. Your app's version string. |
+| `app_identity` | `<project_key>` | `WILDEDGE_APP_IDENTITY` | Namespace for offline persistence paths. Set per-app to isolate multi-process workloads in one project. |
 | `debug` | `false` | `WILDEDGE_DEBUG` | Log events to console. |
 | `batch_size` | `10` | `-` | Events per transmission (recommended: 1-100). |
 | `flush_interval_sec` | `60` | `-` | Max seconds between flushes (recommended: 1-3600). |
 | `max_queue_size` | `200` | `-` | In-memory buffer limit (recommended: 10-10000). |
+| `enable_offline_persistence` | `true` | `-` | Persist pending unsent events on disk and replay on restart. |
+| `offline_queue_dir` | OS-specific state dir | `-` | Folder for pending queue persistence (defaults to platform state path). |
+| `max_event_age_sec` | `900` | `-` | Max age for queued events before dead-lettering. |
+| `enable_dead_letter_persistence` | `false` | `-` | Persist dropped batches/events to disk dead-letter store. |
+| `dead_letter_dir` | OS-specific cache dir | `-` | Directory where dead-letter batch files are stored. |
+| `max_dead_letter_batches` | `10` | `-` | Max dead-letter batch files retained on disk. |
 
 ## Testing
 

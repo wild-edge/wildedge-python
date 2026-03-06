@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from wildedge import config
+from wildedge import constants
 from wildedge.device import CURRENT_PLATFORM
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.logging import logger
@@ -48,7 +48,7 @@ def _build_patched_call(original_call):
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: config.ERROR_MSG_MAX_LEN],
+                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
             )
             raise
 

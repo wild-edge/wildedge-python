@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from wildedge.events import (
@@ -208,9 +210,45 @@ class ModelHandle:
 class ModelRegistry:
     """Thread-safe registry mapping model_id to ModelInfo."""
 
-    def __init__(self) -> None:
+    def __init__(self, persist_path: str | None = None) -> None:
         self.models: dict[str, ModelInfo] = {}
         self.handles: dict[str, ModelHandle] = {}
+        self.persist_path = Path(persist_path).expanduser() if persist_path else None
+        if self.persist_path is not None:
+            self.load_from_disk()
+
+    def load_from_disk(self) -> None:
+        if self.persist_path is None or not self.persist_path.exists():
+            return
+        try:
+            raw = json.loads(self.persist_path.read_text())
+        except Exception:
+            return
+        if not isinstance(raw, dict):
+            return
+        for model_id, data in raw.items():
+            if not isinstance(model_id, str) or not isinstance(data, dict):
+                continue
+            try:
+                self.models[model_id] = ModelInfo(
+                    model_name=str(data["model_name"]),
+                    model_version=str(data["model_version"]),
+                    model_source=str(data["model_source"]),
+                    model_format=str(data["model_format"]),
+                    model_family=data.get("model_family"),
+                    quantization=data.get("quantization"),
+                )
+            except KeyError:
+                continue
+
+    def save_to_disk(self) -> None:
+        if self.persist_path is None:
+            return
+        self.persist_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = self.snapshot()
+        self.persist_path.write_text(
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+        )
 
     def register(
         self, model_id: str, info: ModelInfo, publish: Callable[[dict], None]
@@ -218,8 +256,14 @@ class ModelRegistry:
         """Return (handle, is_new). is_new=False means already registered; skip install_hooks."""
         if model_id in self.handles:
             return self.handles[model_id], False
-        handle = ModelHandle(model_id=model_id, info=info, publish=publish)
-        self.models[model_id] = info
+
+        if model_id not in self.models:
+            self.models[model_id] = info
+            self.save_to_disk()
+
+        handle = ModelHandle(
+            model_id=model_id, info=self.models[model_id], publish=publish
+        )
         self.handles[model_id] = handle
         return handle, True
 

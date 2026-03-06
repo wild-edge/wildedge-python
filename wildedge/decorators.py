@@ -4,7 +4,7 @@ import functools
 import time
 from typing import TYPE_CHECKING, Any
 
-from wildedge import config
+from wildedge import constants
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ class track:
                 if self.capture_errors:
                     self.handle.track_error(
                         error_code="UNKNOWN",
-                        error_message=str(exc)[: config.ERROR_MSG_MAX_LEN],
+                        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
                     )
                 raise
 
@@ -86,7 +86,7 @@ class track:
             if self.capture_errors:
                 self.handle.track_error(
                     error_code="UNKNOWN",
-                    error_message=str(exc_val)[: config.ERROR_MSG_MAX_LEN]
+                    error_message=str(exc_val)[: constants.ERROR_MSG_MAX_LEN]
                     if exc_val
                     else None,
                 )

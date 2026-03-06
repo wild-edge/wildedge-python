@@ -12,17 +12,19 @@ from dataclasses import dataclass, field
 from importlib import metadata
 
 from wildedge.client import WildEdge
-from wildedge.config import ENV_DSN
+from wildedge.constants import ENV_DSN
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
-
-RUN_DSN_ENV = "WILDEDGE_RUN_DSN"
-RUN_APP_VERSION_ENV = "WILDEDGE_RUN_APP_VERSION"
-RUN_DEBUG_ENV = "WILDEDGE_RUN_DEBUG"
-RUN_FLUSH_TIMEOUT_ENV = "WILDEDGE_RUN_FLUSH_TIMEOUT"
-RUN_INTEGRATIONS_ENV = "WILDEDGE_RUN_INTEGRATIONS"
-RUN_STRICT_INTEGRATIONS_ENV = "WILDEDGE_RUN_STRICT_INTEGRATIONS"
-RUN_PROPAGATE_ENV = "WILDEDGE_RUN_PROPAGATE"
-RUN_PRINT_STARTUP_REPORT_ENV = "WILDEDGE_RUN_PRINT_STARTUP_REPORT"
+from wildedge.settings import (
+    RUN_APP_VERSION_ENV,
+    RUN_DEBUG_ENV,
+    RUN_DSN_ENV,
+    RUN_FLUSH_TIMEOUT_ENV,
+    RUN_INTEGRATIONS_ENV,
+    RUN_PRINT_STARTUP_REPORT_ENV,
+    RUN_PROPAGATE_ENV,
+    RUN_STRICT_INTEGRATIONS_ENV,
+    read_runtime_env,
+)
 
 SUPPORTED_SIGNALS = [signal.SIGINT, signal.SIGTERM]
 STATUS_OK_PATCHED = "OK_PATCHED"
@@ -30,16 +32,6 @@ STATUS_OK_NOOP = "OK_NOOP"
 STATUS_SKIP_MISSING_DEP = "SKIP_MISSING_DEP"
 STATUS_ERROR_PATCH_FAILED = "ERROR_PATCH_FAILED"
 STRICT_FAILURE_STATUSES = {STATUS_SKIP_MISSING_DEP, STATUS_ERROR_PATCH_FAILED}
-
-
-def _as_bool(value: str | None) -> bool:
-    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _integration_list(value: str | None) -> list[str]:
-    if not value or value == "all":
-        return sorted(supported_integrations())
-    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def clear_runtime_env() -> None:
@@ -110,23 +102,18 @@ def format_startup_report(context: RuntimeContext) -> str:
 
 def install_runtime() -> RuntimeContext:
     """Create and configure WildEdge client for process-level instrumentation."""
-    dsn = os.environ.get(RUN_DSN_ENV) or os.environ.get(ENV_DSN)
-    if not dsn:
+    try:
+        env = read_runtime_env(all_integrations=sorted(supported_integrations()))
+    except ValueError as exc:
+        raise RuntimeConfigError("invalid flush timeout") from exc
+
+    if not env.dsn:
         raise RuntimeConfigError(
             f"{ENV_DSN} (or {RUN_DSN_ENV}) must be set to use `wildedge run`."
         )
 
-    app_version = os.environ.get(RUN_APP_VERSION_ENV)
-    debug = _as_bool(os.environ.get(RUN_DEBUG_ENV))
-    print_startup_report = _as_bool(os.environ.get(RUN_PRINT_STARTUP_REPORT_ENV))
-    strict_integrations = _as_bool(os.environ.get(RUN_STRICT_INTEGRATIONS_ENV))
-    try:
-        flush_timeout = float(os.environ.get(RUN_FLUSH_TIMEOUT_ENV, "5.0"))
-    except ValueError as exc:
-        raise RuntimeConfigError("invalid flush timeout") from exc
-
-    client = WildEdge(dsn=dsn, app_version=app_version, debug=debug)
-    integrations = _integration_list(os.environ.get(RUN_INTEGRATIONS_ENV))
+    client = WildEdge(dsn=env.dsn, app_version=env.app_version, debug=env.debug)
+    integrations = env.integrations
     statuses: list[dict[str, str]] = []
     for integration in integrations:
         spec = INTEGRATIONS_BY_NAME.get(integration)
@@ -165,13 +152,13 @@ def install_runtime() -> RuntimeContext:
                     "detail": str(exc),
                 }
             )
-            if debug:
+            if env.debug:
                 print(
                     f"wildedge: instrument({integration!r}) failed: {exc}",
                     file=os.sys.stderr,
                 )
 
-    if strict_integrations:
+    if env.strict_integrations:
         failures = [row for row in statuses if row["status"] in STRICT_FAILURE_STATUSES]
         if failures:
             fail_detail = ", ".join(
@@ -183,9 +170,9 @@ def install_runtime() -> RuntimeContext:
 
     context = RuntimeContext(
         client=client,
-        flush_timeout=flush_timeout,
-        debug=debug,
-        print_startup_report=print_startup_report,
+        flush_timeout=env.flush_timeout,
+        debug=env.debug,
+        print_startup_report=env.print_startup_report,
         integration_statuses=statuses,
     )
     atexit.register(context.shutdown)

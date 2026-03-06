@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -16,6 +17,12 @@ class LinuxPlatform:
 
     def config_base(self) -> Path:
         return Path.home() / ".config"
+
+    def state_base(self) -> Path:
+        return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+
+    def cache_base(self) -> Path:
+        return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
 
     def device_model(self) -> str | None:
         for path in (

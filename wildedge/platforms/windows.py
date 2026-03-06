@@ -23,6 +23,12 @@ class WindowsPlatform:
     def config_base(self) -> Path:
         return Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
 
+    def state_base(self) -> Path:
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+
+    def cache_base(self) -> Path:
+        return self.state_base()
+
     def device_model(self) -> str | None:
         if _winreg is None:
             return None
