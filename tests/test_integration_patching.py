@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import types
+from unittest.mock import patch
 
+import pytest
+
+from wildedge.client import WildEdge
+from wildedge.device import DeviceInfo
+from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.integrations.gguf import GgufExtractor
-from wildedge.integrations.hf import install_patch as install_hf_patch
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
 
 
 def test_hf_install_patch_is_idempotent(monkeypatch):
-    import wildedge.integrations.hf as hf_mod
+    import wildedge.hubs.huggingface as hf_mod
 
     def orig_hf_hub_download(repo_id, filename, **kwargs):
         return f"/tmp/{repo_id}/{filename}"
@@ -28,15 +33,16 @@ def test_hf_install_patch_is_idempotent(monkeypatch):
         hf_mod.sys.modules, "test_hf_consumer_mod", fake_consumer_module
     )
 
-    install_hf_patch()
+    tracker = HuggingFaceHubTracker()
+    tracker.install_patch(None)
     first = fake_consumer_module.hf_hub_download
-    install_hf_patch()
+    tracker.install_patch(None)
     second = fake_consumer_module.hf_hub_download
     assert first is second
 
 
 def test_hf_install_patch_retries_unpatched_part(monkeypatch):
-    import wildedge.integrations.hf as hf_mod
+    import wildedge.hubs.huggingface as hf_mod
 
     monkeypatch.setattr(hf_mod, "_hf", object())
     monkeypatch.setattr(hf_mod, "_fd", object())
@@ -50,9 +56,10 @@ def test_hf_install_patch_retries_unpatched_part(monkeypatch):
         return calls["hf"] > 1
 
     monkeypatch.setattr(hf_mod, "_install_hf_hub_download_patch", fake_install_hf)
-    install_hf_patch()
+    tracker = HuggingFaceHubTracker()
+    tracker.install_patch(None)
     assert hf_mod._hf_hub_download_patched is False
-    install_hf_patch()
+    tracker.install_patch(None)
     assert hf_mod._hf_hub_download_patched is True
     assert calls["hf"] == 2
 
@@ -117,3 +124,51 @@ def test_gguf_install_auto_load_patch_is_idempotent(monkeypatch):
     GgufExtractor.install_auto_load_patch(client_ref)
     second = fake_llama_cpp.Llama.__init__
     assert first is second
+
+
+# ---------------------------------------------------------------------------
+# instrument() hubs= parameter
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def stub_client():
+    with (
+        patch("wildedge.client.detect_device", return_value=DeviceInfo("id", "linux")),
+        patch("wildedge.client.Transmitter"),
+        patch("wildedge.client.Consumer"),
+    ):
+        yield WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+
+
+def test_instrument_hubs_activates_requested_trackers(stub_client):
+    activated = []
+    with (
+        patch.object(stub_client, "_activate_hub", side_effect=activated.append),
+        patch.dict(stub_client.PATCH_INSTALLERS, {"gguf": lambda ref: None}),
+    ):
+        stub_client.instrument("gguf", hubs=["huggingface"])
+
+    assert activated == ["huggingface"]
+
+
+def test_instrument_hubs_unknown_hub_raises(stub_client):
+    with pytest.raises(ValueError, match="Unknown hub"):
+        stub_client.instrument("gguf", hubs=["nonexistent"])
+
+
+def test_instrument_hub_name_directly_raises(stub_client):
+    with pytest.raises(ValueError, match="is a hub"):
+        stub_client.instrument("huggingface")
+
+
+def test_instrument_none_without_hubs_raises(stub_client):
+    with pytest.raises(ValueError, match="requires hubs="):
+        stub_client.instrument(None)
+
+
+def test_instrument_none_activates_hub(stub_client):
+    activated = []
+    with patch.object(stub_client, "_activate_hub", side_effect=activated.append):
+        stub_client.instrument(None, hubs=["huggingface"])
+    assert activated == ["huggingface"]

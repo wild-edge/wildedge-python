@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from wildedge import constants
 from wildedge.client import parse_dsn
 from wildedge.device import get_device_id_path
+from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
 from wildedge.runtime.bootstrap import (
@@ -260,7 +261,7 @@ def run_command(parsed: argparse.Namespace) -> int:
 
 def integration_list(value: str | None) -> list[str]:
     if not value or value == "all":
-        return sorted(supported_integrations())
+        return sorted(supported_integrations() | supported_hubs())
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
@@ -449,7 +450,7 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
         )
 
     for integration in integration_list(parsed.integrations):
-        spec = INTEGRATIONS_BY_NAME.get(integration)
+        spec = INTEGRATIONS_BY_NAME.get(integration) or HUBS_BY_NAME.get(integration)
         if spec is None:
             ok = False
             integrations.append(

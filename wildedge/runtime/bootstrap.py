@@ -13,6 +13,7 @@ from importlib import metadata
 
 from wildedge.client import WildEdge
 from wildedge.constants import ENV_DSN
+from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.settings import (
     RUN_APP_VERSION_ENV,
@@ -103,7 +104,9 @@ def format_startup_report(context: RuntimeContext) -> str:
 def install_runtime() -> RuntimeContext:
     """Create and configure WildEdge client for process-level instrumentation."""
     try:
-        env = read_runtime_env(all_integrations=sorted(supported_integrations()))
+        env = read_runtime_env(
+            all_integrations=sorted(supported_integrations() | supported_hubs())
+        )
     except ValueError as exc:
         raise RuntimeConfigError("invalid flush timeout") from exc
 
@@ -116,7 +119,9 @@ def install_runtime() -> RuntimeContext:
     integrations = env.integrations
     statuses: list[dict[str, str]] = []
     for integration in integrations:
-        spec = INTEGRATIONS_BY_NAME.get(integration)
+        int_spec = INTEGRATIONS_BY_NAME.get(integration)
+        hub_spec = HUBS_BY_NAME.get(integration) if int_spec is None else None
+        spec = int_spec or hub_spec
         if spec is None:
             statuses.append(
                 {
@@ -141,8 +146,15 @@ def install_runtime() -> RuntimeContext:
             )
             continue
         try:
-            client.instrument(integration)
-            status = STATUS_OK_NOOP if spec.kind == "noop" else STATUS_OK_PATCHED
+            if hub_spec is not None:
+                client.instrument(None, hubs=[integration])
+            else:
+                client.instrument(integration)
+            status = (
+                STATUS_OK_NOOP
+                if int_spec is not None and int_spec.kind == "noop"
+                else STATUS_OK_PATCHED
+            )
             statuses.append({"name": integration, "status": status, "detail": ""})
         except Exception as exc:
             statuses.append(

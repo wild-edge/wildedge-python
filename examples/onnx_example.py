@@ -16,8 +16,7 @@ import wildedge
 client = wildedge.WildEdge(
     app_version="1.0.0",  # set WILDEDGE_DSN env var
 )
-client.instrument("huggingface")
-client.instrument("onnx")
+client.instrument("onnx", hubs=["huggingface"])
 
 model_path = hf_hub_download("Xenova/resnet-50", "onnx/model.onnx")
 session = ort.InferenceSession(model_path)

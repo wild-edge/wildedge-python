@@ -15,8 +15,7 @@ import wildedge
 client = wildedge.WildEdge(
     app_version="1.0.0",  # set WILDEDGE_DSN env var
 )
-client.instrument("huggingface")
-client.instrument("gguf")
+client.instrument("gguf", hubs=["huggingface"])
 
 model_path = hf_hub_download(
     "bartowski/Llama-3.2-1B-Instruct-GGUF",
