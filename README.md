@@ -43,7 +43,8 @@ python examples/cli/cli_wrapper_example.py
 ```
 
 See `examples/cli/cli_wrapper_example.py` for a script that has no WildEdge SDK calls in user code.
-Use `examples/cli/run_cli_wrapper_example.sh` for a ready-to-run command wrapper.
+Use `examples/cli/demo.sh` for a single-script linear flow (sync, doctor, run).
+This demo uses `examples/cli/pyproject.toml`, so dependency management is delegated to `uv`.
 
 Module entrypoints are supported:
 
