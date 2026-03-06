@@ -30,7 +30,7 @@ from wildedge.runtime.bootstrap import (
 )
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wildedge")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -130,12 +130,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _is_python_executable(token: str) -> bool:
+def is_python_executable(token: str) -> bool:
     name = Path(token).name.lower()
     return name.startswith("python")
 
 
-def _parse_python_command(tokens: list[str]) -> tuple[str, str, str, list[str]]:
+def parse_python_command(tokens: list[str]) -> tuple[str, str, str, list[str]]:
     if not tokens:
         raise ValueError("missing command after `wildedge run --`")
 
@@ -146,7 +146,7 @@ def _parse_python_command(tokens: list[str]) -> tuple[str, str, str, list[str]]:
         raise ValueError("missing python command after `--`")
 
     python_exe = sys.executable
-    if _is_python_executable(args[0]):
+    if is_python_executable(args[0]):
         python_exe = args.pop(0)
 
     if not args:
@@ -166,9 +166,9 @@ def _parse_python_command(tokens: list[str]) -> tuple[str, str, str, list[str]]:
     )
 
 
-def _run_command(parsed: argparse.Namespace) -> int:
+def run_command(parsed: argparse.Namespace) -> int:
     try:
-        python_exe, mode, target, args = _parse_python_command(parsed.command_args)
+        python_exe, mode, target, args = parse_python_command(parsed.command_args)
     except ValueError as exc:
         print(f"wildedge: {exc}", file=sys.stderr)
         return 2
@@ -201,13 +201,13 @@ def _run_command(parsed: argparse.Namespace) -> int:
     return completed.returncode
 
 
-def _integration_list(value: str | None) -> list[str]:
+def integration_list(value: str | None) -> list[str]:
     if not value or value == "all":
         return sorted(supported_integrations())
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _check_writable_dir(path: Path) -> tuple[bool, str]:
+def check_writable_dir(path: Path) -> tuple[bool, str]:
     try:
         path.mkdir(parents=True, exist_ok=True)
         probe = path / ".wildedge_doctor_probe"
@@ -218,7 +218,7 @@ def _check_writable_dir(path: Path) -> tuple[bool, str]:
         return False, f"{path} ({exc})"
 
 
-def _validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
+def validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
     if not (config.BATCH_SIZE_MIN <= parsed.batch_size <= config.BATCH_SIZE_MAX):
         return False, "batch_size out of range"
     if not (
@@ -232,7 +232,7 @@ def _validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
     return True, "OK"
 
 
-def _network_reachability_check(host_url: str) -> tuple[bool, str]:
+def network_reachability_check(host_url: str) -> tuple[bool, str]:
     parsed = urlparse(host_url)
     host = parsed.hostname
     if not host:
@@ -245,7 +245,7 @@ def _network_reachability_check(host_url: str) -> tuple[bool, str]:
         return False, f"{host}:{port} ({exc})"
 
 
-def _doctor_report(parsed: argparse.Namespace) -> dict:
+def doctor_report(parsed: argparse.Namespace) -> dict:
     report: dict[str, object] = {
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -272,7 +272,7 @@ def _doctor_report(parsed: argparse.Namespace) -> dict:
             _, host_url = parse_dsn(dsn)
             checks.append({"name": "dsn", "status": "OK", "detail": host_url})
             if parsed.network_check:
-                reachable, detail = _network_reachability_check(host_url)
+                reachable, detail = network_reachability_check(host_url)
                 checks.append(
                     {
                         "name": "network",
@@ -285,7 +285,7 @@ def _doctor_report(parsed: argparse.Namespace) -> dict:
             ok = False
             checks.append({"name": "dsn", "status": "FAIL", "detail": str(exc)})
 
-    temp_ok, temp_detail = _check_writable_dir(Path(tempfile.gettempdir()))
+    temp_ok, temp_detail = check_writable_dir(Path(tempfile.gettempdir()))
     checks.append(
         {
             "name": "writable_tempdir",
@@ -295,7 +295,7 @@ def _doctor_report(parsed: argparse.Namespace) -> dict:
     )
     ok = ok and temp_ok
 
-    config_ok, config_detail = _validate_runtime_config(parsed)
+    config_ok, config_detail = validate_runtime_config(parsed)
     checks.append(
         {
             "name": "runtime_config",
@@ -305,7 +305,7 @@ def _doctor_report(parsed: argparse.Namespace) -> dict:
     )
     ok = ok and config_ok
 
-    device_dir_ok, device_dir_detail = _check_writable_dir(get_device_id_path().parent)
+    device_dir_ok, device_dir_detail = check_writable_dir(get_device_id_path().parent)
     checks.append(
         {
             "name": "writable_device_config_dir",
@@ -315,7 +315,7 @@ def _doctor_report(parsed: argparse.Namespace) -> dict:
     )
     ok = ok and device_dir_ok
 
-    for integration in _integration_list(parsed.integrations):
+    for integration in integration_list(parsed.integrations):
         spec = INTEGRATIONS_BY_NAME.get(integration)
         if spec is None:
             ok = False
@@ -349,7 +349,7 @@ def _doctor_report(parsed: argparse.Namespace) -> dict:
     return report
 
 
-def _print_doctor_text(report: dict) -> None:
+def print_doctor_text(report: dict) -> None:
     print(f"python: {report['python']}")
     print(f"platform: {report['platform']}")
     for check in report["checks"]:
@@ -371,22 +371,22 @@ def _print_doctor_text(report: dict) -> None:
     print(f"doctor: {report['status']}")
 
 
-def _doctor(parsed: argparse.Namespace) -> int:
-    report = _doctor_report(parsed)
+def doctor(parsed: argparse.Namespace) -> int:
+    report = doctor_report(parsed)
     if parsed.format == "json":
         print(json.dumps(report, sort_keys=True))
     else:
-        _print_doctor_text(report)
+        print_doctor_text(report)
     return 0 if report["status"] == "PASS" else 1
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = _build_parser()
+    parser = build_parser()
     parsed = parser.parse_args(argv)
     if parsed.command == "run":
-        return _run_command(parsed)
+        return run_command(parsed)
     if parsed.command == "doctor":
-        return _doctor(parsed)
+        return doctor(parsed)
     return 2
 
 

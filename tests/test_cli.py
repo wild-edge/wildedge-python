@@ -196,7 +196,7 @@ def test_doctor_reports_missing_dsn_and_unknown_integration(monkeypatch, capsys)
 def test_doctor_passes_for_available_module(monkeypatch, capsys):
     monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
     monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
-    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
+    monkeypatch.setattr(cli, "check_writable_dir", lambda _: (True, "ok"))
     rc = cli.main(["doctor", "--integrations", "huggingface"])
     out = capsys.readouterr().out
     assert rc == 0
@@ -207,7 +207,7 @@ def test_doctor_passes_for_available_module(monkeypatch, capsys):
 def test_doctor_json_output_schema(monkeypatch, capsys):
     monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
     monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
-    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
+    monkeypatch.setattr(cli, "check_writable_dir", lambda _: (True, "ok"))
     rc = cli.main(["doctor", "--format", "json", "--integrations", "onnx"])
     out = capsys.readouterr().out.strip()
     payload = json.loads(out)
@@ -226,9 +226,9 @@ def test_doctor_json_output_schema(monkeypatch, capsys):
 def test_doctor_network_check_failure(monkeypatch, capsys):
     monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
     monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
-    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
+    monkeypatch.setattr(cli, "check_writable_dir", lambda _: (True, "ok"))
     monkeypatch.setattr(
-        cli, "_network_reachability_check", lambda _: (False, "unreachable")
+        cli, "network_reachability_check", lambda _: (False, "unreachable")
     )
 
     rc = cli.main(["doctor", "--network-check", "--integrations", "onnx"])
@@ -241,7 +241,7 @@ def test_doctor_network_check_failure(monkeypatch, capsys):
 def test_doctor_runtime_config_fail(monkeypatch, capsys):
     monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
     monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
-    monkeypatch.setattr(cli, "_check_writable_dir", lambda _: (True, "ok"))
+    monkeypatch.setattr(cli, "check_writable_dir", lambda _: (True, "ok"))
     rc = cli.main(["doctor", "--batch-size", "0", "--integrations", "onnx"])
     out = capsys.readouterr().out
     assert rc == 1
