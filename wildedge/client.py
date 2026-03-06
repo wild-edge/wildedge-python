@@ -84,15 +84,8 @@ class WildEdge:
         # inference is now tracked automatically
     """
 
-    SUPPORTED_INTEGRATIONS = {
-        "gguf",
-        "onnx",
-        "timm",
-        "torch",
-        "keras",
-        "tensorflow",
-        "huggingface",
-    }
+    SUPPORTED_INTEGRATIONS = supported_integrations()
+    NOOP_INTEGRATIONS = noop_integrations()
     PATCH_INSTALLERS = {
         "gguf": GgufExtractor.install_auto_load_patch,
         "onnx": OnnxExtractor.install_auto_load_patch,
