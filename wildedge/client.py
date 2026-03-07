@@ -191,6 +191,11 @@ class WildEdge:
             persist_to_disk=enable_offline_persistence,
             disk_dir=resolved_offline_queue_dir,
         )
+        if debug and self.queue.length() > 0:
+            logger.debug(
+                "wildedge: loaded %d offline event(s) from previous session",
+                self.queue.length(),
+            )
         self.registry = ModelRegistry(
             persist_path=resolved_model_registry_path
             if enable_offline_persistence

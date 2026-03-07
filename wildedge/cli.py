@@ -19,20 +19,18 @@ from wildedge.client import parse_dsn
 from wildedge.device import get_device_id_path
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
-from wildedge.settings import RUN_HUBS_ENV
 from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
 from wildedge.runtime.bootstrap import (
     RUN_APP_VERSION_ENV,
     RUN_DEBUG_ENV,
     RUN_DSN_ENV,
     RUN_FLUSH_TIMEOUT_ENV,
-    RUN_HUBS_ENV,
     RUN_INTEGRATIONS_ENV,
     RUN_PRINT_STARTUP_REPORT_ENV,
     RUN_PROPAGATE_ENV,
     RUN_STRICT_INTEGRATIONS_ENV,
 )
-from wildedge.settings import read_client_env, resolve_app_identity
+from wildedge.settings import RUN_HUBS_ENV, read_client_env, resolve_app_identity
 
 
 def build_parser() -> argparse.ArgumentParser:

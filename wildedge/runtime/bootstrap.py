@@ -20,7 +20,6 @@ from wildedge.settings import (
     RUN_DEBUG_ENV,
     RUN_DSN_ENV,
     RUN_FLUSH_TIMEOUT_ENV,
-    RUN_HUBS_ENV,
     RUN_INTEGRATIONS_ENV,
     RUN_PRINT_STARTUP_REPORT_ENV,
     RUN_PROPAGATE_ENV,
@@ -186,7 +185,9 @@ def install_runtime() -> RuntimeContext:
             continue
         try:
             client.instrument(None, hubs=[hub_name])
-            statuses.append({"name": hub_name, "status": STATUS_OK_PATCHED, "detail": ""})
+            statuses.append(
+                {"name": hub_name, "status": STATUS_OK_PATCHED, "detail": ""}
+            )
         except Exception as exc:
             statuses.append(
                 {
