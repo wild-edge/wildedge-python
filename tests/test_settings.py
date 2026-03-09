@@ -45,7 +45,7 @@ def test_read_runtime_env_uses_run_over_base_dsn():
         RUN_FLUSH_TIMEOUT_ENV: "7.5",
         RUN_INTEGRATIONS_ENV: "onnx,timm",
     }
-    s = read_runtime_env(all_integrations=["onnx", "timm"], environ=env)
+    s = read_runtime_env(all_integrations=["onnx", "timm"], all_hubs=[], environ=env)
     assert s.dsn == "https://run@ingest.wildedge.dev/run"
     assert s.flush_timeout == 7.5
     assert s.integrations == ["onnx", "timm"]

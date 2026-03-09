@@ -22,7 +22,7 @@ import wildedge
 client = wildedge.WildEdge(
     app_version="1.0.0",  # set WILDEDGE_DSN env var
 )
-client.instrument("timm")
+client.instrument("timm", hubs=["huggingface", "torchhub"])
 
 model = timm.create_model("resnet18", pretrained=True)
 model.eval()

@@ -12,7 +12,6 @@ from wildedge.events.inference import (
     ImageInputMeta,
     TopKPrediction,
 )
-from wildedge.hf_cache import downloads_from_cache_diff, scan_model_caches
 from wildedge.integrations.base import BaseExtractor
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
@@ -310,20 +309,16 @@ class PytorchExtractor(BaseExtractor):
                 return
 
             def patched_create_model(*args, **kwargs):  # type: ignore[no-untyped-def]
-                before = scan_model_caches()
+                c = client_ref()  # type: ignore[call-arg]
+                hub_before = (
+                    c._snapshot_hub_caches() if c is not None and not c.closed else {}
+                )
                 t0 = time.perf_counter()
                 model = original_create_model(*args, **kwargs)
                 load_ms = elapsed_ms(t0)
-                downloads = downloads_from_cache_diff(
-                    before, scan_model_caches(), load_ms
-                )
-                logger.debug(
-                    "wildedge: timm.create_model done load_ms=%d download_records=%d",
-                    load_ms,
-                    len(downloads),
-                )
-                c = client_ref()  # type: ignore[call-arg]
+                logger.debug("wildedge: timm.create_model done load_ms=%d", load_ms)
                 if c is not None and not c.closed:
+                    downloads = c._diff_hub_caches(hub_before, load_ms) or None
                     c._on_model_auto_loaded(model, load_ms=load_ms, downloads=downloads)
                 return model
 

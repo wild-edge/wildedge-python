@@ -13,6 +13,7 @@ from importlib import metadata
 
 from wildedge.client import WildEdge
 from wildedge.constants import ENV_DSN
+from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.settings import (
     RUN_APP_VERSION_ENV,
@@ -103,7 +104,10 @@ def format_startup_report(context: RuntimeContext) -> str:
 def install_runtime() -> RuntimeContext:
     """Create and configure WildEdge client for process-level instrumentation."""
     try:
-        env = read_runtime_env(all_integrations=sorted(supported_integrations()))
+        env = read_runtime_env(
+            all_integrations=sorted(supported_integrations()),
+            all_hubs=sorted(supported_hubs()),
+        )
     except ValueError as exc:
         raise RuntimeConfigError("invalid flush timeout") from exc
 
@@ -113,9 +117,9 @@ def install_runtime() -> RuntimeContext:
         )
 
     client = WildEdge(dsn=env.dsn, app_version=env.app_version, debug=env.debug)
-    integrations = env.integrations
     statuses: list[dict[str, str]] = []
-    for integration in integrations:
+
+    for integration in env.integrations:
         spec = INTEGRATIONS_BY_NAME.get(integration)
         if spec is None:
             statuses.append(
@@ -127,9 +131,7 @@ def install_runtime() -> RuntimeContext:
             )
             continue
         missing = [
-            module
-            for module in spec.required_modules
-            if importlib.util.find_spec(module) is None
+            m for m in spec.required_modules if importlib.util.find_spec(m) is None
         ]
         if missing:
             statuses.append(
@@ -155,6 +157,48 @@ def install_runtime() -> RuntimeContext:
             if env.debug:
                 print(
                     f"wildedge: instrument({integration!r}) failed: {exc}",
+                    file=os.sys.stderr,
+                )
+
+    for hub_name in env.hubs:
+        spec = HUBS_BY_NAME.get(hub_name)
+        if spec is None:
+            statuses.append(
+                {
+                    "name": hub_name,
+                    "status": STATUS_ERROR_PATCH_FAILED,
+                    "detail": "unknown hub",
+                }
+            )
+            continue
+        missing = [
+            m for m in spec.required_modules if importlib.util.find_spec(m) is None
+        ]
+        if missing:
+            statuses.append(
+                {
+                    "name": hub_name,
+                    "status": STATUS_SKIP_MISSING_DEP,
+                    "detail": f"missing modules: {', '.join(missing)}",
+                }
+            )
+            continue
+        try:
+            client.instrument(None, hubs=[hub_name])
+            statuses.append(
+                {"name": hub_name, "status": STATUS_OK_PATCHED, "detail": ""}
+            )
+        except Exception as exc:
+            statuses.append(
+                {
+                    "name": hub_name,
+                    "status": STATUS_ERROR_PATCH_FAILED,
+                    "detail": str(exc),
+                }
+            )
+            if env.debug:
+                print(
+                    f"wildedge: instrument(None, hubs=[{hub_name!r}]) failed: {exc}",
                     file=os.sys.stderr,
                 )
 

@@ -228,10 +228,10 @@ def test_doctor_passes_for_available_module(monkeypatch, capsys):
     monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
     monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
     monkeypatch.setattr(cli, "check_writable_dir", lambda _: (True, "ok"))
-    rc = cli.main(["doctor", "--integrations", "huggingface"])
+    rc = cli.main(["doctor", "--hubs", "huggingface"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "integration[huggingface]: OK" in out
+    assert "hub[huggingface]: OK" in out
     assert "doctor: PASS" in out
 
 
@@ -245,6 +245,7 @@ def test_doctor_json_output_schema(monkeypatch, capsys):
     assert rc == 0
     assert sorted(payload.keys()) == [
         "checks",
+        "hubs",
         "integrations",
         "platform",
         "python",

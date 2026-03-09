@@ -12,10 +12,12 @@ from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.dead_letters import DeadLetterStore
 from wildedge.device import DeviceInfo, detect_device
+from wildedge.hubs.base import BaseHubTracker
+from wildedge.hubs.huggingface import HuggingFaceHubTracker
+from wildedge.hubs.registry import supported_hubs
+from wildedge.hubs.torchhub import TorchHubTracker
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.gguf import GgufExtractor
-from wildedge.integrations.hf import drain_downloads
-from wildedge.integrations.hf import install_patch as _hf_install_patch
 from wildedge.integrations.keras import KerasExtractor
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
@@ -50,7 +52,8 @@ ERROR_MAX_QUEUE_SIZE_RANGE = (
 ERROR_MAX_EVENT_AGE = "max_event_age_sec must be greater than 0"
 ERROR_MAX_DEAD_LETTER_BATCHES = "max_dead_letter_batches must be >= 0"
 ERROR_UNKNOWN_INTEGRATION = (
-    "Unknown integration {integration!r}. Available: {available}"
+    "Unknown integration {integration!r}. Available integrations: {integrations}; "
+    "available hubs: {hubs}"
 )
 LOG_REGISTERED_MODEL = "wildedge: registered model id=%s format=%s"
 LOG_INSTRUMENT_TORCH_KERAS = (
@@ -94,6 +97,7 @@ class WildEdge:
         # inference is now tracked automatically
     """
 
+    # Framework integrations: patch ML runtime constructors for inference tracking.
     SUPPORTED_INTEGRATIONS = supported_integrations()
     NOOP_INTEGRATIONS = noop_integrations()
     PATCH_INSTALLERS = {
@@ -101,6 +105,13 @@ class WildEdge:
         "onnx": OnnxExtractor.install_auto_load_patch,
         "timm": PytorchExtractor.install_timm_patch,
         "tensorflow": TensorflowExtractor.install_auto_load_patch,
+    }
+
+    # Hub trackers: record download provenance (where models came from).
+    SUPPORTED_HUBS = supported_hubs()
+    HUB_TRACKER_CLASSES: dict[str, type[BaseHubTracker]] = {
+        "huggingface": HuggingFaceHubTracker,
+        "torchhub": TorchHubTracker,
     }
 
     def __init__(
@@ -180,6 +191,11 @@ class WildEdge:
             persist_to_disk=enable_offline_persistence,
             disk_dir=resolved_offline_queue_dir,
         )
+        if debug and self.queue.length() > 0:
+            logger.debug(
+                "wildedge: loaded %d offline event(s) from previous session",
+                self.queue.length(),
+            )
         self.registry = ModelRegistry(
             persist_path=resolved_model_registry_path
             if enable_offline_persistence
@@ -205,8 +221,10 @@ class WildEdge:
             on_delivery_failure=on_delivery_failure,
         )
 
-        self._auto_loaded: set[str] = set()
-        self._hf_instrumented: bool = False
+        self.auto_loaded: set[str] = set()
+        # Active hub trackers keyed by hub name. Populated by _activate_hub()
+        # when instrument() is called with a hub name.
+        self.hub_trackers: dict[str, BaseHubTracker] = {}
 
         if debug:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)
@@ -312,20 +330,81 @@ class WildEdge:
             return None
         return extractor.memory_bytes(model_obj)
 
-    def _instrument_huggingface(self) -> None:
-        _hf_install_patch()
-        self._hf_instrumented = True
+    def _activate_hub(self, hub_name: str) -> None:
+        """Instantiate and install the patch for a hub tracker (idempotent)."""
+        if hub_name in self.hub_trackers:
+            return
+        tracker = self.HUB_TRACKER_CLASSES[hub_name]()
+        if not tracker.can_install():
+            logger.warning(
+                "wildedge: hub '%s' library not installed; skipping", hub_name
+            )
+            return
+        tracker.install_patch(weakref.ref(self))
+        self.hub_trackers[hub_name] = tracker
+        if self.debug:
+            logger.debug("wildedge: hub tracker '%s' activated", hub_name)
 
-    def instrument(self, integration: str) -> None:
+    def _snapshot_hub_caches(self) -> dict[str, dict[str, int]]:
+        """Return a before-snapshot of all active hub cache directories."""
+        return {
+            name: tracker.scan_cache() for name, tracker in self.hub_trackers.items()
+        }
+
+    def _diff_hub_caches(
+        self, before: dict[str, dict[str, int]], load_ms: int
+    ) -> list[dict]:
         """
-        Activate load/unload auto-tracking for a supported library.
+        Compute download records from a before/after hub cache diff.
 
-        Patches the library's constructor or factory function so that models
-        created afterwards are registered and timed automatically with no
-        ``client.load()`` or ``client.register_model()`` call needed.
+        Calls each active hub tracker's ``diff_to_records`` against its
+        corresponding before snapshot, merging all results.
+        """
+        records: list[dict] = []
+        for name, tracker in self.hub_trackers.items():
+            after = tracker.scan_cache()
+            records.extend(
+                tracker.diff_to_records(before.get(name, {}), after, load_ms)
+            )
+        return records
 
-        Supported values
-        ----------------
+    def _drain_hub_trackers(self) -> list[dict]:
+        """Drain and return thread-local download records from all active hub trackers."""
+        records: list[dict] = []
+        for tracker in self.hub_trackers.values():
+            records.extend(tracker.drain())
+        return records
+
+    def instrument(
+        self, integration: str | None, *, hubs: list[str] | None = None
+    ) -> None:
+        """
+        Activate auto-tracking for a framework integration, hub trackers, or both.
+
+        Framework integrations patch ML runtime constructors so that models
+        created afterwards are registered and timed automatically.  Hub trackers
+        record download provenance (where the model came from, cache hits,
+        bandwidth).
+
+        Framework + hub tracking
+        ------------------------
+        Pass ``hubs=`` alongside a framework name to activate download provenance
+        tracking for the hub(s) your code downloads from::
+
+            client.instrument("gguf", hubs=["huggingface"])
+            client.instrument("onnx", hubs=["huggingface"])
+            client.instrument("timm", hubs=["huggingface", "torchhub"])
+
+        Hub tracking only (no framework)
+        ---------------------------------
+        Pass ``None`` as the integration to activate hub trackers without
+        instrumenting any framework::
+
+            client.instrument(None, hubs=["huggingface"])
+            client.instrument(None, hubs=["torchhub"])
+
+        Supported framework integrations
+        ---------------------------------
         ``"gguf"``
             Patches ``llama_cpp.Llama.__init__``. Requires ``llama-cpp-python``.
         ``"onnx"``
@@ -338,42 +417,72 @@ class WildEdge:
             Requires ``tensorflow``.
         ``"torch"`` / ``"keras"``
             No global constructor to patch; models are user-defined subclasses.
-            This call succeeds and is a no-op: inference is tracked automatically
-            once a model is registered; use ``client.load(MyModel)`` for
-            load/unload tracking.
+            Inference is tracked automatically once a model is registered;
+            use ``client.load(MyModel)`` for load/unload timing.
 
-        Each integration is installed at most once per process regardless of
-        how many times ``instrument()`` is called.
+        Supported hubs
+        --------------
+        ``"huggingface"``
+            Patches ``hf_hub_download`` and ``snapshot_download`` for
+            thread-local download tracking.  Also enables filesystem-diff
+            support for timm models that pull from HuggingFace Hub.
+            Requires ``huggingface-hub``.
+        ``"torchhub"``
+            Patches ``torch.hub.load`` and scans the torch hub cache for
+            files downloaded via ``torch.hub.download_url_to_file``.
+            Requires ``torch``.
 
-        Usage::
-
-            client = WildEdge(dsn="https://<project-secret>@ingest.wildedge.dev/<project-key>", app_version="1.0.0")
-            client.instrument("gguf")
-            client.instrument("onnx")
-            client.instrument("timm")
+        Each integration or hub tracker is installed at most once per process
+        regardless of how many times ``instrument()`` is called.
         """
+        if integration is None:
+            if not hubs:
+                raise ValueError(
+                    "instrument(None) requires hubs= to be non-empty; "
+                    "pass the hub name(s) you want to activate, "
+                    "e.g. instrument(None, hubs=['huggingface'])"
+                )
+            unknown = [h for h in hubs if h not in self.SUPPORTED_HUBS]
+            if unknown:
+                raise ValueError(
+                    f"Unknown hub(s): {unknown}. "
+                    f"Available hubs: {sorted(self.SUPPORTED_HUBS)}"
+                )
+            for hub_name in hubs:
+                self._activate_hub(hub_name)
+            return
+
+        if integration in self.SUPPORTED_HUBS:
+            raise ValueError(
+                f"{integration!r} is a hub, not a framework integration. "
+                f"Use instrument(None, hubs=[{integration!r}]) to activate it."
+            )
         if integration not in self.SUPPORTED_INTEGRATIONS:
             raise ValueError(
                 ERROR_UNKNOWN_INTEGRATION.format(
                     integration=integration,
-                    available=sorted(self.SUPPORTED_INTEGRATIONS),
+                    integrations=sorted(self.SUPPORTED_INTEGRATIONS),
+                    hubs=sorted(self.SUPPORTED_HUBS),
                 )
             )
+        if hubs:
+            unknown = [h for h in hubs if h not in self.SUPPORTED_HUBS]
+            if unknown:
+                raise ValueError(
+                    f"Unknown hub(s): {unknown}. "
+                    f"Available hubs: {sorted(self.SUPPORTED_HUBS)}"
+                )
         if integration in self.NOOP_INTEGRATIONS:
             # Models are user-defined subclasses; no global constructor to patch.
             # Inference is tracked automatically once a model is registered via
             # client.load() or register_model(); load/unload requires client.load().
             if self.debug:
-                logger.debug(
-                    LOG_INSTRUMENT_TORCH_KERAS,
-                    integration,
-                )
-            return
-        if integration == "huggingface":
-            self._instrument_huggingface()
-            return
-        installer = self.PATCH_INSTALLERS[integration]
-        installer(weakref.ref(self))
+                logger.debug(LOG_INSTRUMENT_TORCH_KERAS, integration)
+        else:
+            installer = self.PATCH_INSTALLERS[integration]
+            installer(weakref.ref(self))
+        for hub_name in hubs or []:
+            self._activate_hub(hub_name)
 
     def _on_model_auto_loaded(
         self,
@@ -384,22 +493,23 @@ class WildEdge:
         model_id: str | None = None,
         load_kwargs: dict | None = None,
     ) -> None:
-        """Callback from OTel-style auto-patches after a model is constructed."""
+        """Callback invoked by auto-patches after a model is constructed."""
         if self.closed:
             return
-        # Drain HF buffer: prefer caller-supplied downloads (timm cache diff);
-        # fall back to thread-local HF records (ONNX + explicit hf_hub_download).
-        # Always drain to keep the buffer clean even when not used.
-        hf_records = drain_downloads() if self._hf_instrumented else []
-        if downloads is None and hf_records:
-            downloads = hf_records
+        # Always drain thread-local hub buffers to keep them clean.
+        # Prefer caller-supplied downloads (timm/torchhub filesystem diff) over
+        # thread-local records. If both exist, the diff wins and thread records
+        # are discarded to avoid double-reporting.
+        thread_records = self._drain_hub_trackers()
+        if downloads is None and thread_records:
+            downloads = thread_records
+
         handle = self.register_model(obj, model_id=model_id)
-        self._auto_loaded.add(handle.model_id)
+        self.auto_loaded.add(handle.model_id)
 
         memory = self._memory_bytes_for(obj)
 
-        # Emit download event before load. Aggregate all per-file HF Hub records
-        # into a single event grouped by repo_id.
+        # Emit one download event per repo_id, aggregating per-file records.
         if downloads:
             repos: dict[str, list[dict]] = {}
             for rec in downloads:
@@ -458,10 +568,10 @@ class WildEdge:
 
         handle = self.register_model(obj)
 
-        # If an OTel auto-patch already registered and tracked this model's load
+        # If an auto-patch already registered and tracked this model's load
         # (e.g. the user called client.load(Llama, ...) despite the patch being
         # active), skip the duplicate tracking.
-        if handle.model_id in self._auto_loaded:
+        if handle.model_id in self.auto_loaded:
             return obj
 
         memory = self._memory_bytes_for(obj)

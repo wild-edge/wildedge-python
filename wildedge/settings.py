@@ -11,6 +11,7 @@ RUN_APP_VERSION_ENV = "WILDEDGE_RUN_APP_VERSION"
 RUN_DEBUG_ENV = "WILDEDGE_RUN_DEBUG"
 RUN_FLUSH_TIMEOUT_ENV = "WILDEDGE_RUN_FLUSH_TIMEOUT"
 RUN_INTEGRATIONS_ENV = "WILDEDGE_RUN_INTEGRATIONS"
+RUN_HUBS_ENV = "WILDEDGE_RUN_HUBS"
 RUN_STRICT_INTEGRATIONS_ENV = "WILDEDGE_RUN_STRICT_INTEGRATIONS"
 RUN_PROPAGATE_ENV = "WILDEDGE_RUN_PROPAGATE"
 RUN_PRINT_STARTUP_REPORT_ENV = "WILDEDGE_RUN_PRINT_STARTUP_REPORT"
@@ -34,6 +35,7 @@ class RuntimeEnv:
     strict_integrations: bool
     flush_timeout: float
     integrations: list[str]
+    hubs: list[str]
     propagate: bool
 
 
@@ -48,7 +50,17 @@ def parse_bool(value: str | None) -> bool:
 
 
 def parse_integration_list(value: str | None, all_values: list[str]) -> list[str]:
+    """Parse ``--integrations`` value; defaults to all when unset."""
     if not value or value == "all":
+        return sorted(all_values)
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def parse_hub_list(value: str | None, all_values: list[str]) -> list[str]:
+    """Parse ``--hubs`` value; defaults to empty when unset."""
+    if not value or value == "none":
+        return []
+    if value == "all":
         return sorted(all_values)
     return [item.strip() for item in value.split(",") if item.strip()]
 
@@ -86,6 +98,7 @@ def read_client_env(
 def read_runtime_env(
     *,
     all_integrations: list[str],
+    all_hubs: list[str],
     environ: Mapping[str, str] | None = None,
 ) -> RuntimeEnv:
     env = environ if environ is not None else os.environ
@@ -105,6 +118,7 @@ def read_runtime_env(
         integrations=parse_integration_list(
             env.get(RUN_INTEGRATIONS_ENV), all_integrations
         ),
+        hubs=parse_hub_list(env.get(RUN_HUBS_ENV), all_hubs),
         propagate=parse_bool(env.get(RUN_PROPAGATE_ENV, "1")),
     )
 

@@ -18,11 +18,10 @@ def test_register_model_fallback_requires_id_when_no_extractor(
             client.register_model(object())
 
 
-def test_on_model_auto_loaded_uses_hf_records_when_downloads_missing(
+def test_on_model_auto_loaded_uses_hub_records_when_downloads_missing(
     client_with_stubbed_runtime, dummy_handle
 ):
     client = client_with_stubbed_runtime
-    client._hf_instrumented = True
 
     records = [
         {
@@ -37,7 +36,7 @@ def test_on_model_auto_loaded_uses_hf_records_when_downloads_missing(
     ]
 
     with (
-        patch("wildedge.client.drain_downloads", return_value=records),
+        patch.object(client, "_drain_hub_trackers", return_value=records),
         patch.object(client, "register_model", return_value=dummy_handle),
     ):
         client._on_model_auto_loaded(DummyModel(), load_ms=5)
@@ -101,7 +100,7 @@ def test_load_skips_duplicate_track_load_for_auto_loaded_model(
 ):
     client = client_with_stubbed_runtime
     dummy_handle.model_id = "dup-model"
-    client._auto_loaded.add("dup-model")
+    client.auto_loaded.add("dup-model")
 
     with patch.object(client, "register_model", return_value=dummy_handle):
         client.load(DummyModel)

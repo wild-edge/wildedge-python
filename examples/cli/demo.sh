@@ -14,8 +14,8 @@ cd "${PROJECT_DIR}"
 
 uv sync
 
-uv run wildedge doctor --integrations timm
+uv run wildedge doctor --integrations timm --hubs huggingface,torchhub
 
 uv run wildedge run \
-  --print-startup-report --integrations timm -- \
+  --print-startup-report --integrations timm --hubs huggingface,torchhub -- \
   "${EXAMPLE_SCRIPT}"

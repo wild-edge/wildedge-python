@@ -1,11 +1,17 @@
-"""Integration registry metadata shared across SDK components."""
+"""Framework integration registry.
+
+Contains only ML *framework* integrations (inference tracking, load/unload
+timing).  Model hub and repository trackers (download provenance) live in
+``wildedge.hubs.registry`` — they are orthogonal concerns with different
+activation semantics.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
 
-IntegrationKind = Literal["noop", "client_patch", "global_patch"]
+IntegrationKind = Literal["noop", "client_patch"]
 
 
 @dataclass(frozen=True)
@@ -24,7 +30,6 @@ INTEGRATION_SPECS: tuple[IntegrationSpec, ...] = (
     IntegrationSpec("torch", ("torch",), "noop"),
     IntegrationSpec("keras", ("keras",), "noop"),
     IntegrationSpec("tensorflow", ("tensorflow",), "client_patch"),
-    IntegrationSpec("huggingface", ("huggingface_hub",), "global_patch"),
 )
 
 INTEGRATIONS_BY_NAME: dict[str, IntegrationSpec] = {
