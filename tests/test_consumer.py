@@ -335,3 +335,81 @@ class TestConsumerFlush:
         consumer = self._make_consumer(queue, mock_transmitter)
         assert registered["fn"] == consumer.flush
         assert registered["args"] == (constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,)
+
+
+class TestConsumerForkSafety:
+    def setup_method(self):
+        self._consumers: list[Consumer] = []
+
+    def teardown_method(self):
+        for c in self._consumers:
+            c.stop()
+
+    def _make_consumer(self, queue, transmitter, **kwargs) -> Consumer:
+        c = Consumer(
+            queue=queue,
+            transmitter=transmitter,
+            device=DeviceInfo(app_version="1.0", device_id="d", device_type="linux"),
+            get_models=lambda: {},
+            session_id="sess-fork",
+            **kwargs,
+        )
+        self._consumers.append(c)
+        return c
+
+    def test_before_fork_stops_thread(self, monkeypatch):
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        queue = EventQueue(max_size=100)
+        mock_tx = MagicMock(spec=Transmitter)
+        consumer = self._make_consumer(queue, mock_tx)
+
+        original_thread = consumer.thread
+        consumer._before_fork()
+
+        assert consumer.stop_event.is_set()
+        assert not original_thread.is_alive()
+        # stopped is reset to False so _restart() can start a new thread
+        assert consumer.stopped is False
+
+    def test_restart_creates_fresh_thread(self, monkeypatch):
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        queue = EventQueue(max_size=100)
+        mock_tx = MagicMock(spec=Transmitter)
+        consumer = self._make_consumer(queue, mock_tx)
+
+        original_thread = consumer.thread
+        consumer._before_fork()
+        consumer._restart()
+
+        assert consumer.thread is not original_thread
+        # thread was started (ident is set) even though the no-op run() exits fast
+        assert consumer.thread.ident is not None
+        assert not consumer.stop_event.is_set()
+
+    def test_restart_resets_backoff_and_snapshot(self, monkeypatch):
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        queue = EventQueue(max_size=100)
+        mock_tx = MagicMock(spec=Transmitter)
+        consumer = self._make_consumer(queue, mock_tx)
+
+        consumer.backoff = constants.BACKOFF_MAX
+        consumer._held_snapshot = ([], {})
+
+        consumer._before_fork()
+        consumer._restart()
+
+        assert consumer.backoff == constants.BACKOFF_MIN
+        assert consumer._held_snapshot is None
+
+    def test_flush_is_noop_after_before_fork_before_restart(self, monkeypatch):
+        """flush() on a pre-fork-stopped consumer with empty queue returns immediately."""
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        queue = EventQueue(max_size=100)
+        mock_tx = MagicMock(spec=Transmitter)
+        consumer = self._make_consumer(queue, mock_tx)
+
+        consumer._before_fork()
+        # stopped is False (reset by _before_fork) and queue is empty, so flush
+        # calls drain_once which returns False immediately — no transmit calls.
+        consumer.flush(timeout=0.1)
+        mock_tx.send.assert_not_called()

@@ -101,7 +101,7 @@ def format_startup_report(context: RuntimeContext) -> str:
     return "\n".join(lines)
 
 
-def install_runtime() -> RuntimeContext:
+def install_runtime(*, install_signal_handlers: bool = True) -> RuntimeContext:
     """Create and configure WildEdge client for process-level instrumentation."""
     try:
         env = read_runtime_env(
@@ -220,12 +220,15 @@ def install_runtime() -> RuntimeContext:
         integration_statuses=statuses,
     )
     atexit.register(context.shutdown)
+    client._register_at_fork()
 
-    def _handle(sig_num, _frame):  # type: ignore[no-untyped-def]
-        context.shutdown()
-        raise SystemExit(128 + sig_num)
+    if install_signal_handlers:
 
-    for sig in SUPPORTED_SIGNALS:
-        signal.signal(sig, _handle)
+        def _handle(sig_num, _frame):  # type: ignore[no-untyped-def]
+            context.shutdown()
+            raise SystemExit(128 + sig_num)
+
+        for sig in SUPPORTED_SIGNALS:
+            signal.signal(sig, _handle)
 
     return context

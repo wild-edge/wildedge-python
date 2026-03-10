@@ -32,6 +32,9 @@ ERROR_MSG_MAX_LEN = 200
 DEVICE_ID_DIR = "wildedge"
 DEVICE_ID_FILE = "device_id"
 
+# Autoload guard (prevents double-init when sitecustomize.py is inherited by child processes)
+WILDEDGE_AUTOLOAD_ACTIVE = "WILDEDGE_AUTOLOAD_ACTIVE"
+
 # Runtime validation limits
 BATCH_SIZE_MIN = 1
 BATCH_SIZE_MAX = 100

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-from types import SimpleNamespace
 
 import pytest
 
@@ -12,16 +11,20 @@ from wildedge.runtime import bootstrap
 from wildedge.runtime import runner as runtime_runner
 
 
-def test_cli_run_script_invokes_runner(monkeypatch):
-    captured = {}
+def _fake_execle(captured: dict):
+    def _execle(path, *args):  # type: ignore[no-untyped-def]
+        # Last positional arg is the env dict (os.execle convention).
+        captured["path"] = path
+        captured["argv"] = list(args[:-1])
+        captured["env"] = args[-1]
 
-    def fake_run(cmd, env, check):  # type: ignore[no-untyped-def]
-        captured["cmd"] = cmd
-        captured["env"] = env
-        captured["check"] = check
-        return SimpleNamespace(returncode=0)
+    return _execle
 
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+def test_cli_run_execs_command_with_env(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
     rc = cli.main(
         [
@@ -32,24 +35,16 @@ def test_cli_run_script_invokes_runner(monkeypatch):
             "1.2.3",
             "--debug",
             "--",
-            "python",
-            "app.py",
-            "--foo",
-            "bar",
+            "gunicorn",
+            "myapp.wsgi:app",
+            "--workers",
+            "4",
         ]
     )
 
     assert rc == 0
-    assert captured["cmd"][1:8] == [
-        "-m",
-        "wildedge.runtime.runner",
-        "--mode",
-        "script",
-        "--target",
-        "app.py",
-        "--",
-    ]
-    assert captured["cmd"][8:] == ["--foo", "bar"]
+    assert captured["path"] == "/usr/bin/gunicorn"
+    assert captured["argv"] == ["/usr/bin/gunicorn", "myapp.wsgi:app", "--workers", "4"]
     assert (
         captured["env"][bootstrap.RUN_DSN_ENV]
         == "https://secret@ingest.wildedge.dev/key"
@@ -64,16 +59,34 @@ def test_cli_run_script_invokes_runner(monkeypatch):
     )
 
 
+def test_cli_run_prepends_autoload_to_pythonpath(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+
+    cli.main(["run", "--", "gunicorn", "myapp.wsgi:app"])
+
+    autoload_dir = str(cli.Path(__file__).parent.parent / "wildedge" / "autoload")
+    assert captured["env"]["PYTHONPATH"] == autoload_dir
+
+
+def test_cli_run_preserves_existing_pythonpath(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+    monkeypatch.setenv("PYTHONPATH", "/existing/path")
+
+    cli.main(["run", "--", "gunicorn", "myapp.wsgi:app"])
+
+    pythonpath = captured["env"]["PYTHONPATH"]
+    assert pythonpath.endswith(os.pathsep + "/existing/path")
+
+
 def test_cli_run_sets_no_propagate_and_strict(monkeypatch):
-    captured = {}
-
-    def fake_run(cmd, env, check):  # type: ignore[no-untyped-def]
-        captured["cmd"] = cmd
-        captured["env"] = env
-        captured["check"] = check
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
     rc = cli.main(
         [
@@ -81,45 +94,51 @@ def test_cli_run_sets_no_propagate_and_strict(monkeypatch):
             "--strict-integrations",
             "--no-propagate",
             "--",
-            "python",
-            "-m",
-            "pkg.main",
-            "--foo",
+            "gunicorn",
+            "myapp.wsgi:app",
         ]
     )
 
     assert rc == 0
-    assert captured["cmd"][1:8] == [
-        "-m",
-        "wildedge.runtime.runner",
-        "--mode",
-        "module",
-        "--target",
-        "pkg.main",
-        "--",
-    ]
     assert captured["env"][bootstrap.RUN_PROPAGATE_ENV] == "0"
     assert captured["env"][bootstrap.RUN_STRICT_INTEGRATIONS_ENV] == "1"
 
 
 def test_cli_run_sets_print_startup_report(monkeypatch):
-    captured = {}
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
-    def fake_run(cmd, env, check):  # type: ignore[no-untyped-def]
-        captured["env"] = env
-        return SimpleNamespace(returncode=0)
+    rc = cli.main(["run", "--print-startup-report", "--", "gunicorn", "myapp.wsgi:app"])
 
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
-    rc = cli.main(["run", "--print-startup-report", "--", "python", "app.py"])
     assert rc == 0
     assert captured["env"][bootstrap.RUN_PRINT_STARTUP_REPORT_ENV] == "1"
 
 
-def test_cli_rejects_non_python_command(capsys):
-    rc = cli.main(["run", "--", "bash", "script.sh"])
-    captured = capsys.readouterr()
-    assert rc == 2
-    assert "unsupported command format" in captured.err
+def test_cli_run_returns_127_for_missing_command(capsys, monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(cli.Path, "is_file", lambda self: False)
+    rc = cli.main(["run", "--", "nonexistent-command"])
+    assert rc == 127
+    assert "command not found" in capsys.readouterr().err
+
+
+def test_cli_run_wraps_python_script_with_interpreter(monkeypatch, tmp_path):
+    script = tmp_path / "app.py"
+    script.write_text("pass")
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda cmd: None if cmd.endswith(".py") else f"/usr/bin/{cmd}",
+    )
+
+    rc = cli.main(["run", "--", str(script)])
+
+    assert rc == 0
+    assert captured["argv"][1] == str(script)
+    assert "python" in captured["path"].lower()
 
 
 def test_install_runtime_requires_dsn(monkeypatch):
@@ -143,6 +162,9 @@ def test_install_runtime_default_flush_timeout_is_shutdown_budget(monkeypatch):
             pass
 
         def close(self):  # type: ignore[no-untyped-def]
+            pass
+
+        def _register_at_fork(self):  # type: ignore[no-untyped-def]
             pass
 
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
@@ -177,6 +199,9 @@ def test_install_runtime_instruments_requested_integrations(monkeypatch):
         def close(self):  # type: ignore[no-untyped-def]
             events.append(("close", ""))
 
+        def _register_at_fork(self):  # type: ignore[no-untyped-def]
+            pass
+
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
     monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
     monkeypatch.setenv(bootstrap.RUN_APP_VERSION_ENV, "2.0.0")
@@ -204,6 +229,9 @@ def test_install_runtime_strict_integrations_raises(monkeypatch):
 
         def instrument(self, name):  # type: ignore[no-untyped-def]
             raise RuntimeError("boom")
+
+        def _register_at_fork(self):  # type: ignore[no-untyped-def]
+            pass
 
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
     monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
@@ -359,6 +387,9 @@ def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
             pass
 
         def close(self):  # type: ignore[no-untyped-def]
+            pass
+
+        def _register_at_fork(self):  # type: ignore[no-untyped-def]
             pass
 
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)

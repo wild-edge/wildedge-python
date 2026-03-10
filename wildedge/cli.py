@@ -7,8 +7,8 @@ import importlib.util
 import json
 import os
 import platform
+import shutil
 import socket
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "command_args",
         nargs=argparse.REMAINDER,
-        help="Python command to run, e.g. -- python app.py or -- python -m pkg.module",
+        help="Command to run, e.g. -- gunicorn myapp.wsgi:app or -- python app.py",
     )
 
     doctor = sub.add_parser("doctor", help="Validate local WildEdge runtime readiness.")
@@ -198,48 +198,35 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def is_python_executable(token: str) -> bool:
-    name = Path(token).name.lower()
-    return name.startswith("python")
-
-
-def parse_python_command(tokens: list[str]) -> tuple[str, str, str, list[str]]:
-    if not tokens:
-        raise ValueError("missing command after `wildedge run --`")
-
+def parse_run_args(tokens: list[str]) -> tuple[str, list[str]]:
     args = list(tokens)
-    if args[0] == "--":
+    if args and args[0] == "--":
         args = args[1:]
     if not args:
-        raise ValueError("missing python command after `--`")
-
-    python_exe = sys.executable
-    if is_python_executable(args[0]):
-        python_exe = args.pop(0)
-
-    if not args:
-        raise ValueError("missing script path or -m <module>")
-
-    if args[0] == "-m":
-        if len(args) < 2:
-            raise ValueError("`-m` requires a module name")
-        return python_exe, "module", args[1], args[2:]
-
-    target = args[0]
-    if target.endswith(".py"):
-        return python_exe, "script", target, args[1:]
-
-    raise ValueError(
-        "unsupported command format; use `python script.py ...` or `python -m module ...`"
-    )
+        raise ValueError(
+            "missing command after `wildedge run`; "
+            "use: wildedge run -- gunicorn myapp.wsgi:app"
+        )
+    return args[0], args[1:]
 
 
 def run_command(parsed: argparse.Namespace) -> int:
     try:
-        python_exe, mode, target, args = parse_python_command(parsed.command_args)
+        executable, exec_args = parse_run_args(parsed.command_args)
     except ValueError as exc:
         print(f"wildedge: {exc}", file=sys.stderr)
         return 2
+
+    resolved = shutil.which(executable)
+    if resolved is None:
+        # If it's an existing file (e.g. a .py script passed directly), run it
+        # with the current Python interpreter.
+        if Path(executable).is_file():
+            exec_args = [executable, *exec_args]
+            resolved = sys.executable
+        else:
+            print(f"wildedge: command not found: {executable!r}", file=sys.stderr)
+            return 127
 
     env = os.environ.copy()
     if parsed.dsn:
@@ -255,19 +242,18 @@ def run_command(parsed: argparse.Namespace) -> int:
     env[RUN_STRICT_INTEGRATIONS_ENV] = "1" if parsed.strict_integrations else "0"
     env[RUN_PRINT_STARTUP_REPORT_ENV] = "1" if parsed.print_startup_report else "0"
 
-    cmd = [
-        python_exe,
-        "-m",
-        "wildedge.runtime.runner",
-        "--mode",
-        mode,
-        "--target",
-        target,
-        "--",
-        *args,
-    ]
-    completed = subprocess.run(cmd, env=env, check=False)
-    return completed.returncode
+    # Prepend the autoload dir to PYTHONPATH so Python's import machinery picks
+    # up sitecustomize.py before any user code, wiring in the SDK automatically.
+    autoload_dir = str(Path(__file__).parent / "autoload")
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{autoload_dir}{os.pathsep}{existing}" if existing else autoload_dir
+    )
+
+    # Replace the current process image with the target command.
+    # The autoload sitecustomize.py runs inside the new process at startup.
+    os.execle(resolved, resolved, *exec_args, env)
+    return 0  # unreachable
 
 
 def integration_list(value: str | None) -> list[str]:

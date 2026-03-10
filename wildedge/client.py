@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import uuid
 import weakref
@@ -228,6 +229,24 @@ class WildEdge:
 
         if debug:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)
+
+    def _register_at_fork(self) -> None:
+        """Register os.register_at_fork() hooks for fork-safe operation.
+
+        Stops the consumer thread before fork() so no wildedge threads are
+        alive at fork time (avoids lock-inheritance deadlocks). Restarts a
+        fresh thread in both parent and child after the fork.
+
+        No-op on Windows where os.register_at_fork is not available.
+        """
+        if not hasattr(os, "register_at_fork"):
+            return
+        consumer = self.consumer
+        os.register_at_fork(
+            before=consumer._before_fork,
+            after_in_child=consumer._restart,
+            after_in_parent=consumer._restart,
+        )
 
     def publish(self, event_dict: dict) -> None:
         if self.closed:
