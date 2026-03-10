@@ -32,6 +32,7 @@ from wildedge.paths import (
     default_pending_queue_dir,
 )
 from wildedge.queue import EventQueue, QueuePolicy
+from wildedge.reservoir import ReservoirRegistry
 from wildedge.settings import read_client_env, resolve_app_identity
 from wildedge.timing import Timer, elapsed_ms
 from wildedge.transmitter import Transmitter
@@ -136,6 +137,11 @@ class WildEdge:
         dead_letter_dir: str | None = None,
         max_dead_letter_batches: int = constants.DEFAULT_MAX_DEAD_LETTER_BATCHES,
         on_delivery_failure: Callable[[str, int, int], None] | None = None,
+        reservoir_size: int = constants.DEFAULT_RESERVOIR_SIZE,
+        low_confidence_threshold: float = constants.DEFAULT_LOW_CONFIDENCE_THRESHOLD,
+        high_entropy_threshold: float = constants.DEFAULT_HIGH_ENTROPY_THRESHOLD,
+        low_confidence_slots_pct: float = constants.DEFAULT_LOW_CONFIDENCE_SLOTS_PCT,
+        priority_fn: Callable[[dict], bool] | None = None,
     ):
         env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
         dsn = env.dsn
@@ -208,6 +214,13 @@ class WildEdge:
             directory=resolved_dead_letter_dir,
             max_batches=max_dead_letter_batches,
         )
+        self.reservoir_registry = ReservoirRegistry(
+            reservoir_size=reservoir_size,
+            low_confidence_threshold=low_confidence_threshold,
+            high_entropy_threshold=high_entropy_threshold,
+            low_confidence_slots_pct=low_confidence_slots_pct,
+            priority_fn=priority_fn,
+        )
         self.consumer = Consumer(
             queue=self.queue,
             transmitter=self.transmitter,
@@ -220,6 +233,7 @@ class WildEdge:
             max_event_age_sec=max_event_age_sec,
             dead_letter_store=self.dead_letter_store,
             on_delivery_failure=on_delivery_failure,
+            reservoir_registry=self.reservoir_registry,
         )
 
         self.auto_loaded: set[str] = set()
@@ -247,9 +261,14 @@ class WildEdge:
                 event_dict.get("event_type"),
                 event_dict.get("model_id"),
             )
-        event_dict.setdefault("__we_first_queued_at", time.time())
-        event_dict.setdefault("__we_attempts", 0)
-        self.queue.add(event_dict)
+
+        if event_dict.get("event_type") == "inference":
+            model_id = event_dict.get("model_id", "")
+            self.reservoir_registry.get_or_create(model_id).add(event_dict)
+        else:
+            event_dict.setdefault("__we_first_queued_at", time.time())
+            event_dict.setdefault("__we_attempts", 0)
+            self.queue.add(event_dict)
 
     def register_model(
         self,

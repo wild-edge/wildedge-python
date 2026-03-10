@@ -44,6 +44,11 @@ WILDEDGE_AUTOLOAD = (
     "WILDEDGE_AUTOLOAD"  # set to "1" by `wildedge run` to activate sitecustomize
 )
 WILDEDGE_AUTOLOAD_ACTIVE = "WILDEDGE_AUTOLOAD_ACTIVE"  # guard against double-init
+# Reservoir sampling
+DEFAULT_RESERVOIR_SIZE = 200
+DEFAULT_LOW_CONFIDENCE_THRESHOLD = 0.5
+DEFAULT_HIGH_ENTROPY_THRESHOLD = 2.0
+DEFAULT_LOW_CONFIDENCE_SLOTS_PCT = 0.20
 
 # Runtime validation limits
 BATCH_SIZE_MIN = 1
