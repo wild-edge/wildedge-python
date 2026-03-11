@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 import shutil
 import sys
 from pathlib import Path
@@ -21,6 +22,13 @@ class UnknownPlatform:
 
     def device_model(self) -> str | None:
         return None
+
+    def os_version(self) -> str | None:
+        try:
+            return platform.version() or None
+        except Exception as exc:
+            debug_detection_failure("unknown os_version", exc)
+            return None
 
     def ram_bytes(self) -> int | None:
         return None

@@ -53,6 +53,14 @@ class MacOSPlatform:
             debug_detection_failure("macos disk_bytes", exc)
             return None
 
+    def os_version(self) -> str | None:
+        try:
+            ver = platform.mac_ver()[0]
+            return ver or None
+        except Exception as exc:
+            debug_detection_failure("macos os_version", exc)
+            return None
+
     def gpu_accelerators(self) -> tuple[list[str], str | None]:
         if platform.machine() == "arm64":
             return ["mps"], None

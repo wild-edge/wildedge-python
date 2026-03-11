@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 from pathlib import Path
 
@@ -36,6 +37,20 @@ class LinuxPlatform:
             except Exception as exc:
                 debug_detection_failure(f"linux device_model ({path})", exc)
         return None
+
+    def os_version(self) -> str | None:
+        try:
+            path = Path("/etc/os-release")
+            if path.exists():
+                for line in path.read_text().splitlines():
+                    if line.startswith("PRETTY_NAME="):
+                        return line.split("=", 1)[1].strip().strip('"') or None
+        except Exception as exc:
+            debug_detection_failure("linux os_version", exc)
+        try:
+            return platform.version() or None
+        except Exception:
+            return None
 
     def ram_bytes(self) -> int | None:
         try:
