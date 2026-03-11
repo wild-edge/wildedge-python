@@ -1,6 +1,5 @@
 """Shared fixtures for the WildEdge SDK test suite."""
 
-import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -9,12 +8,6 @@ import pytest
 from wildedge.client import WildEdge
 from wildedge.device import DeviceInfo
 from wildedge.model import ModelInfo
-
-requires_linux = pytest.mark.skipif(sys.platform != "linux", reason="linux-only test")
-requires_macos = pytest.mark.skipif(sys.platform != "darwin", reason="macos-only test")
-requires_windows = pytest.mark.skipif(
-    sys.platform != "win32", reason="windows-only test"
-)
 
 
 @pytest.fixture

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import platform
 import shutil
 from pathlib import Path
 
@@ -42,6 +43,13 @@ class WindowsPlatform:
             return str(model).strip() or None
         except Exception as exc:
             debug_detection_failure("windows device_model", exc)
+            return None
+
+    def os_version(self) -> str | None:
+        try:
+            return platform.version() or None
+        except Exception as exc:
+            debug_detection_failure("windows os_version", exc)
             return None
 
     def ram_bytes(self) -> int | None:

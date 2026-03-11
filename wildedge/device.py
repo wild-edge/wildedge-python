@@ -156,7 +156,7 @@ def detect_device(
         device_id=device_id,
         device_type=CURRENT_PLATFORM.wire_type,
         device_model=CURRENT_PLATFORM.device_model(),
-        os_version=platform.version(),
+        os_version=CURRENT_PLATFORM.os_version(),
         locale=detect_locale(),
         timezone=detect_timezone(),
         cpu_arch=platform.machine() or None,
