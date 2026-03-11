@@ -48,3 +48,5 @@ with torch.inference_mode():
         print(
             f"run {i + 1}: confidence={confidence:.3f} → {handle.last_inference_id[:8]}..."
         )
+
+client.close()

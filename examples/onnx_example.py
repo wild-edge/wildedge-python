@@ -25,3 +25,5 @@ batch = np.random.randn(4, 3, 224, 224).astype(np.float32)
 for _ in range(3):
     outputs = session.run(None, {"pixel_values": batch})
     print("output shape:", outputs[0].shape)
+
+client.close()

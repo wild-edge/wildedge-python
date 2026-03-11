@@ -9,6 +9,7 @@ from wildedge import cli, constants
 from wildedge.integrations.registry import IntegrationSpec
 from wildedge.runtime import bootstrap
 from wildedge.runtime import runner as runtime_runner
+from wildedge.settings import read_runtime_env
 
 
 def _fake_execle(captured: dict):
@@ -55,7 +56,7 @@ def test_cli_run_execs_command_with_env(monkeypatch):
     assert captured["env"][constants.ENV_STRICT_INTEGRATIONS] == "0"
     assert captured["env"][constants.ENV_PRINT_STARTUP_REPORT] == "0"
     assert captured["env"][constants.ENV_FLUSH_TIMEOUT] == str(
-        constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
+        constants.DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC
     )
 
 
@@ -148,7 +149,7 @@ def test_install_runtime_requires_dsn(monkeypatch):
         bootstrap.install_runtime()
 
 
-def test_install_runtime_default_flush_timeout_is_shutdown_budget(monkeypatch):
+def test_install_runtime_default_flush_timeout_is_runtime_budget(monkeypatch):
     class FakeWildEdge:
         SUPPORTED_INTEGRATIONS = {"onnx"}
 
@@ -171,7 +172,7 @@ def test_install_runtime_default_flush_timeout_is_shutdown_budget(monkeypatch):
 
     context = bootstrap.install_runtime()
     try:
-        assert context.flush_timeout == constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
+        assert context.flush_timeout == constants.DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC
     finally:
         context.shutdown()
 
@@ -471,3 +472,42 @@ def test_parse_run_args_only_double_dash_raises():
     """['--'] with nothing after raises ValueError."""
     with pytest.raises(ValueError, match="missing command"):
         cli.parse_run_args(["--"])
+
+
+def test_cli_run_default_flush_timeout_is_nonzero(monkeypatch):
+    """CLI must pass a non-zero flush timeout so reservoir events are sent at shutdown."""
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+
+    cli.main(["run", "--", "gunicorn", "myapp.wsgi:app"])
+
+    flush_timeout = float(captured["env"][constants.ENV_FLUSH_TIMEOUT])
+    assert flush_timeout > 0, (
+        "flush timeout must be > 0 so reservoir inference events are flushed at shutdown"
+    )
+    assert flush_timeout == constants.DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC
+
+
+def test_cli_run_flush_timeout_override(monkeypatch):
+    """--flush-timeout arg is forwarded to child process."""
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+
+    cli.main(["run", "--flush-timeout", "10.0", "--", "gunicorn", "myapp.wsgi:app"])
+
+    assert captured["env"][constants.ENV_FLUSH_TIMEOUT] == "10.0"
+
+
+def test_read_runtime_env_default_flush_timeout_is_nonzero():
+    """read_runtime_env must default to a non-zero flush timeout when env var is absent."""
+    env = {constants.ENV_DSN: "https://secret@ingest.wildedge.dev/key"}
+    result = read_runtime_env(all_integrations=[], all_hubs=[], environ=env)
+    assert result.flush_timeout > 0
+    assert result.flush_timeout == constants.DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC
+
+
+def test_runtime_flush_timeout_constant_is_nonzero():
+    """Guard: DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC must stay > 0."""
+    assert constants.DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC > 0

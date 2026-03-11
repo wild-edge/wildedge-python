@@ -33,3 +33,5 @@ for prompt in prompts:
     result = llm(prompt, max_tokens=128, temperature=0.7)
     text = result["choices"][0]["text"].strip()
     print(f"Q: {prompt}\nA: {text}\n")
+
+client.close()
