@@ -6,16 +6,6 @@ from dataclasses import dataclass
 
 from wildedge import constants
 
-RUN_DSN_ENV = "WILDEDGE_RUN_DSN"
-RUN_APP_VERSION_ENV = "WILDEDGE_RUN_APP_VERSION"
-RUN_DEBUG_ENV = "WILDEDGE_RUN_DEBUG"
-RUN_FLUSH_TIMEOUT_ENV = "WILDEDGE_RUN_FLUSH_TIMEOUT"
-RUN_INTEGRATIONS_ENV = "WILDEDGE_RUN_INTEGRATIONS"
-RUN_HUBS_ENV = "WILDEDGE_RUN_HUBS"
-RUN_STRICT_INTEGRATIONS_ENV = "WILDEDGE_RUN_STRICT_INTEGRATIONS"
-RUN_PROPAGATE_ENV = "WILDEDGE_RUN_PROPAGATE"
-RUN_PRINT_STARTUP_REPORT_ENV = "WILDEDGE_RUN_PRINT_STARTUP_REPORT"
-
 TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -104,22 +94,22 @@ def read_runtime_env(
     env = environ if environ is not None else os.environ
     flush_timeout = float(
         env.get(
-            RUN_FLUSH_TIMEOUT_ENV,
+            constants.ENV_FLUSH_TIMEOUT,
             str(constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC),
         )
     )
     return RuntimeEnv(
-        dsn=env.get(RUN_DSN_ENV) or env.get(constants.ENV_DSN),
-        app_version=env.get(RUN_APP_VERSION_ENV),
-        debug=parse_bool(env.get(RUN_DEBUG_ENV)),
-        print_startup_report=parse_bool(env.get(RUN_PRINT_STARTUP_REPORT_ENV)),
-        strict_integrations=parse_bool(env.get(RUN_STRICT_INTEGRATIONS_ENV)),
+        dsn=env.get(constants.ENV_DSN),
+        app_version=env.get(constants.ENV_APP_VERSION),
+        debug=parse_bool(env.get(constants.ENV_DEBUG)),
+        print_startup_report=parse_bool(env.get(constants.ENV_PRINT_STARTUP_REPORT)),
+        strict_integrations=parse_bool(env.get(constants.ENV_STRICT_INTEGRATIONS)),
         flush_timeout=flush_timeout,
         integrations=parse_integration_list(
-            env.get(RUN_INTEGRATIONS_ENV), all_integrations
+            env.get(constants.ENV_INTEGRATIONS), all_integrations
         ),
-        hubs=parse_hub_list(env.get(RUN_HUBS_ENV), all_hubs),
-        propagate=parse_bool(env.get(RUN_PROPAGATE_ENV, "1")),
+        hubs=parse_hub_list(env.get(constants.ENV_HUBS), all_hubs),
+        propagate=parse_bool(env.get(constants.ENV_PROPAGATE, "1")),
     )
 
 
@@ -129,6 +119,6 @@ def read_runner_env(
 ) -> RunnerEnv:
     env = environ if environ is not None else os.environ
     return RunnerEnv(
-        print_startup_report=parse_bool(env.get(RUN_PRINT_STARTUP_REPORT_ENV)),
-        propagate=parse_bool(env.get(RUN_PROPAGATE_ENV, "1")),
+        print_startup_report=parse_bool(env.get(constants.ENV_PRINT_STARTUP_REPORT)),
+        propagate=parse_bool(env.get(constants.ENV_PROPAGATE, "1")),
     )

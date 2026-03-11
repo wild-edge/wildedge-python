@@ -234,24 +234,24 @@ class Consumer:
             )
             time.sleep(sleep_for)
 
-    def _before_fork(self) -> None:
+    def _pause(self) -> None:
         """Stop the consumer thread before a fork().
 
-        Called by os.register_at_fork(before=...) hooks. Stops the background
-        thread so no wildedge threads are alive at fork time, avoiding the
-        classic "thread holding a lock" deadlock in forked children.
+        Called by os.register_at_fork(before=...). Stops the background thread
+        so no wildedge threads are alive at fork time, avoiding lock-inheritance
+        deadlocks in forked children.
         """
         self.stop_event.set()
         self.thread.join(timeout=1.0)
-        # Reset so _restart() can start a fresh thread in parent and child.
+        # Reset so _resume() can start a fresh thread in parent and child.
         self.stopped = False
 
-    def _restart(self) -> None:
+    def _resume(self) -> None:
         """Start a fresh consumer thread after a fork().
 
-        Called by os.register_at_fork(after_in_child=...) and
-        after_in_parent=... hooks. Creates a brand-new Event and Thread so
-        the child (and parent) each get an independent consumer.
+        Called by os.register_at_fork(after_in_child=...) and after_in_parent=...
+        Creates a new Event and Thread so parent and child each get an
+        independent consumer.
         """
         self.stop_event = threading.Event()
         self.backoff = constants.BACKOFF_MIN

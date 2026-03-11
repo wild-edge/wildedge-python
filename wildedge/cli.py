@@ -20,17 +20,7 @@ from wildedge.device import get_device_id_path
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
-from wildedge.runtime.bootstrap import (
-    RUN_APP_VERSION_ENV,
-    RUN_DEBUG_ENV,
-    RUN_DSN_ENV,
-    RUN_FLUSH_TIMEOUT_ENV,
-    RUN_INTEGRATIONS_ENV,
-    RUN_PRINT_STARTUP_REPORT_ENV,
-    RUN_PROPAGATE_ENV,
-    RUN_STRICT_INTEGRATIONS_ENV,
-)
-from wildedge.settings import RUN_HUBS_ENV, read_client_env, resolve_app_identity
+from wildedge.settings import read_client_env, resolve_app_identity
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -229,18 +219,21 @@ def run_command(parsed: argparse.Namespace) -> int:
             return 127
 
     env = os.environ.copy()
+    env[constants.WILDEDGE_AUTOLOAD] = "1"
     if parsed.dsn:
-        env[RUN_DSN_ENV] = parsed.dsn
+        env[constants.ENV_DSN] = parsed.dsn
     if parsed.app_version:
-        env[RUN_APP_VERSION_ENV] = parsed.app_version
+        env[constants.ENV_APP_VERSION] = parsed.app_version
     if parsed.debug:
-        env[RUN_DEBUG_ENV] = "1"
-    env[RUN_INTEGRATIONS_ENV] = parsed.integrations
-    env[RUN_HUBS_ENV] = parsed.hubs
-    env[RUN_FLUSH_TIMEOUT_ENV] = str(parsed.flush_timeout)
-    env[RUN_PROPAGATE_ENV] = "1" if parsed.propagate else "0"
-    env[RUN_STRICT_INTEGRATIONS_ENV] = "1" if parsed.strict_integrations else "0"
-    env[RUN_PRINT_STARTUP_REPORT_ENV] = "1" if parsed.print_startup_report else "0"
+        env[constants.ENV_DEBUG] = "1"
+    env[constants.ENV_INTEGRATIONS] = parsed.integrations
+    env[constants.ENV_HUBS] = parsed.hubs
+    env[constants.ENV_FLUSH_TIMEOUT] = str(parsed.flush_timeout)
+    env[constants.ENV_PROPAGATE] = "1" if parsed.propagate else "0"
+    env[constants.ENV_STRICT_INTEGRATIONS] = "1" if parsed.strict_integrations else "0"
+    env[constants.ENV_PRINT_STARTUP_REPORT] = (
+        "1" if parsed.print_startup_report else "0"
+    )
 
     # Prepend the autoload dir to PYTHONPATH so Python's import machinery picks
     # up sitecustomize.py before any user code, wiring in the SDK automatically.

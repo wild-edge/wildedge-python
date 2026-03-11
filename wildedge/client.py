@@ -227,26 +227,15 @@ class WildEdge:
         # when instrument() is called with a hub name.
         self.hub_trackers: dict[str, BaseHubTracker] = {}
 
+        if hasattr(os, "register_at_fork"):
+            os.register_at_fork(
+                before=self.consumer._pause,
+                after_in_child=self.consumer._resume,
+                after_in_parent=self.consumer._resume,
+            )
+
         if debug:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)
-
-    def _register_at_fork(self) -> None:
-        """Register os.register_at_fork() hooks for fork-safe operation.
-
-        Stops the consumer thread before fork() so no wildedge threads are
-        alive at fork time (avoids lock-inheritance deadlocks). Restarts a
-        fresh thread in both parent and child after the fork.
-
-        No-op on Windows where os.register_at_fork is not available.
-        """
-        if not hasattr(os, "register_at_fork"):
-            return
-        consumer = self.consumer
-        os.register_at_fork(
-            before=consumer._before_fork,
-            after_in_child=consumer._restart,
-            after_in_parent=consumer._restart,
-        )
 
     def publish(self, event_dict: dict) -> None:
         if self.closed:

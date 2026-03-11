@@ -16,6 +16,12 @@ class _DummyConsumer:
     def close(self, timeout: float | None = None) -> None:
         pass
 
+    def _pause(self) -> None:
+        pass
+
+    def _resume(self) -> None:
+        pass
+
 
 class _Model:
     pass

@@ -18,6 +18,12 @@ class _DummyConsumer:
     def close(self) -> None:
         pass
 
+    def _pause(self) -> None:
+        pass
+
+    def _resume(self) -> None:
+        pass
+
 
 class _DummyTransmitter:
     def __init__(self, *args, **kwargs):

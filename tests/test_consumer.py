@@ -1,6 +1,7 @@
 """Tests for the background consumer."""
 
-from unittest.mock import MagicMock
+import os
+from unittest.mock import MagicMock, patch
 
 from wildedge import constants
 from wildedge.consumer import Consumer
@@ -357,36 +358,36 @@ class TestConsumerForkSafety:
         self._consumers.append(c)
         return c
 
-    def test_before_fork_stops_thread(self, monkeypatch):
+    def test_pause_stops_thread(self, monkeypatch):
         monkeypatch.setattr(Consumer, "run", lambda self: None)
         queue = EventQueue(max_size=100)
         mock_tx = MagicMock(spec=Transmitter)
         consumer = self._make_consumer(queue, mock_tx)
 
         original_thread = consumer.thread
-        consumer._before_fork()
+        consumer._pause()
 
         assert consumer.stop_event.is_set()
         assert not original_thread.is_alive()
-        # stopped is reset to False so _restart() can start a new thread
+        # stopped is reset to False so _resume() can start a new thread
         assert consumer.stopped is False
 
-    def test_restart_creates_fresh_thread(self, monkeypatch):
+    def test_resume_creates_fresh_thread(self, monkeypatch):
         monkeypatch.setattr(Consumer, "run", lambda self: None)
         queue = EventQueue(max_size=100)
         mock_tx = MagicMock(spec=Transmitter)
         consumer = self._make_consumer(queue, mock_tx)
 
         original_thread = consumer.thread
-        consumer._before_fork()
-        consumer._restart()
+        consumer._pause()
+        consumer._resume()
 
         assert consumer.thread is not original_thread
         # thread was started (ident is set) even though the no-op run() exits fast
         assert consumer.thread.ident is not None
         assert not consumer.stop_event.is_set()
 
-    def test_restart_resets_backoff_and_snapshot(self, monkeypatch):
+    def test_resume_resets_backoff_and_snapshot(self, monkeypatch):
         monkeypatch.setattr(Consumer, "run", lambda self: None)
         queue = EventQueue(max_size=100)
         mock_tx = MagicMock(spec=Transmitter)
@@ -395,21 +396,83 @@ class TestConsumerForkSafety:
         consumer.backoff = constants.BACKOFF_MAX
         consumer._held_snapshot = ([], {})
 
-        consumer._before_fork()
-        consumer._restart()
+        consumer._pause()
+        consumer._resume()
 
         assert consumer.backoff == constants.BACKOFF_MIN
         assert consumer._held_snapshot is None
 
-    def test_flush_is_noop_after_before_fork_before_restart(self, monkeypatch):
+    def test_flush_is_noop_after_pause_before_resume(self, monkeypatch):
         """flush() on a pre-fork-stopped consumer with empty queue returns immediately."""
         monkeypatch.setattr(Consumer, "run", lambda self: None)
         queue = EventQueue(max_size=100)
         mock_tx = MagicMock(spec=Transmitter)
         consumer = self._make_consumer(queue, mock_tx)
 
-        consumer._before_fork()
-        # stopped is False (reset by _before_fork) and queue is empty, so flush
+        consumer._pause()
+        # stopped is False (reset by _pause) and queue is empty, so flush
         # calls drain_once which returns False immediately — no transmit calls.
         consumer.flush(timeout=0.1)
         mock_tx.send.assert_not_called()
+
+    def test_resume_registers_atexit(self, monkeypatch):
+        """_resume() registers a new atexit flush callback for the fresh thread."""
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        queue = EventQueue(max_size=100)
+        mock_tx = MagicMock(spec=Transmitter)
+        consumer = self._make_consumer(queue, mock_tx)
+
+        registered = []
+        monkeypatch.setattr(
+            "wildedge.consumer.atexit.register",
+            lambda fn, *a: registered.append((fn, a)),
+        )
+
+        consumer._pause()
+        consumer._resume()
+
+        assert any(fn == consumer.flush for fn, _ in registered)
+
+
+class TestForkRegistration:
+    def test_register_at_fork_wires_pause_and_resume(self, monkeypatch):
+        """WildEdge.__init__ registers _pause and _resume via os.register_at_fork."""
+        from wildedge.client import WildEdge
+
+        registered = {}
+
+        def fake_register_at_fork(*, before, after_in_child, after_in_parent):
+            registered["before"] = before
+            registered["after_in_child"] = after_in_child
+            registered["after_in_parent"] = after_in_parent
+
+        with (
+            patch.object(os, "register_at_fork", fake_register_at_fork),
+            patch(
+                "wildedge.client.detect_device",
+                return_value=DeviceInfo(device_id="d", device_type="linux"),
+            ),
+            patch("wildedge.client.Consumer") as mock_consumer_cls,
+        ):
+            consumer_instance = mock_consumer_cls.return_value
+            WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+
+        assert registered["before"] is consumer_instance._pause
+        assert registered["after_in_child"] is consumer_instance._resume
+        assert registered["after_in_parent"] is consumer_instance._resume
+
+    def test_register_at_fork_noop_on_windows(self, monkeypatch):
+        """When os.register_at_fork is absent (Windows), __init__ must not raise."""
+        from wildedge.client import WildEdge
+
+        monkeypatch.delattr(os, "register_at_fork", raising=False)
+
+        with (
+            patch(
+                "wildedge.client.detect_device",
+                return_value=DeviceInfo(device_id="d", device_type="linux"),
+            ),
+            patch("wildedge.client.Consumer", return_value=MagicMock()),
+        ):
+            client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+            client.consumer.stop = MagicMock()

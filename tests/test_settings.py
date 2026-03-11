@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from wildedge import constants
 from wildedge.settings import (
-    RUN_DSN_ENV,
-    RUN_FLUSH_TIMEOUT_ENV,
-    RUN_INTEGRATIONS_ENV,
     parse_bool,
     read_client_env,
     read_runtime_env,
@@ -38,15 +35,14 @@ def test_read_client_env_prefers_explicit_values():
     assert s.app_identity == "explicit-app"
 
 
-def test_read_runtime_env_uses_run_over_base_dsn():
+def test_read_runtime_env_reads_dsn():
     env = {
-        constants.ENV_DSN: "https://base@ingest.wildedge.dev/base",
-        RUN_DSN_ENV: "https://run@ingest.wildedge.dev/run",
-        RUN_FLUSH_TIMEOUT_ENV: "7.5",
-        RUN_INTEGRATIONS_ENV: "onnx,timm",
+        constants.ENV_DSN: "https://secret@ingest.wildedge.dev/key",
+        constants.ENV_FLUSH_TIMEOUT: "7.5",
+        constants.ENV_INTEGRATIONS: "onnx,timm",
     }
     s = read_runtime_env(all_integrations=["onnx", "timm"], all_hubs=[], environ=env)
-    assert s.dsn == "https://run@ingest.wildedge.dev/run"
+    assert s.dsn == "https://secret@ingest.wildedge.dev/key"
     assert s.flush_timeout == 7.5
     assert s.integrations == ["onnx", "timm"]
 

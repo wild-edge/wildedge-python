@@ -46,15 +46,15 @@ def test_cli_run_execs_command_with_env(monkeypatch):
     assert captured["path"] == "/usr/bin/gunicorn"
     assert captured["argv"] == ["/usr/bin/gunicorn", "myapp.wsgi:app", "--workers", "4"]
     assert (
-        captured["env"][bootstrap.RUN_DSN_ENV]
-        == "https://secret@ingest.wildedge.dev/key"
+        captured["env"][constants.ENV_DSN] == "https://secret@ingest.wildedge.dev/key"
     )
-    assert captured["env"][bootstrap.RUN_APP_VERSION_ENV] == "1.2.3"
-    assert captured["env"][bootstrap.RUN_DEBUG_ENV] == "1"
-    assert captured["env"][bootstrap.RUN_PROPAGATE_ENV] == "1"
-    assert captured["env"][bootstrap.RUN_STRICT_INTEGRATIONS_ENV] == "0"
-    assert captured["env"][bootstrap.RUN_PRINT_STARTUP_REPORT_ENV] == "0"
-    assert captured["env"][bootstrap.RUN_FLUSH_TIMEOUT_ENV] == str(
+    assert captured["env"][constants.WILDEDGE_AUTOLOAD] == "1"
+    assert captured["env"][constants.ENV_APP_VERSION] == "1.2.3"
+    assert captured["env"][constants.ENV_DEBUG] == "1"
+    assert captured["env"][constants.ENV_PROPAGATE] == "1"
+    assert captured["env"][constants.ENV_STRICT_INTEGRATIONS] == "0"
+    assert captured["env"][constants.ENV_PRINT_STARTUP_REPORT] == "0"
+    assert captured["env"][constants.ENV_FLUSH_TIMEOUT] == str(
         constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC
     )
 
@@ -100,8 +100,8 @@ def test_cli_run_sets_no_propagate_and_strict(monkeypatch):
     )
 
     assert rc == 0
-    assert captured["env"][bootstrap.RUN_PROPAGATE_ENV] == "0"
-    assert captured["env"][bootstrap.RUN_STRICT_INTEGRATIONS_ENV] == "1"
+    assert captured["env"][constants.ENV_PROPAGATE] == "0"
+    assert captured["env"][constants.ENV_STRICT_INTEGRATIONS] == "1"
 
 
 def test_cli_run_sets_print_startup_report(monkeypatch):
@@ -112,7 +112,7 @@ def test_cli_run_sets_print_startup_report(monkeypatch):
     rc = cli.main(["run", "--print-startup-report", "--", "gunicorn", "myapp.wsgi:app"])
 
     assert rc == 0
-    assert captured["env"][bootstrap.RUN_PRINT_STARTUP_REPORT_ENV] == "1"
+    assert captured["env"][constants.ENV_PRINT_STARTUP_REPORT] == "1"
 
 
 def test_cli_run_returns_127_for_missing_command(capsys, monkeypatch):
@@ -142,7 +142,7 @@ def test_cli_run_wraps_python_script_with_interpreter(monkeypatch, tmp_path):
 
 
 def test_install_runtime_requires_dsn(monkeypatch):
-    monkeypatch.delenv(bootstrap.RUN_DSN_ENV, raising=False)
+    monkeypatch.delenv(constants.ENV_DSN, raising=False)
     monkeypatch.delenv("WILDEDGE_DSN", raising=False)
     with pytest.raises(RuntimeError):
         bootstrap.install_runtime()
@@ -164,12 +164,9 @@ def test_install_runtime_default_flush_timeout_is_shutdown_budget(monkeypatch):
         def close(self):  # type: ignore[no-untyped-def]
             pass
 
-        def _register_at_fork(self):  # type: ignore[no-untyped-def]
-            pass
-
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
-    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
-    monkeypatch.delenv(bootstrap.RUN_FLUSH_TIMEOUT_ENV, raising=False)
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.delenv(constants.ENV_FLUSH_TIMEOUT, raising=False)
     monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: object())
 
     context = bootstrap.install_runtime()
@@ -199,15 +196,12 @@ def test_install_runtime_instruments_requested_integrations(monkeypatch):
         def close(self):  # type: ignore[no-untyped-def]
             events.append(("close", ""))
 
-        def _register_at_fork(self):  # type: ignore[no-untyped-def]
-            pass
-
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
-    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
-    monkeypatch.setenv(bootstrap.RUN_APP_VERSION_ENV, "2.0.0")
-    monkeypatch.setenv(bootstrap.RUN_DEBUG_ENV, "1")
-    monkeypatch.setenv(bootstrap.RUN_INTEGRATIONS_ENV, "torch")
-    monkeypatch.setenv(bootstrap.RUN_FLUSH_TIMEOUT_ENV, "7.5")
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(constants.ENV_APP_VERSION, "2.0.0")
+    monkeypatch.setenv(constants.ENV_DEBUG, "1")
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "torch")
+    monkeypatch.setenv(constants.ENV_FLUSH_TIMEOUT, "7.5")
     monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: object())
 
     context = bootstrap.install_runtime()
@@ -230,13 +224,10 @@ def test_install_runtime_strict_integrations_raises(monkeypatch):
         def instrument(self, name):  # type: ignore[no-untyped-def]
             raise RuntimeError("boom")
 
-        def _register_at_fork(self):  # type: ignore[no-untyped-def]
-            pass
-
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
-    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
-    monkeypatch.setenv(bootstrap.RUN_INTEGRATIONS_ENV, "onnx")
-    monkeypatch.setenv(bootstrap.RUN_STRICT_INTEGRATIONS_ENV, "1")
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "onnx")
+    monkeypatch.setenv(constants.ENV_STRICT_INTEGRATIONS, "1")
 
     with pytest.raises(bootstrap.RuntimeStrictIntegrationError):
         bootstrap.install_runtime()
@@ -363,16 +354,16 @@ def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):
         def shutdown(self):  # type: ignore[no-untyped-def]
             return None
 
-    monkeypatch.setenv(bootstrap.RUN_PROPAGATE_ENV, "0")
-    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
-    monkeypatch.setenv(bootstrap.RUN_INTEGRATIONS_ENV, "all")
+    monkeypatch.setenv(constants.ENV_PROPAGATE, "0")
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "all")
     monkeypatch.setattr(runtime_runner, "install_runtime", lambda: FakeContext())
     monkeypatch.setattr(runtime_runner.runpy, "run_path", lambda *a, **k: None)
 
     rc = runtime_runner.main(["--mode", "script", "--target", "app.py"])
     assert rc == 0
-    assert bootstrap.RUN_DSN_ENV not in os.environ
-    assert bootstrap.RUN_INTEGRATIONS_ENV not in os.environ
+    assert constants.WILDEDGE_AUTOLOAD not in os.environ
+    assert constants.ENV_INTEGRATIONS not in os.environ
 
 
 def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
@@ -389,9 +380,6 @@ def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
         def close(self):  # type: ignore[no-untyped-def]
             pass
 
-        def _register_at_fork(self):  # type: ignore[no-untyped-def]
-            pass
-
     monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
     monkeypatch.setattr(
         bootstrap,
@@ -399,8 +387,8 @@ def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
         {"x": IntegrationSpec("x", ("missing_mod",), "client_patch")},
     )
     monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: None)
-    monkeypatch.setenv(bootstrap.RUN_DSN_ENV, "https://secret@ingest.wildedge.dev/key")
-    monkeypatch.setenv(bootstrap.RUN_INTEGRATIONS_ENV, "x")
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "x")
 
     context = bootstrap.install_runtime()
     try:
@@ -457,3 +445,29 @@ def test_runner_prints_startup_report_when_enabled(monkeypatch, capsys):
     rc = runtime_runner.main(["--mode", "script", "--target", "app.py"])
     assert rc == 0
     assert "report" in capsys.readouterr().err
+
+
+def test_parse_run_args_without_double_dash():
+    """parse_run_args accepts tokens without a leading '--'."""
+    cmd, args = cli.parse_run_args(["gunicorn", "myapp.wsgi:app", "--workers", "4"])
+    assert cmd == "gunicorn"
+    assert args == ["myapp.wsgi:app", "--workers", "4"]
+
+
+def test_parse_run_args_strips_double_dash():
+    """Leading '--' separator is stripped before parsing."""
+    cmd, args = cli.parse_run_args(["--", "gunicorn", "myapp.wsgi:app"])
+    assert cmd == "gunicorn"
+    assert args == ["myapp.wsgi:app"]
+
+
+def test_parse_run_args_empty_raises():
+    """Empty token list raises ValueError."""
+    with pytest.raises(ValueError, match="missing command"):
+        cli.parse_run_args([])
+
+
+def test_parse_run_args_only_double_dash_raises():
+    """['--'] with nothing after raises ValueError."""
+    with pytest.raises(ValueError, match="missing command"):
+        cli.parse_run_args(["--"])
