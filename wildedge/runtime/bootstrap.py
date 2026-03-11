@@ -11,21 +11,12 @@ import threading
 from dataclasses import dataclass, field
 from importlib import metadata
 
+from wildedge import constants
 from wildedge.client import WildEdge
-from wildedge.constants import ENV_DSN
+from wildedge.constants import ENV_DSN, WILDEDGE_AUTOLOAD
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
-from wildedge.settings import (
-    RUN_APP_VERSION_ENV,
-    RUN_DEBUG_ENV,
-    RUN_DSN_ENV,
-    RUN_FLUSH_TIMEOUT_ENV,
-    RUN_INTEGRATIONS_ENV,
-    RUN_PRINT_STARTUP_REPORT_ENV,
-    RUN_PROPAGATE_ENV,
-    RUN_STRICT_INTEGRATIONS_ENV,
-    read_runtime_env,
-)
+from wildedge.settings import read_runtime_env
 
 SUPPORTED_SIGNALS = [signal.SIGINT, signal.SIGTERM]
 STATUS_OK_PATCHED = "OK_PATCHED"
@@ -38,14 +29,15 @@ STRICT_FAILURE_STATUSES = {STATUS_SKIP_MISSING_DEP, STATUS_ERROR_PATCH_FAILED}
 def clear_runtime_env() -> None:
     """Remove run-scoped env vars so nested processes do not inherit runtime config."""
     for key in (
-        RUN_DSN_ENV,
-        RUN_APP_VERSION_ENV,
-        RUN_DEBUG_ENV,
-        RUN_FLUSH_TIMEOUT_ENV,
-        RUN_INTEGRATIONS_ENV,
-        RUN_STRICT_INTEGRATIONS_ENV,
-        RUN_PROPAGATE_ENV,
-        RUN_PRINT_STARTUP_REPORT_ENV,
+        WILDEDGE_AUTOLOAD,
+        constants.ENV_APP_VERSION,
+        constants.ENV_DEBUG,
+        constants.ENV_FLUSH_TIMEOUT,
+        constants.ENV_INTEGRATIONS,
+        constants.ENV_HUBS,
+        constants.ENV_STRICT_INTEGRATIONS,
+        constants.ENV_PROPAGATE,
+        constants.ENV_PRINT_STARTUP_REPORT,
     ):
         os.environ.pop(key, None)
 
@@ -101,7 +93,7 @@ def format_startup_report(context: RuntimeContext) -> str:
     return "\n".join(lines)
 
 
-def install_runtime() -> RuntimeContext:
+def install_runtime(*, install_signal_handlers: bool = True) -> RuntimeContext:
     """Create and configure WildEdge client for process-level instrumentation."""
     try:
         env = read_runtime_env(
@@ -112,9 +104,7 @@ def install_runtime() -> RuntimeContext:
         raise RuntimeConfigError("invalid flush timeout") from exc
 
     if not env.dsn:
-        raise RuntimeConfigError(
-            f"{ENV_DSN} (or {RUN_DSN_ENV}) must be set to use `wildedge run`."
-        )
+        raise RuntimeConfigError(f"{ENV_DSN} must be set to use `wildedge run`.")
 
     client = WildEdge(dsn=env.dsn, app_version=env.app_version, debug=env.debug)
     statuses: list[dict[str, str]] = []
@@ -221,11 +211,13 @@ def install_runtime() -> RuntimeContext:
     )
     atexit.register(context.shutdown)
 
-    def _handle(sig_num, _frame):  # type: ignore[no-untyped-def]
-        context.shutdown()
-        raise SystemExit(128 + sig_num)
+    if install_signal_handlers:
 
-    for sig in SUPPORTED_SIGNALS:
-        signal.signal(sig, _handle)
+        def _handle(sig_num, _frame):  # type: ignore[no-untyped-def]
+            context.shutdown()
+            raise SystemExit(128 + sig_num)
+
+        for sig in SUPPORTED_SIGNALS:
+            signal.signal(sig, _handle)
 
     return context

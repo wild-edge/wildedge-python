@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import uuid
 import weakref
@@ -225,6 +226,13 @@ class WildEdge:
         # Active hub trackers keyed by hub name. Populated by _activate_hub()
         # when instrument() is called with a hub name.
         self.hub_trackers: dict[str, BaseHubTracker] = {}
+
+        if hasattr(os, "register_at_fork"):
+            os.register_at_fork(
+                before=self.consumer._pause,
+                after_in_child=self.consumer._resume,
+                after_in_parent=self.consumer._resume,
+            )
 
         if debug:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)

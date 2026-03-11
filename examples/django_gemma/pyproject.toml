@@ -1,0 +1,15 @@
+[project]
+name = "wildedge-django-gemma"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "wildedge-sdk",
+    "django",
+    "gunicorn",   # Linux (fork-based, CPU-only llama-cpp required on macOS)
+    "waitress",   # macOS (thread-based, no fork — works with Metal)
+    "llama-cpp-python",
+    "huggingface-hub",
+]
+
+[tool.uv.sources]
+wildedge-sdk = { path = "../..", editable = true }

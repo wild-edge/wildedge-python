@@ -234,6 +234,34 @@ class Consumer:
             )
             time.sleep(sleep_for)
 
+    def _pause(self) -> None:
+        """Stop the consumer thread before a fork().
+
+        Called by os.register_at_fork(before=...). Stops the background thread
+        so no wildedge threads are alive at fork time, avoiding lock-inheritance
+        deadlocks in forked children.
+        """
+        self.stop_event.set()
+        self.thread.join(timeout=1.0)
+        # Reset so _resume() can start a fresh thread in parent and child.
+        self.stopped = False
+
+    def _resume(self) -> None:
+        """Start a fresh consumer thread after a fork().
+
+        Called by os.register_at_fork(after_in_child=...) and after_in_parent=...
+        Creates a new Event and Thread so parent and child each get an
+        independent consumer.
+        """
+        self.stop_event = threading.Event()
+        self.backoff = constants.BACKOFF_MIN
+        self._held_snapshot = None
+        self.thread = threading.Thread(
+            target=self.run, daemon=True, name="wildedge-consumer"
+        )
+        self.thread.start()
+        atexit.register(self.flush, constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC)
+
     def stop(self) -> None:
         """Signal the consumer to stop and wait for thread exit."""
         self.stopped = True
