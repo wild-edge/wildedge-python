@@ -100,9 +100,7 @@ for turn_index, prompt in enumerate(prompts):
 
         # Simulate feedback: short completions get a thumbs down.
         feedback_type = (
-            FeedbackType.THUMBS_UP
-            if len(completion) > 40
-            else FeedbackType.THUMBS_DOWN
+            FeedbackType.THUMBS_UP if len(completion) > 40 else FeedbackType.THUMBS_DOWN
         )
         handle.track_feedback(inference_id, feedback_type)
 

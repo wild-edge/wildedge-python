@@ -16,4 +16,4 @@ for _ in range(iterations):
     with torch.inference_mode():
         output = model(batch)
 
-# print("output shape:", tuple(output.shape))
+print("Done!")

@@ -306,9 +306,7 @@ class WildEdge:
         else:
             # No extractor matched - require explicit id
             model_id = overrides.pop("id", None)
-            model_name = overrides.pop("model_name", None) or (
-                str(type(model_obj).__name__)
-            )
+            model_name = overrides.pop("model_name", None) or model_id
             info = ModelInfo(
                 model_name=model_name,
                 model_version=overrides.pop("version", "unknown"),

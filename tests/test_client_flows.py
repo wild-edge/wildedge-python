@@ -18,6 +18,15 @@ def test_register_model_fallback_requires_id_when_no_extractor(
             client.register_model(object())
 
 
+def test_register_model_fallback_uses_model_id_as_name(
+    client_with_stubbed_runtime,
+):
+    client = client_with_stubbed_runtime
+    with patch.object(client, "_find_extractor", return_value=None):
+        client.register_model(object(), model_id="openai/gpt-4o")
+    assert client.registry.models["openai/gpt-4o"].model_name == "openai/gpt-4o"
+
+
 def test_on_model_auto_loaded_uses_hub_records_when_downloads_missing(
     client_with_stubbed_runtime, dummy_handle
 ):
