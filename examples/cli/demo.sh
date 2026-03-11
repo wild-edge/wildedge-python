@@ -12,10 +12,10 @@ EXAMPLE_SCRIPT="${PROJECT_DIR}/cli_wrapper_example.py"
 
 cd "${PROJECT_DIR}"
 
-uv sync --quiet
+uv sync
 
-uv run --quiet wildedge doctor --integrations timm --hubs huggingface,torchhub
+uv run wildedge doctor --integrations timm --hubs huggingface,torchhub
 
-uv run --quiet wildedge run \
+uv run wildedge run \
   --print-startup-report --integrations timm --hubs huggingface,torchhub -- \
   "${EXAMPLE_SCRIPT}"
