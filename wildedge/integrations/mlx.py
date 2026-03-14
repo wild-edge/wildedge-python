@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -9,7 +10,7 @@ from typing import TYPE_CHECKING
 from wildedge import constants
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.logging import logger
+from wildedge.integrations.common import debug_failure
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -43,18 +44,17 @@ MLX_HANDLE_ATTR = "__wildedge_mlx_handle__"
 _inside_mlx_generate = threading.local()
 
 
-def _debug_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: mlx %s failed: %s", context, exc)
+debug_mlx_failure = functools.partial(debug_failure, "mlx")
 
 
-def _is_mlx_module(obj: object) -> bool:
+def is_mlx_module(obj: object) -> bool:
     for cls in type(obj).__mro__:
         if cls.__name__ == "Module" and "mlx" in cls.__module__:
             return True
     return False
 
 
-def _extract_model_args(obj: object) -> tuple[str | None, str | None]:
+def extract_model_args(obj: object) -> tuple[str | None, str | None]:
     """Returns (model_type, quantization_str) from model.args. Never raises."""
     try:
         args = getattr(obj, "args", None)
@@ -66,14 +66,14 @@ def _extract_model_args(obj: object) -> tuple[str | None, str | None]:
             bits = getattr(quant, "bits", None)
             q_str = f"q{int(bits)}" if bits else "quantized"
         else:
-            q_str = _detect_quantization_from_layers(obj)
+            q_str = detect_quantization_from_layers(obj)
         return model_type, q_str
     except Exception as exc:
-        _debug_failure("model args extraction", exc)
+        debug_mlx_failure("model args extraction", exc)
         return None, None
 
 
-def _detect_quantization_from_layers(obj: object) -> str | None:
+def detect_quantization_from_layers(obj: object) -> str | None:
     """Inspect layer class names for quantized linear layers."""
     try:
         for _, module in obj.named_modules():  # type: ignore[union-attr]
@@ -85,7 +85,7 @@ def _detect_quantization_from_layers(obj: object) -> str | None:
     return None
 
 
-def _count_tokens(tokenizer: object, text: str) -> int | None:
+def count_tokens(tokenizer: object, text: str) -> int | None:
     try:
         return len(tokenizer.encode(text))  # type: ignore[union-attr]
     except Exception:
@@ -97,7 +97,7 @@ def _count_tokens(tokenizer: object, text: str) -> int | None:
 # ---------------------------------------------------------------------------
 
 
-def _build_mlx_call_patch(original_call):  # type: ignore[no-untyped-def]
+def build_mlx_call_patch(original_call):  # type: ignore[no-untyped-def]
     def patched_call(self_inner, *args, **kwargs):  # type: ignore[no-untyped-def]
         # Suppress during mlx_lm.generate's autoregressive token loop
         if getattr(_inside_mlx_generate, "active", False):
@@ -129,12 +129,12 @@ def _build_mlx_call_patch(original_call):  # type: ignore[no-untyped-def]
 
 class MlxExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
-        return _is_mlx_module(obj)
+        return is_mlx_module(obj)
 
     def extract_info(
         self, obj: object, overrides: dict
     ) -> tuple[str | None, ModelInfo]:
-        model_type, quantization = _extract_model_args(obj)
+        model_type, quantization = extract_model_args(obj)
 
         model_name = model_type or type(obj).__name__
         model_id = overrides.pop("id", None) or model_name
@@ -167,7 +167,7 @@ class MlxExtractor(BaseExtractor):
                 if hasattr(v, "nbytes")
             )
         except Exception as exc:
-            _debug_failure("memory estimation", exc)
+            debug_mlx_failure("memory estimation", exc)
             return None
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
@@ -175,7 +175,7 @@ class MlxExtractor(BaseExtractor):
         patch_instance_call_once(
             obj,
             patch_name=MLX_CALL_PATCH_NAME,
-            make_patched_call=_build_mlx_call_patch,
+            make_patched_call=build_mlx_call_patch,
         )
 
     # -----------------------------------------------------------------------
@@ -255,7 +255,7 @@ class MlxExtractor(BaseExtractor):
         def patched_generate(model, tokenizer, prompt, *args, **kwargs):  # type: ignore[no-untyped-def]
             handle: ModelHandle | None = getattr(model, MLX_HANDLE_ATTR, None)
 
-            tokens_in = _count_tokens(tokenizer, prompt) if tokenizer else None
+            tokens_in = count_tokens(tokenizer, prompt) if tokenizer else None
             input_meta = TextInputMeta(token_count=tokens_in) if tokens_in else None
 
             _inside_mlx_generate.active = True
@@ -283,7 +283,7 @@ class MlxExtractor(BaseExtractor):
                 tokens_out: int | None = None
                 tps: float | None = None
                 if output_text and tokenizer:
-                    tokens_out = _count_tokens(tokenizer, output_text)
+                    tokens_out = count_tokens(tokenizer, output_text)
                     if tokens_out and duration_ms > 0:
                         tps = round(tokens_out / (duration_ms / 1000), 1)
 

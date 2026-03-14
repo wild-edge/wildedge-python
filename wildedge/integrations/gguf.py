@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 import threading
 import time
@@ -12,6 +13,7 @@ from wildedge import constants
 from wildedge.device import CURRENT_PLATFORM
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
+from wildedge.integrations.common import debug_failure
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
@@ -37,11 +39,10 @@ GGUF_HANDLE_ATTR = "__wildedge_gguf_handle__"
 LLAMA_AUTO_LOAD_PATCH_NAME = "gguf_auto_load"
 
 
-def _debug_gguf_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: gguf %s failed: %s", context, exc)
+debug_gguf_failure = functools.partial(debug_failure, "gguf")
 
 
-def _n_gpu_layers(obj: object) -> int:
+def n_gpu_layers(obj: object) -> int:
     """Return the configured gpu_layers value, normalising 0x7FFFFFFF back to -1."""
     n = getattr(obj, "n_gpu_layers", None)
     if n is None:
@@ -52,23 +53,23 @@ def _n_gpu_layers(obj: object) -> int:
     return -1 if n == 0x7FFFFFFF else n
 
 
-def _detect_accelerator(obj: object) -> str:
+def detect_accelerator(obj: object) -> str:
     try:
-        if _n_gpu_layers(obj) != 0:
+        if n_gpu_layers(obj) != 0:
             return CURRENT_PLATFORM.gpu_accelerator_for_offload()
     except Exception as exc:
-        _debug_gguf_failure("accelerator detection", exc)
+        debug_gguf_failure("accelerator detection", exc)
     return "cpu"
 
 
-def _parse_quantization(filename: str) -> str | None:
+def parse_quantization(filename: str) -> str | None:
     match = _QUANT_RE.search(filename)
     if match:
         return match.group(1).lower()
     return None
 
 
-def _build_patched_call(original_call):
+def build_patched_call(original_call):
     def patched_call(self_inner, *args, **kwargs):
         handle = getattr(self_inner, GGUF_HANDLE_ATTR, None)
         if handle is None:
@@ -87,7 +88,7 @@ def _build_patched_call(original_call):
                     tokens_in = usage.get("prompt_tokens")
                     tokens_out = usage.get("completion_tokens")
             except Exception as exc:
-                _debug_gguf_failure("usage extraction", exc)
+                debug_gguf_failure("usage extraction", exc)
 
             input_meta = None
             if isinstance(prompt, str) and prompt:
@@ -147,7 +148,7 @@ class GgufExtractor(BaseExtractor):
 
         quantization = overrides.pop("quantization", None)
         if quantization is None and stem:
-            quantization = _parse_quantization(stem)
+            quantization = parse_quantization(stem)
         if quantization is None:
             try:
                 metadata = getattr(obj, "metadata", {}) or {}
@@ -155,7 +156,7 @@ class GgufExtractor(BaseExtractor):
                 if file_type:
                     quantization = str(file_type).lower()
             except Exception as exc:
-                _debug_gguf_failure("quantization metadata read", exc)
+                debug_gguf_failure("quantization metadata read", exc)
         if quantization is None:
             logger.warning(
                 "wildedge: GGUF quantization could not be detected - sending as null"
@@ -167,7 +168,7 @@ class GgufExtractor(BaseExtractor):
                 metadata = getattr(obj, "metadata", {}) or {}
                 family = metadata.get("general.architecture")
             except Exception as exc:
-                _debug_gguf_failure("family metadata read", exc)
+                debug_gguf_failure("family metadata read", exc)
         if family is None:
             logger.warning(
                 "wildedge: GGUF model family could not be detected - sending as null"
@@ -179,7 +180,7 @@ class GgufExtractor(BaseExtractor):
                 metadata = getattr(obj, "metadata", {}) or {}
                 version = metadata.get("general.version")
             except Exception as exc:
-                _debug_gguf_failure("version metadata read", exc)
+                debug_gguf_failure("version metadata read", exc)
         if version is None:
             logger.warning(
                 "wildedge: GGUF model version could not be detected - sending as null"
@@ -207,16 +208,16 @@ class GgufExtractor(BaseExtractor):
         try:
             return Path(getattr(obj, "model_path", None) or "").stat().st_size
         except Exception as exc:
-            _debug_gguf_failure("model size detection", exc)
+            debug_gguf_failure("model size detection", exc)
             return None
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
-        handle.detected_accelerator = _detect_accelerator(obj)
+        handle.detected_accelerator = detect_accelerator(obj)
         setattr(obj, GGUF_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,
             patch_name=GGUF_CALL_PATCH_NAME,
-            make_patched_call=_build_patched_call,
+            make_patched_call=build_patched_call,
         )
 
     @classmethod
@@ -253,13 +254,13 @@ class GgufExtractor(BaseExtractor):
                     try:
                         load_kwargs["context_length"] = self_inner.n_ctx()
                     except Exception as exc:
-                        _debug_gguf_failure("context length extraction", exc)
+                        debug_gguf_failure("context length extraction", exc)
                     try:
-                        n_gpu = _n_gpu_layers(self_inner)
+                        n_gpu = n_gpu_layers(self_inner)
                         if n_gpu != 0:
                             load_kwargs["gpu_layers"] = n_gpu
                     except Exception as exc:
-                        _debug_gguf_failure("gpu layers extraction", exc)
+                        debug_gguf_failure("gpu layers extraction", exc)
                     c._on_model_auto_loaded(
                         self_inner, load_ms=load_ms, load_kwargs=load_kwargs
                     )

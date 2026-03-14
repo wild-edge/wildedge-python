@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -13,6 +14,11 @@ from wildedge.events.inference import (
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor
+from wildedge.integrations.common import (
+    debug_failure,
+    dtype_to_quantization,
+    image_brightness_histogram,
+)
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
@@ -38,55 +44,50 @@ _TIMM_PATCH_LOCK = threading.Lock()
 TIMM_AUTO_LOAD_PATCH_NAME = "timm_auto_load"
 
 
-def _debug_pytorch_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: pytorch %s failed: %s", context, exc)
+debug_pytorch_failure = functools.partial(debug_failure, "pytorch")
 
 
-def _is_torch_module(obj: object) -> bool:
+def is_torch_module(obj: object) -> bool:
     return any(
         c.__name__ == "Module" and c.__module__.startswith("torch")
         for c in type(obj).__mro__
     )
 
 
-def _parameter_device_type(obj: object) -> str | None:
+def parameter_device_type(obj: object) -> str | None:
     try:
         first_param = next(obj.parameters())  # type: ignore[union-attr]
     except StopIteration:
         return None
     except Exception as exc:
-        _debug_pytorch_failure("parameter device discovery", exc)
+        debug_pytorch_failure("parameter device discovery", exc)
         return None
     return str(getattr(first_param.device, "type", "") or None)
 
 
-def _detect_accelerator(obj: object) -> str:
-    device_type = _parameter_device_type(obj)
+def detect_accelerator(obj: object) -> str:
+    device_type = parameter_device_type(obj)
     if device_type:
         return device_type  # 'cpu', 'cuda', 'mps', 'xpu', etc.
     return "cpu"
 
 
-def _detect_quantization(obj: object) -> str | None:
+def detect_quantization(obj: object) -> str | None:
     try:
         for module in obj.modules():  # type: ignore[union-attr]
             cls = type(module)
             if "quantized" in cls.__module__ or "quant" in cls.__name__.lower():
                 return "int8"
         for p in obj.parameters():  # type: ignore[union-attr]
-            dtype = str(p.dtype)
-            if "int8" in dtype or "qint" in dtype or "quint" in dtype:
-                return "int8"
-            if "bfloat16" in dtype:
-                return "bf16"
-            if "float16" in dtype:
-                return "f16"
+            q = dtype_to_quantization(str(p.dtype))
+            if q and q != "f32":
+                return q
     except Exception as exc:
-        _debug_pytorch_failure("quantization detection", exc)
+        debug_pytorch_failure("quantization detection", exc)
     return None
 
 
-def _image_input_meta(tensor: object) -> ImageInputMeta | None:
+def image_input_meta(tensor: object) -> ImageInputMeta | None:
     """Extract ImageInputMeta from a (N, C, H, W) tensor. Best-effort, never raises."""
     try:
         shape = tensor.shape  # type: ignore[union-attr]
@@ -104,19 +105,9 @@ def _image_input_meta(tensor: object) -> ImageInputMeta | None:
         else:
             norm = tensor  # type: ignore[assignment]
 
-        brightness_mean = round(float(norm.mean().item()), 4)  # type: ignore[union-attr]
-        brightness_stddev = round(float(norm.std().item()), 4)  # type: ignore[union-attr]
-
-        # 5-bucket histogram over normalised pixel values
-        flat = norm.flatten()  # type: ignore[union-attr]
-        edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-        buckets = [
-            int(((flat >= lo) & (flat < hi)).sum().item())
-            for lo, hi in zip(edges, edges[1:])
-        ]
-        # last bucket is inclusive on both ends
-        buckets[-1] += int((flat == 1.0).sum().item())
-
+        brightness_mean, brightness_stddev, buckets = image_brightness_histogram(
+            norm.flatten()
+        )  # type: ignore[union-attr]
         return ImageInputMeta(
             width=int(w),
             height=int(h),
@@ -125,25 +116,25 @@ def _image_input_meta(tensor: object) -> ImageInputMeta | None:
                 brightness_mean=brightness_mean,
                 brightness_stddev=brightness_stddev,
                 brightness_buckets=buckets,
-                contrast=brightness_stddev,  # RMS contrast ≡ std
+                contrast=brightness_stddev,
             ),
         )
     except Exception as exc:
-        _debug_pytorch_failure("image input meta extraction", exc)
+        debug_pytorch_failure("image input meta extraction", exc)
         return None
 
 
-def _build_imagenet_labels() -> list[str] | None:
+def build_imagenet_labels() -> list[str] | None:
     """Return a 1000-entry description list using timm's bundled ImageNet metadata."""
     try:
         info = _ImageNetInfo()  # type: ignore[misc]
         return [info.index_to_description(i) for i in range(1000)]
     except Exception as exc:
-        _debug_pytorch_failure("imagenet label build", exc)
+        debug_pytorch_failure("imagenet label build", exc)
         return None
 
 
-def _classification_output_meta(
+def classification_output_meta(
     probs: object,
     num_classes: int,
     labels: list[str] | None = None,
@@ -176,7 +167,7 @@ def _classification_output_meta(
 
 class PytorchExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
-        return _is_torch_module(obj)
+        return is_torch_module(obj)
 
     def extract_info(
         self, obj: object, overrides: dict
@@ -191,7 +182,7 @@ class PytorchExtractor(BaseExtractor):
                 class_name,
             )
 
-        quantization = overrides.pop("quantization", None) or _detect_quantization(obj)
+        quantization = overrides.pop("quantization", None) or detect_quantization(obj)
         family = overrides.pop("family", None)
         version = overrides.pop("version", "unknown")
         source = overrides.pop("source", "local")
@@ -216,11 +207,11 @@ class PytorchExtractor(BaseExtractor):
             buffers = sum(b.numel() * b.element_size() for b in obj.buffers())  # type: ignore[union-attr]
             return params + buffers
         except Exception as exc:
-            _debug_pytorch_failure("model memory calculation", exc)
+            debug_pytorch_failure("model memory calculation", exc)
             return None
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
-        handle.detected_accelerator = _detect_accelerator(obj)
+        handle.detected_accelerator = detect_accelerator(obj)
         _local = threading.local()
 
         # Detect classifier at hook-installation time so the post_hook closure
@@ -232,9 +223,9 @@ class PytorchExtractor(BaseExtractor):
             if isinstance(nc, int) and nc > 1:
                 num_classes = nc
                 if num_classes == 1000 and _timm is not None:
-                    labels = _build_imagenet_labels()
+                    labels = build_imagenet_labels()
         except Exception as exc:
-            _debug_pytorch_failure("num_classes detection", exc)
+            debug_pytorch_failure("num_classes detection", exc)
 
         def pre_hook(module, args):
             _local.t0 = time.perf_counter()
@@ -254,20 +245,18 @@ class PytorchExtractor(BaseExtractor):
                 try:
                     batch_size = int(first_arg.shape[0])
                 except Exception as exc:
-                    _debug_pytorch_failure("batch size extraction", exc)
+                    debug_pytorch_failure("batch size extraction", exc)
                 if len(getattr(first_arg, "shape", ())) == 4:
                     input_modality = "image"
-                    input_meta = _image_input_meta(first_arg)
+                    input_meta = image_input_meta(first_arg)
 
             if num_classes > 0:
                 try:
                     probs = _torch.softmax(output, dim=-1)  # type: ignore[union-attr]
-                    output_meta = _classification_output_meta(
-                        probs, num_classes, labels
-                    )
+                    output_meta = classification_output_meta(probs, num_classes, labels)
                     output_modality = "classification"
                 except Exception as exc:
-                    _debug_pytorch_failure("classification output metadata", exc)
+                    debug_pytorch_failure("classification output metadata", exc)
 
             handle.track_inference(
                 duration_ms=duration_ms,

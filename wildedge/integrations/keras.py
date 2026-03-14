@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 import time
 from typing import TYPE_CHECKING
 
 from wildedge import constants
 from wildedge.device import CURRENT_PLATFORM
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.logging import logger
+from wildedge.integrations.common import debug_failure
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -19,17 +20,16 @@ KERAS_CALL_PATCH_NAME = "keras_call"
 KERAS_HANDLE_ATTR = "__wildedge_keras_handle__"
 
 
-def _is_keras_model(obj: object) -> bool:
+def is_keras_model(obj: object) -> bool:
     return any(
         c.__name__ == "Model" and "keras" in c.__module__ for c in type(obj).__mro__
     )
 
 
-def _debug_keras_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: keras %s failed: %s", context, exc)
+debug_keras_failure = functools.partial(debug_failure, "keras")
 
 
-def _build_patched_call(original_call):
+def build_patched_call(original_call):
     def patched_call(self_inner, *args, **kwargs):
         handle = getattr(self_inner, KERAS_HANDLE_ATTR, None)
         if handle is None:
@@ -55,7 +55,7 @@ def _build_patched_call(original_call):
     return patched_call
 
 
-def _detect_accelerator(obj: object) -> str:
+def detect_accelerator(obj: object) -> str:
     try:
         weights = getattr(obj, "weights", None) or []
         if weights:
@@ -63,13 +63,13 @@ def _detect_accelerator(obj: object) -> str:
             if any(g in device.upper() for g in ("GPU", "CUDA")):
                 return CURRENT_PLATFORM.gpu_accelerator_for_offload()
     except Exception as exc:
-        _debug_keras_failure("accelerator detection", exc)
+        debug_keras_failure("accelerator detection", exc)
     return "cpu"
 
 
 class KerasExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
-        return _is_keras_model(obj)
+        return is_keras_model(obj)
 
     def extract_info(
         self, obj: object, overrides: dict
@@ -96,10 +96,10 @@ class KerasExtractor(BaseExtractor):
         return model_id, info
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
-        handle.detected_accelerator = _detect_accelerator(obj)
+        handle.detected_accelerator = detect_accelerator(obj)
         setattr(obj, KERAS_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,
             patch_name=KERAS_CALL_PATCH_NAME,
-            make_patched_call=_build_patched_call,
+            make_patched_call=build_patched_call,
         )

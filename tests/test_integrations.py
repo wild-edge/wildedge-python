@@ -8,21 +8,21 @@ import pytest
 
 from wildedge.integrations.gguf import (
     GgufExtractor,
-    _parse_quantization,
+    parse_quantization,
 )
 from wildedge.integrations.gguf import (
-    _detect_accelerator as gguf_detect_accelerator,
+    detect_accelerator as gguf_detect_accelerator,
 )
 from wildedge.integrations.keras import KerasExtractor
-from wildedge.integrations.keras import _detect_accelerator as keras_detect_accelerator
+from wildedge.integrations.keras import detect_accelerator as keras_detect_accelerator
 from wildedge.integrations.onnx import (
     OnnxExtractor,
 )
 from wildedge.integrations.onnx import (
-    _detect_accelerator as onnx_detect_accelerator,
+    detect_accelerator as onnx_detect_accelerator,
 )
 from wildedge.integrations.onnx import (
-    _detect_quantization as onnx_detect_quantization,
+    detect_quantization as onnx_detect_quantization,
 )
 from wildedge.model import ModelHandle, ModelInfo
 
@@ -207,13 +207,13 @@ class TestGgufExtractor:
         assert self.extractor.can_handle(object()) is False
 
     def test_parse_quantization_q4_k_m(self):
-        assert _parse_quantization("llama-3-Q4_K_M.gguf") == "q4_k_m"
+        assert parse_quantization("llama-3-Q4_K_M.gguf") == "q4_k_m"
 
     def test_parse_quantization_f16(self):
-        assert _parse_quantization("model-F16.gguf") == "f16"
+        assert parse_quantization("model-F16.gguf") == "f16"
 
     def test_parse_quantization_none_for_unknown(self):
-        assert _parse_quantization("model.gguf") is None
+        assert parse_quantization("model.gguf") is None
 
     def test_detect_accelerator_cpu_when_no_gpu_layers(self):
         llm = Llama()
