@@ -18,6 +18,7 @@ from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
     image_brightness_histogram,
+    infer_input_modality_from_names,
 )
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
@@ -241,7 +242,12 @@ class PytorchExtractor(BaseExtractor):
             output_meta = None
 
             first_arg = args[0] if args else None
-            if first_arg is not None and hasattr(first_arg, "shape"):
+            if isinstance(first_arg, dict):
+                # Tokenizer output passed as keyword dict (e.g. BERT, GPT-2)
+                detected = infer_input_modality_from_names(list(first_arg.keys()))
+                if detected:
+                    input_modality = detected
+            elif first_arg is not None and hasattr(first_arg, "shape"):
                 try:
                     batch_size = int(first_arg.shape[0])
                 except Exception as exc:

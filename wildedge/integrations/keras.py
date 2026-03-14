@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING
 from wildedge import constants
 from wildedge.device import CURRENT_PLATFORM
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.integrations.common import debug_failure
+from wildedge.integrations.common import (
+    debug_failure,
+    infer_input_modality_from_layer_types,
+    num_classes_from_output_shape,
+)
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -29,7 +33,15 @@ def is_keras_model(obj: object) -> bool:
 debug_keras_failure = functools.partial(debug_failure, "keras")
 
 
-def build_patched_call(original_call):
+def build_patched_call(
+    original_call,
+    *,
+    num_classes: int = 0,
+    static_input_modality: str | None = None,
+):
+    input_modality = static_input_modality or "tensor"
+    output_modality = "classification" if num_classes > 0 else "tensor"
+
     def patched_call(self_inner, *args, **kwargs):
         handle = getattr(self_inner, KERAS_HANDLE_ATTR, None)
         if handle is None:
@@ -40,8 +52,8 @@ def build_patched_call(original_call):
             result = original_call(self_inner, *args, **kwargs)
             handle.track_inference(
                 duration_ms=elapsed_ms(t0),
-                input_modality="tensor",
-                output_modality="tensor",
+                input_modality=input_modality,
+                output_modality=output_modality,
                 success=True,
             )
             return result
@@ -97,9 +109,28 @@ class KerasExtractor(BaseExtractor):
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
         handle.detected_accelerator = detect_accelerator(obj)
+
+        static_input_modality: str | None = None
+        static_num_classes: int = 0
+        try:
+            layer_types = [type(layer).__name__ for layer in obj.layers]  # type: ignore[union-attr]
+            static_input_modality = infer_input_modality_from_layer_types(layer_types)
+        except Exception as exc:
+            debug_keras_failure("layer type scan", exc)
+        try:
+            out_shape = obj.output_shape  # type: ignore[union-attr]
+            if isinstance(out_shape, tuple):
+                static_num_classes = num_classes_from_output_shape(out_shape)
+        except Exception as exc:
+            debug_keras_failure("output shape inspection", exc)
+
         setattr(obj, KERAS_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,
             patch_name=KERAS_CALL_PATCH_NAME,
-            make_patched_call=build_patched_call,
+            make_patched_call=functools.partial(
+                build_patched_call,
+                num_classes=static_num_classes,
+                static_input_modality=static_input_modality,
+            ),
         )

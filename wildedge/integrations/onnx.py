@@ -20,6 +20,7 @@ from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
     image_brightness_histogram,
+    infer_input_modality_from_names,
 )
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
@@ -209,13 +210,22 @@ class OnnxExtractor(BaseExtractor):
         except Exception as exc:
             debug_onnx_failure("output shape inspection", exc)
 
+        # Static input modality from named inputs (text/audio beat the 4D image check).
+        static_input_modality: str | None = None
+        try:
+            input_names = [inp.name for inp in obj.get_inputs()]  # type: ignore[union-attr]
+            static_input_modality = infer_input_modality_from_names(input_names)
+        except Exception as exc:
+            debug_onnx_failure("input modality detection", exc)
+
         original_run = obj.run  # type: ignore[union-attr]
 
         def patched_run(output_names, input_feed, run_options=None):
             first = next(iter(input_feed.values()), None) if input_feed else None
 
             batch_size: int | None = None
-            input_modality = "structured"
+            # Static detection takes precedence; 4D tensor overrides to "image".
+            input_modality = static_input_modality or "structured"
             input_meta = None
 
             if first is not None and hasattr(first, "shape"):
