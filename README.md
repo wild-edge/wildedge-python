@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Coverage](https://codecov.io/gh/wildedge/wildedge-python/branch/main/graph/badge.svg)](https://codecov.io/gh/wildedge/wildedge-python)
 
-On-device ML inference monitoring for Python. Track in-dept, model quality & performance information.
+On-device ML inference monitoring for Python. Tracks latency, errors, and model metadata — no inputs or outputs captured.
 
 ## Install
 
@@ -57,6 +57,7 @@ client.instrument("transformers", hubs=["huggingface"])
 | Integration | Patches | Hub tracking | Example |
 |---|---|---|---|
 | `transformers` | `pipeline()`, `AutoModel.from_pretrained()` | `huggingface` | [transformers_example.py](examples/transformers_example.py) |
+| `mlx` | `mlx_lm.load()`, `mlx_lm.generate()` | `huggingface` | [mlx_example.py](examples/mlx_example.py) |
 | `timm` | `timm.create_model()` | `huggingface`, `torchhub` | [timm_example.py](examples/timm_example.py) |
 | `gguf` | `llama_cpp.Llama.__init__` | `huggingface` | [gguf_example.py](examples/gguf_example.py) |
 | `onnx` | `ort.InferenceSession` | `huggingface` | [onnx_example.py](examples/onnx_example.py) |
