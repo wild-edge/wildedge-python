@@ -24,6 +24,7 @@ from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
 from wildedge.integrations.registry import noop_integrations, supported_integrations
 from wildedge.integrations.tensorflow import TensorflowExtractor
+from wildedge.integrations.ultralytics import UltralyticsExtractor
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
 from wildedge.paths import (
@@ -80,6 +81,7 @@ def parse_dsn(dsn: str) -> tuple[str, str, str]:
 DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     OnnxExtractor(),
     GgufExtractor(),
+    UltralyticsExtractor(),
     PytorchExtractor(),
     TensorflowExtractor(),
     KerasExtractor(),
@@ -106,6 +108,7 @@ class WildEdge:
         "onnx": OnnxExtractor.install_auto_load_patch,
         "timm": PytorchExtractor.install_timm_patch,
         "tensorflow": TensorflowExtractor.install_auto_load_patch,
+        "ultralytics": UltralyticsExtractor.install_auto_load_patch,
     }
 
     # Hub trackers: record download provenance (where models came from).
@@ -423,6 +426,10 @@ class WildEdge:
         ``"tensorflow"``
             Patches ``tf.keras.models.load_model`` and ``tf.saved_model.load``.
             Requires ``tensorflow``.
+        ``"ultralytics"``
+            Patches ``ultralytics.YOLO.__init__``. Requires ``ultralytics``.
+            Emits a download event on first load if weights were fetched from
+            the ultralytics CDN.
         ``"torch"`` / ``"keras"``
             No global constructor to patch; models are user-defined subclasses.
             Inference is tracked automatically once a model is registered;

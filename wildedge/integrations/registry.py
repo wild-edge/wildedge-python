@@ -30,6 +30,7 @@ INTEGRATION_SPECS: tuple[IntegrationSpec, ...] = (
     IntegrationSpec("torch", ("torch",), "noop"),
     IntegrationSpec("keras", ("keras",), "noop"),
     IntegrationSpec("tensorflow", ("tensorflow",), "client_patch"),
+    IntegrationSpec("ultralytics", ("ultralytics",), "client_patch"),
 )
 
 INTEGRATIONS_BY_NAME: dict[str, IntegrationSpec] = {
