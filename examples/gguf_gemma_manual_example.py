@@ -5,7 +5,7 @@
 # [tool.uv.sources]
 # wildedge-sdk = { path = "..", editable = true }
 # ///
-"""Gemma 2 GGUF — fully manual integration, no auto-instrumentation.
+"""Gemma 2 GGUF: fully manual integration, no auto-instrumentation.
 
 Shows explicit download / load / inference / error tracking without
 client.instrument() or any automatic hooks.
@@ -40,7 +40,7 @@ with Timer() as t:
     llm = Llama(model_path, n_ctx=2048, n_gpu_layers=-1, verbose=False)
 load_ms = t.elapsed_ms
 
-# All metadata supplied explicitly — no extractor runs, no hooks installed.
+# All metadata supplied explicitly. No extractor runs, no hooks installed.
 handle = client.register_model(
     llm,
     model_id="gemma-2-2b-it-q4",

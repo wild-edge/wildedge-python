@@ -34,7 +34,7 @@ if not os.environ.get(_GUARD):
 
 
 # Chain any pre-existing sitecustomize that would otherwise be shadowed.
-# Use importlib to find and exec it directly — avoids sys.modules manipulation
+# Use importlib to find and exec it directly; avoids sys.modules manipulation
 # which can trigger CPython's module GC and clear globals mid-execution.
 def _load_existing_sitecustomize() -> None:
     import importlib.util as _iutil

@@ -20,9 +20,9 @@ Cache layout
 ------------
 ``torch.hub.get_dir()`` (default ``~/.cache/torch/hub``) contains:
 
-- ``checkpoints/<name>-<8hexchars>.ext`` — weight files downloaded by
+- ``checkpoints/<name>-<8hexchars>.ext``: weight files downloaded by
   ``torch.hub.download_url_to_file`` or ``torch.utils.model_zoo.load_url``.
-- ``<owner>_<repo>_<ref>/`` — cloned GitHub repo directories created by
+- ``<owner>_<repo>_<ref>/``: cloned GitHub repo directories created by
   ``torch.hub.load``.
 """
 

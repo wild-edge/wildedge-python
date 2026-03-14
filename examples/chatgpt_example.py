@@ -5,7 +5,7 @@
 # [tool.uv.sources]
 # wildedge-sdk = { path = "..", editable = true }
 # ///
-"""ChatGPT (OpenAI API) — fully manual integration.
+"""ChatGPT (OpenAI API): fully manual integration.
 
 Shows how to instrument a remote LLM with no local model file.
 Tracks input/output token counts, generation config, latency, errors,

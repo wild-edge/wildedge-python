@@ -21,7 +21,7 @@ from wildedge.integrations.ultralytics import (
 from wildedge.model import ModelHandle, ModelInfo
 
 # ---------------------------------------------------------------------------
-# Fake objects — no ultralytics required
+# Fake objects; no ultralytics required
 # ---------------------------------------------------------------------------
 
 

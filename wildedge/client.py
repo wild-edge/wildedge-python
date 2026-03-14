@@ -20,6 +20,7 @@ from wildedge.hubs.torchhub import TorchHubTracker
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.gguf import GgufExtractor
 from wildedge.integrations.keras import KerasExtractor
+from wildedge.integrations.mlx import MlxExtractor
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
 from wildedge.integrations.registry import noop_integrations, supported_integrations
@@ -84,6 +85,7 @@ DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     GgufExtractor(),
     UltralyticsExtractor(),
     TransformersExtractor(),
+    MlxExtractor(),
     PytorchExtractor(),
     TensorflowExtractor(),
     KerasExtractor(),
@@ -107,6 +109,7 @@ class WildEdge:
     NOOP_INTEGRATIONS = noop_integrations()
     PATCH_INSTALLERS = {
         "gguf": GgufExtractor.install_auto_load_patch,
+        "mlx": MlxExtractor.install_auto_load_patch,
         "onnx": OnnxExtractor.install_auto_load_patch,
         "timm": PytorchExtractor.install_timm_patch,
         "tensorflow": TensorflowExtractor.install_auto_load_patch,

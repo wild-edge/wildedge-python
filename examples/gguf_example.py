@@ -5,7 +5,7 @@
 # [tool.uv.sources]
 # wildedge-sdk = { path = "..", editable = true }
 # ///
-"""GGUF / llama.cpp integration example — run with: uv run gguf_example.py"""
+"""GGUF / llama.cpp integration example. Run with: uv run gguf_example.py"""
 
 from huggingface_hub import hf_hub_download
 from llama_cpp import Llama

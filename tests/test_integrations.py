@@ -42,7 +42,7 @@ def make_handle(publish_spy) -> ModelHandle:
 
 
 # ---------------------------------------------------------------------------
-# Fake objects — no ML libraries required
+# Fake objects; no ML libraries required
 # ---------------------------------------------------------------------------
 
 # ONNX
