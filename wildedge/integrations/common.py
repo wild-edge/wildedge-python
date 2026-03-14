@@ -23,11 +23,7 @@ DTYPE_QUANTIZATION_MAP: dict[str, str] = {
 
 
 def dtype_to_quantization(dtype_str: str) -> str | None:
-    """Map a dtype string to a quantization label, or None if unrecognised.
-
-    Handles PyTorch repr strings (``"torch.float16"``), ONNX type strings
-    (``"tensor(float16)"``), and plain names (``"float16"``).
-    """
+    """Map a dtype string to a quantization label, or None if unrecognised."""
     for needle, label in DTYPE_QUANTIZATION_MAP.items():
         if needle in dtype_str:
             return label
@@ -35,12 +31,9 @@ def dtype_to_quantization(dtype_str: str) -> str | None:
 
 
 def image_brightness_histogram(norm_flat: Any) -> tuple[float, float, list[int]]:
-    """Compute brightness stats from a flat min-max-normalised (0–1) array.
+    """Brightness stats from a flat normalised (0-1) array (numpy or torch).
 
-    Compatible with NumPy arrays and PyTorch tensors.
-    Returns (brightness_mean, brightness_stddev, buckets) where buckets covers
-    [0, 0.2), [0.2, 0.4), [0.4, 0.6), [0.6, 0.8), [0.8, 1.0] (last bucket
-    inclusive on both ends).
+    Returns (mean, stddev, buckets) for ranges [0,.2), [.2,.4), [.4,.6), [.6,.8), [.8,1].
     """
     brightness_mean = round(float(norm_flat.mean()), 4)
     brightness_stddev = round(float(norm_flat.std()), 4)
@@ -84,7 +77,7 @@ SEQUENCE_LAYER_TYPES: frozenset[str] = frozenset(
 
 
 def infer_input_modality_from_shape(shape: tuple) -> str | None:
-    """Return "image" for 4-D tensors (N, C, H, W) or (N, H, W, C), else None."""
+    """Return "image" for 4D tensors (NCHW or NHWC), else None."""
     if len(shape) == 4:
         return "image"
     return None
@@ -100,9 +93,9 @@ def infer_input_modality_from_names(names: list[str]) -> str | None:
 
 
 def infer_input_modality_from_layer_types(class_names: list[str]) -> str | None:
-    """Scan Keras/TF layer class names to guess input domain.
+    """Infer input modality from Keras/TF layer class names.
 
-    Conv layers → image; sequence/embedding layers → text.
+    Conv layers map to image; sequence/embedding layers map to text.
     """
     names_set = set(class_names)
     if names_set & CONV_LAYER_TYPES:
@@ -113,11 +106,7 @@ def infer_input_modality_from_layer_types(class_names: list[str]) -> str | None:
 
 
 def num_classes_from_output_shape(shape: tuple) -> int:
-    """Return the number of output classes from a model output shape, or 0.
-
-    Expects shapes like ``(None, 10)`` or ``(batch, num_classes)``.
-    Returns 0 when the shape does not look like a classification head.
-    """
+    """Return the number of output classes from a shape like (batch, N), or 0."""
     if len(shape) >= 2 and isinstance(shape[-1], int) and shape[-1] > 1:
         return int(shape[-1])
     return 0

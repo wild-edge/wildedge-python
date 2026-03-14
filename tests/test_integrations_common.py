@@ -139,9 +139,9 @@ def test_histogram_mean_and_std_rounded_to_4dp():
     [
         ((4, 3, 224, 224), "image"),  # NCHW image batch
         ((1, 3, 64, 64), "image"),  # single image
-        ((32, 512), None),  # 2D — text token tensor, no signal
+        ((32, 512), None),  # 2D, no signal
         ((128,), None),  # 1D vector
-        ((4, 3, 224, 224, 2), None),  # 5D — not handled
+        ((4, 3, 224, 224, 2), None),  # 5D, not handled
         ((), None),  # scalar
     ],
 )
@@ -187,7 +187,7 @@ def test_infer_input_modality_from_names(names, expected):
         (["InputLayer", "DepthwiseConv2D", "GlobalAveragePooling2D", "Dense"], "image"),
         (["InputLayer", "Embedding", "LSTM", "Dense"], "text"),
         (["InputLayer", "Bidirectional", "Dense"], "text"),
-        (["InputLayer", "Dense", "Dense"], None),  # fully connected — no signal
+        (["InputLayer", "Dense", "Dense"], None),  # fully connected, no signal
         ([], None),
         # Conv wins over sequence when both present (unusual but well-defined)
         (["Conv2D", "Embedding"], "image"),
@@ -208,10 +208,10 @@ def test_infer_input_modality_from_layer_types(layer_types, expected):
         ((None, 10), 10),  # standard classification head
         ((None, 1000), 1000),  # ImageNet
         ((32, 10), 10),  # concrete batch size
-        ((None, 1), 0),  # binary scalar — not multi-class
-        ((None,), 0),  # 1D — no class axis
+        ((None, 1), 0),  # binary output, not multi-class
+        ((None,), 0),  # 1D, no class axis
         ((), 0),  # scalar
-        ((None, None), 0),  # dynamic last dim — can't determine
+        ((None, None), 0),  # dynamic last dim
         ((None, 10, 5), 5),  # sequence output with 5 classes per token
     ],
 )

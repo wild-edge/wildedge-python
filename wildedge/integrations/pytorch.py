@@ -11,6 +11,7 @@ from wildedge.events.inference import (
     ClassificationOutputMeta,
     HistogramSummary,
     ImageInputMeta,
+    TextInputMeta,
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor
@@ -89,7 +90,7 @@ def detect_quantization(obj: object) -> str | None:
 
 
 def image_input_meta(tensor: object) -> ImageInputMeta | None:
-    """Extract ImageInputMeta from a (N, C, H, W) tensor. Best-effort, never raises."""
+    """Extract ImageInputMeta from a (N, C, H, W) tensor. Returns None on any error."""
     try:
         shape = tensor.shape  # type: ignore[union-attr]
         if len(shape) != 4:
@@ -247,6 +248,10 @@ class PytorchExtractor(BaseExtractor):
                 detected = infer_input_modality_from_names(list(first_arg.keys()))
                 if detected:
                     input_modality = detected
+                ids = first_arg.get("input_ids")
+                if ids is not None and hasattr(ids, "shape") and len(ids.shape) >= 2:
+                    batch_size = int(ids.shape[0])
+                    input_meta = TextInputMeta(token_count=int(ids.shape[1]))
             elif first_arg is not None and hasattr(first_arg, "shape"):
                 try:
                     batch_size = int(first_arg.shape[0])

@@ -7,8 +7,14 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
+try:
+    import numpy as _np
+except ImportError:
+    _np = None  # type: ignore[assignment]
+
 from wildedge import constants
 from wildedge.device import CURRENT_PLATFORM
+from wildedge.events.inference import ClassificationOutputMeta, TopKPrediction
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.integrations.common import (
     debug_failure,
@@ -35,6 +41,33 @@ TF_AUTO_LOAD_PATCH_NAME = "tensorflow_auto_load"
 
 
 debug_tensorflow_failure = functools.partial(debug_failure, "tensorflow")
+
+
+def classification_output_meta(
+    result: object, num_classes: int
+) -> ClassificationOutputMeta | None:
+    """Build ClassificationOutputMeta from a TF output tensor. Returns None on any error."""
+    if _np is None:
+        return None
+    try:
+        arr = _np.array(result)
+        if arr.ndim != 2 or arr.shape[1] != num_classes:
+            return None
+        exp = _np.exp(arr - arr.max(axis=-1, keepdims=True))
+        probs = exp / exp.sum(axis=-1, keepdims=True)
+        avg_probs = probs.mean(axis=0)
+        top_idx = avg_probs.argsort()[::-1][: min(5, num_classes)]
+        return ClassificationOutputMeta(
+            num_predictions=num_classes,
+            avg_confidence=round(float(probs.max(axis=-1).mean()), 4),
+            top_k=[
+                TopKPrediction(label=str(i), confidence=round(float(avg_probs[i]), 4))
+                for i in top_idx
+            ],
+        )
+    except Exception as exc:
+        debug_tensorflow_failure("classification output metadata", exc)
+        return None
 
 
 def is_tensorflow_model(obj: object) -> bool:
@@ -78,6 +111,9 @@ def build_patched_call(
                 duration_ms=elapsed_ms(t0),
                 input_modality=input_modality,
                 output_modality=output_modality,
+                output_meta=classification_output_meta(result, num_classes)
+                if num_classes > 0
+                else None,
                 success=True,
             )
             return result
@@ -119,6 +155,9 @@ def patch_predict_once(
                 duration_ms=elapsed_ms(t0),
                 input_modality=input_modality,
                 output_modality=output_modality,
+                output_meta=classification_output_meta(result, num_classes)
+                if num_classes > 0
+                else None,
                 success=True,
             )
             return result
