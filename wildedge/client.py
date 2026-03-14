@@ -24,6 +24,7 @@ from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
 from wildedge.integrations.registry import noop_integrations, supported_integrations
 from wildedge.integrations.tensorflow import TensorflowExtractor
+from wildedge.integrations.transformers import TransformersExtractor
 from wildedge.integrations.ultralytics import UltralyticsExtractor
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
@@ -82,6 +83,7 @@ DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     OnnxExtractor(),
     GgufExtractor(),
     UltralyticsExtractor(),
+    TransformersExtractor(),
     PytorchExtractor(),
     TensorflowExtractor(),
     KerasExtractor(),
@@ -108,6 +110,7 @@ class WildEdge:
         "onnx": OnnxExtractor.install_auto_load_patch,
         "timm": PytorchExtractor.install_timm_patch,
         "tensorflow": TensorflowExtractor.install_auto_load_patch,
+        "transformers": TransformersExtractor.install_auto_load_patch,
         "ultralytics": UltralyticsExtractor.install_auto_load_patch,
     }
 
@@ -426,6 +429,10 @@ class WildEdge:
         ``"tensorflow"``
             Patches ``tf.keras.models.load_model`` and ``tf.saved_model.load``.
             Requires ``tensorflow``.
+        ``"transformers"``
+            Patches ``transformers.pipeline`` and
+            ``PreTrainedModel.from_pretrained`` (covers all ``AutoModel.*``
+            calls). Requires ``transformers``.
         ``"ultralytics"``
             Patches ``ultralytics.YOLO.__init__``. Requires ``ultralytics``.
             Emits a download event on first load if weights were fetched from

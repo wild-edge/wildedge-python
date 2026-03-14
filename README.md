@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Coverage](https://codecov.io/gh/wildedge/wildedge-python/branch/main/graph/badge.svg)](https://codecov.io/gh/wildedge/wildedge-python)
 
-On-device ML inference monitoring for Python. Tracks latency, errors, and model metadata without capturing inputs or outputs.
+On-device ML inference monitoring for Python. Track in-dept, model quality & performance information.
 
 ## Install
 
@@ -16,157 +16,61 @@ On-device ML inference monitoring for Python. Tracks latency, errors, and model 
 uv add wildedge-sdk
 ```
 
-## Quick start
+## CLI — zero code changes
+
+Drop `wildedge run` in front of your existing command. WildEdge instruments the runtime before your code starts — no SDK calls required in user code.
+
+```bash
+WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
+wildedge run --integrations timm -- python app.py
+```
+
+Validate your environment before deploying:
+
+```bash
+wildedge doctor --integrations all --network-check
+```
+
+Useful flags:
+
+| Flag | Description |
+|---|---|
+| `--integrations` | Comma-separated list of integrations to activate (or `all`) |
+| `--hubs` | Hub trackers to activate: `huggingface`, `torchhub` |
+| `--print-startup-report` | Print per-integration status at startup |
+| `--strict-integrations` | Fail if a requested integration can't be loaded |
+| `--no-propagate` | Don't pass WildEdge env vars to child processes |
+
+## SDK
 
 ```python
 import wildedge
 
-client = wildedge.WildEdge(
-    dsn="...",  # or set WILDEDGE_DSN
-)
+client = wildedge.WildEdge(dsn="...")  # or WILDEDGE_DSN env var
+client.instrument("transformers", hubs=["huggingface"])
+
+# models loaded after this point are tracked automatically
 ```
 
-## CLI wrapper
+## Supported integrations
 
-Use `wildedge run` to execute an existing Python entrypoint with WildEdge runtime initialization and integration instrumentation enabled before user code starts:
+| Integration | Patches | Hub tracking | Example |
+|---|---|---|---|
+| `transformers` | `pipeline()`, `AutoModel.from_pretrained()` | `huggingface` | [transformers_example.py](examples/transformers_example.py) |
+| `timm` | `timm.create_model()` | `huggingface`, `torchhub` | [timm_example.py](examples/timm_example.py) |
+| `gguf` | `llama_cpp.Llama.__init__` | `huggingface` | [gguf_example.py](examples/gguf_example.py) |
+| `onnx` | `ort.InferenceSession` | `huggingface` | [onnx_example.py](examples/onnx_example.py) |
+| `ultralytics` | `ultralytics.YOLO.__init__` | — | — |
+| `tensorflow` | `tf.keras.models.load_model`, `tf.saved_model.load` | — | [tensorflow_example.py](examples/tensorflow_example.py) |
+| `torch` | forward hooks via `client.load()` | `torchhub` | [pytorch_example.py](examples/pytorch_example.py) |
+| `keras` | forward hooks via `client.load()` | — | [keras_example.py](examples/keras_example.py) |
 
-```bash
-wildedge run --dsn "https://<secret>@ingest.wildedge.dev/<key>" -- python app.py
-```
-
-End-to-end CLI wrapper example:
-
-```bash
-WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
-wildedge run --print-startup-report --integrations timm -- \
-python examples/cli/cli_wrapper_example.py
-```
-
-See `examples/cli/cli_wrapper_example.py` for a script that has no WildEdge SDK calls in user code.
-Use `examples/cli/demo.sh` for a single-script linear flow (sync, doctor, run).
-This demo uses `examples/cli/pyproject.toml`, so dependency management is delegated to `uv`.
-
-Module entrypoints are supported:
-
-```bash
-wildedge run -- python -m your_package.main --arg value
-```
-
-Validate local runtime readiness:
-
-```bash
-wildedge doctor --integrations all
-```
-
-Machine-readable diagnostics:
-
-```bash
-wildedge doctor --format json --integrations all
-```
-
-Optional DSN reachability probe:
-
-```bash
-wildedge doctor --network-check --dsn "https://<secret>@ingest.wildedge.dev/<key>"
-```
-
-Useful run flags:
-- `--strict-integrations`: fail startup if a requested integration cannot be instrumented.
-- `--no-propagate`: do not propagate WildEdge runtime env vars to nested child processes.
-- `--print-startup-report`: print startup diagnostics with per-integration status.
-
-## Integrations
-
-Call `client.instrument()` to activate auto-tracking for a supported library. Models created afterwards are registered and timed automatically with no changes to existing call sites.
-
-See the `examples/` folder for complete working examples.
-
-### Integration initialization
-
-Initialize integrations at process startup, before model loading begins. Instrumentation patches are applied per process and should be installed before imports and constructor calls on instrumented libraries.
-
-For high-priority paths, keep explicit registration with `client.load(...)` or `client.register_model(...)` as a fallback when model creation does not go through a patched API.
-For an explicit fallback pattern, see `examples/gguf_gemma_manual_example.py`.
-
-### PyTorch (custom models)
-
-PyTorch models are user-defined subclasses, so there is no single constructor to patch. Use `client.load()` to time construction and track load/unload automatically; inference is tracked via forward hooks once the model is registered.
+For `torch` and `keras`, models are user-defined subclasses so there's no constructor to patch. Use `client.load()` to get load/unload tracking alongside inference:
 
 ```python
 model = client.load(MyModel)
 output = model(x)  # tracked automatically
 ```
-
-See `examples/pytorch_example.py` for a complete example.
-
-### Keras (custom models)
-
-Same pattern as PyTorch:
-
-```python
-model = client.load(MyKerasModel)
-output = model(x)  # tracked automatically
-```
-
-See `examples/keras_example.py` for a complete example.
-
-### ONNX Runtime
-
-```python
-import onnxruntime as ort
-
-client.instrument("onnx")
-
-session = ort.InferenceSession("yolov8n.onnx")
-outputs = session.run(None, {"input": image})  # tracked automatically
-```
-
-See `examples/onnx_example.py` for a complete example.
-
-### TensorFlow
-
-```python
-import tensorflow as tf
-
-client.instrument("tensorflow")
-
-model = tf.keras.models.load_model("model.keras")  # tracked automatically
-output = model(batch, training=False)  # tracked automatically
-```
-
-See `examples/tensorflow_example.py` for a complete example.
-
-### timm
-
-```python
-import timm
-
-client.instrument("timm")
-
-model = timm.create_model("resnet50", pretrained=True)
-output = model(image_tensor)  # tracked automatically
-```
-
-See `examples/timm_example.py` for a complete example.
-
-### GGUF / llama.cpp
-
-```python
-from llama_cpp import Llama
-
-client.instrument("gguf")
-
-llm = Llama("llama-3.2-1b.Q4_K_M.gguf", n_ctx=2048, n_gpu_layers=-1)
-result = llm("What is the capital of France?")  # tracked automatically
-```
-
-See `examples/gguf_example.py` for a complete example.
-
-## Limitations
-
-- Currently supports only Python 3.10+ due to use of modern type annotations.
-- Overhead: Less than 1% latency increase in internal benchmarks.
-- For air-gapped environments, on-premise server installation is required.
 
 ## Manual tracking
 
@@ -175,83 +79,35 @@ Use `@wildedge.track` as a decorator or context manager when auto-instrumentatio
 ```python
 handle = client.register_model(my_model)
 
-# decorator
 @wildedge.track(handle)
 def run(input):
     return my_model.predict(input)
-
-# context manager
-with wildedge.track(handle):
-    result = my_model.predict(input)
 ```
 
 ## Configuration
 
 | Parameter | Default | Env var | Description |
 |---|---|---|---|
-| `dsn` | `-` | `WILDEDGE_DSN` | Required. `https://<secret>@ingest.wildedge.dev/<key>` |
-| `app_version` | `None` | `-` | Optional. Your app's version string. |
-| `app_identity` | `<project_key>` | `WILDEDGE_APP_IDENTITY` | Namespace for offline persistence paths. Set per-app to isolate multi-process workloads in one project. |
-| `debug` | `false` | `WILDEDGE_DEBUG` | Log events to console. |
-| `batch_size` | `10` | `-` | Events per transmission (recommended: 1-100). |
-| `flush_interval_sec` | `60` | `-` | Max seconds between flushes (recommended: 1-3600). |
-| `max_queue_size` | `200` | `-` | In-memory buffer limit (recommended: 10-10000). |
-| `enable_offline_persistence` | `true` | `-` | Persist pending unsent events on disk and replay on restart. |
-| `offline_queue_dir` | OS-specific state dir | `-` | Folder for pending queue persistence (defaults to platform state path). |
-| `max_event_age_sec` | `900` | `-` | Max age for queued events before dead-lettering. |
-| `enable_dead_letter_persistence` | `false` | `-` | Persist dropped batches/events to disk dead-letter store. |
-| `dead_letter_dir` | OS-specific cache dir | `-` | Directory where dead-letter batch files are stored. |
-| `max_dead_letter_batches` | `10` | `-` | Max dead-letter batch files retained on disk. |
+| `dsn` | — | `WILDEDGE_DSN` | `https://<secret>@ingest.wildedge.dev/<key>` |
+| `app_version` | `None` | — | Your app's version string |
+| `app_identity` | `<project_key>` | `WILDEDGE_APP_IDENTITY` | Namespace for offline persistence; set per-app in multi-process workloads |
+| `debug` | `false` | `WILDEDGE_DEBUG` | Log events to console |
+| `batch_size` | `10` | — | Events per transmission (1–100) |
+| `flush_interval_sec` | `60` | — | Max seconds between flushes (1–3600) |
+| `max_queue_size` | `200` | — | In-memory buffer limit (10–10000) |
+| `enable_offline_persistence` | `true` | — | Persist unsent events to disk and replay on restart |
+| `max_event_age_sec` | `900` | — | Max age before dead-lettering |
+| `enable_dead_letter_persistence` | `false` | — | Persist dropped batches to disk |
 
-## Testing
+## Privacy
 
-### Run tests locally
+WildEdge captures **no inputs or outputs** — only metadata: latency, errors, model info, and download provenance. All inference runs locally; only telemetry is transmitted over HTTPS.
 
-Install development dependencies and run the test suite:
-
-```bash
-uv sync --group dev
-uv run pytest
-```
-
-### Run tests across Python versions
-
-Use `tox` to run the test suite against all supported Python versions (3.10+):
-
-```bash
-uv sync --group dev
-tox
-```
-
-Compatibility matrix details are documented in `docs/compatibility.md`.
-
-Run the compatibility matrix locally with one command:
-
-```bash
-python3 scripts/run_compat_local.py
-```
-
-To fail when a dependency row is unsupported on your local platform, use:
-
-```bash
-python3 scripts/run_compat_local.py --strict-unsupported
-```
-
-## Security
-
-WildEdge SDK privacy model:
-- **No input/output capture**: Only metadata (latency, errors, model info) is collected.
-- **Secure transmission**: Data is sent over HTTPS to WildEdge servers.
-- **Local processing**: All inference happens locally; SDK only monitors performance.
-- **DSN-based auth**: Uses project-specific secrets for authentication.
-
-If you discover a security issue, please email security@wildedge.dev instead of creating a public issue.
+Report security issues to security@wildedge.dev.
 
 ## Links
 
-- [Full Documentation](https://docs.wildedge.dev)
-- [Website](https://wildedge.dev)
+- [Documentation](https://docs.wildedge.dev)
 - [Compatibility Matrix](docs/compatibility.md)
 - [Changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md)
 - [License](LICENSE)
