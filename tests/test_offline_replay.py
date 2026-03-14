@@ -54,7 +54,7 @@ def test_offline_replay_restores_model_registry_for_pending_events(tmp_path):
             quantization="fp32",
         )
         client_a.publish(
-            {"event_id": "e1", "event_type": "inference", "model_id": "ResNet"}
+            {"event_id": "e1", "event_type": "model_load", "model_id": "ResNet"}
         )
         client_a.close()
 

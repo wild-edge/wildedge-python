@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--flush-timeout",
         type=float,
-        default=constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,
+        default=constants.DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC,
         help="Flush timeout (seconds) for shutdown.",
     )
     run.add_argument(

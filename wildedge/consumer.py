@@ -17,6 +17,7 @@ from wildedge.transmitter import TransmitError, Transmitter
 
 if TYPE_CHECKING:
     from wildedge.device import DeviceInfo
+    from wildedge.reservoir import ReservoirRegistry
 
 
 class Consumer:
@@ -35,6 +36,7 @@ class Consumer:
         max_event_age_sec: float = constants.DEFAULT_MAX_EVENT_AGE_SEC,
         dead_letter_store: DeadLetterStore | None = None,
         on_delivery_failure: Callable[[str, int, int], None] | None = None,
+        reservoir_registry: ReservoirRegistry | None = None,
     ):
         self.queue = queue
         self.transmitter = transmitter
@@ -47,6 +49,11 @@ class Consumer:
         self.max_event_age_sec = max_event_age_sec
         self.dead_letter_store = dead_letter_store
         self.on_delivery_failure = on_delivery_failure
+        self.reservoir_registry = reservoir_registry
+
+        # Holds a failed reservoir snapshot across retry attempts.
+        # Cleared on successful transmission or permanent error.
+        self._held_snapshot: tuple[list[dict[str, Any]], dict[str, Any]] | None = None
 
         self.stop_event = threading.Event()
         self.stopped = False
@@ -59,6 +66,18 @@ class Consumer:
         self.thread.start()
         atexit.register(self.flush, constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC)
 
+    def has_pending(self) -> bool:
+        """True if the FIFO queue or a held snapshot needs draining."""
+        return self.queue.length() > 0 or self._held_snapshot is not None
+
+    def has_any_pending(self) -> bool:
+        """True if anything is pending, including the reservoir."""
+        if self.has_pending():
+            return True
+        if self.reservoir_registry is not None:
+            return self.reservoir_registry.has_events()
+        return False
+
     def run(self) -> None:
         last_flush = time.monotonic()
         while not self.stop_event.is_set():
@@ -66,8 +85,8 @@ class Consumer:
             time_since_flush = now - last_flush
             force_flush = time_since_flush >= self.flush_interval_sec
 
-            if self.queue.length() > 0 or force_flush:
-                sent = self.drain_once()
+            if self.has_pending() or force_flush:
+                sent = self.drain_once(flush_reservoir=force_flush)
                 if sent:
                     last_flush = time.monotonic()
                     self.backoff = constants.BACKOFF_MIN
@@ -133,21 +152,37 @@ class Consumer:
         self.queue.remove_first_n(len(events))
         self.notify_delivery_failure(reason, len(events))
 
-    def drain_once(self) -> bool:
-        events = self.queue.peek_many(self.batch_size)
-        if not events:
+    def drain_once(self, flush_reservoir: bool = False) -> bool:
+        # --- Reservoir snapshot (inference events) ---
+        if self.reservoir_registry is not None:
+            if self._held_snapshot is not None:
+                # Always retry a held snapshot regardless of flush_reservoir
+                inference_events, sampling = self._held_snapshot
+            elif flush_reservoir:
+                inference_events, sampling = self.reservoir_registry.snapshot_all()
+            else:
+                inference_events, sampling = [], {}
+        else:
+            inference_events, sampling = [], {}
+
+        # --- Non-inference FIFO ---
+        fifo_events = self.queue.peek_many(self.batch_size)
+
+        if not inference_events and not fifo_events:
             return False
 
+        # Age-check FIFO events (inference events in reservoir are not age-checked;
+        # they represent the current flush window and are always transmitted)
         now_unix = time.time()
         expired_count = 0
-        for event in events:
+        for event in fifo_events:
             first_seen = float(event.get("__we_first_queued_at", now_unix))
             if (now_unix - first_seen) > self.max_event_age_sec:
                 expired_count += 1
             else:
                 break
         if expired_count > 0:
-            expired = events[:expired_count]
+            expired = fifo_events[:expired_count]
             self.dead_letter_and_drop(
                 reason="event_age_exceeded",
                 events=expired,
@@ -160,21 +195,25 @@ class Consumer:
             )
             return True
 
-        for event in events:
+        for event in fifo_events:
             event["__we_attempts"] = int(event.get("__we_attempts", 0)) + 1
 
+        all_events = inference_events + fifo_events
         batch = build_batch(
             device=self.device,
             models=self.get_models(),
-            events=events,
+            events=all_events,
             session_id=self.session_id,
             created_at=self.created_at,
+            sampling=sampling if sampling else None,
         )
 
         if self.debug:
             logger.debug(
-                "wildedge: transmitting %d events (batch_id=%s)",
-                len(events),
+                "wildedge: transmitting %d events (%d inference, %d fifo, batch_id=%s)",
+                len(all_events),
+                len(inference_events),
+                len(fifo_events),
                 batch["batch_id"],
             )
 
@@ -182,10 +221,13 @@ class Consumer:
             response = self.transmitter.send(batch)
         except TransmitError as exc:
             logger.warning("wildedge: transmit failed, will retry: %s", exc)
+            if self.reservoir_registry is not None and self._held_snapshot is None:
+                self._held_snapshot = (inference_events, sampling)
             return False
 
         if response.status in ("accepted", "partial"):
-            self.queue.remove_first_n(len(events))
+            self.queue.remove_first_n(len(fifo_events))
+            self._held_snapshot = None
             if self.debug:
                 logger.debug(
                     "wildedge: accepted=%d rejected=%d",
@@ -199,7 +241,7 @@ class Consumer:
         if response.status in ("rejected", "unauthorized", "error"):
             self.dead_letter_and_drop(
                 reason=f"permanent_{response.status}",
-                events=events,
+                events=fifo_events,
                 batch_id=batch["batch_id"],
                 details={
                     "response_status": response.status,
@@ -207,19 +249,20 @@ class Consumer:
                     "events_rejected": response.events_rejected,
                 },
             )
+            self._held_snapshot = None
             return True
 
         return False
 
     def flush(self, timeout: float = 5.0) -> None:
-        """Block until the queue drains or timeout expires."""
+        """Block until the queue and reservoir drain or timeout expires."""
         if self.stopped:
             return
         deadline = time.monotonic() + timeout
         backoff = constants.BACKOFF_MIN
-        while self.queue.length() > 0 and time.monotonic() < deadline:
-            progressed = self.drain_once()
-            if self.queue.length() == 0:
+        while self.has_any_pending() and time.monotonic() < deadline:
+            progressed = self.drain_once(flush_reservoir=True)
+            if not self.has_any_pending():
                 break
             remaining = deadline - time.monotonic()
             if remaining <= 0:

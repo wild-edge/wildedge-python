@@ -42,3 +42,5 @@ batch = preprocess_input(batch)
 for _ in range(3):
     output = model.predict(batch, verbose=0)
     print("output shape:", output.shape)
+
+client.close()

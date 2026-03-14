@@ -114,3 +114,5 @@ for prompt in prompts:
     except Exception as exc:
         handle.track_error(error_code="UNKNOWN", error_message=str(exc)[:200])
         raise
+
+client.close()

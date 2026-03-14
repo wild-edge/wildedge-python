@@ -10,8 +10,10 @@ import torch
 
 model = timm.create_model("resnet18", pretrained=False).eval()
 batch = torch.randn(1, 3, 224, 224)
+iterations = 500
 
-with torch.inference_mode():
-    output = model(batch)
+for _ in range(iterations):
+    with torch.inference_mode():
+        output = model(batch)
 
-print("output shape:", tuple(output.shape))
+print("Done!")

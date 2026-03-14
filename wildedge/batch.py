@@ -17,9 +17,10 @@ def build_batch(
     events: list[dict],
     session_id: str,
     created_at: datetime,
+    sampling: dict | None = None,
 ) -> dict:
     """Build a protocol-compliant batch envelope."""
-    return {
+    batch: dict = {
         "protocol_version": constants.PROTOCOL_VERSION,
         "device": device.to_dict(),
         "models": models,
@@ -27,5 +28,8 @@ def build_batch(
         "batch_id": str(uuid.uuid4()),
         "created_at": created_at.isoformat(),
         "sent_at": datetime.now(timezone.utc).isoformat(),
-        "events": [_sanitize_event(event) for event in events],
     }
+    if sampling is not None:
+        batch["sampling"] = sampling
+    batch["events"] = [_sanitize_event(event) for event in events]
+    return batch

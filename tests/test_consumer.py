@@ -261,7 +261,7 @@ class TestConsumerFlush:
 
         stop_control = StopControl()
         consumer.stop_event = stop_control
-        consumer.drain_once = lambda: False
+        consumer.drain_once = lambda flush_reservoir=False: False
 
         called = {"count": 0}
 

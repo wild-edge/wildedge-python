@@ -40,3 +40,5 @@ with torch.inference_mode():
     for _ in range(3):
         output = model(batch)
         print("output shape:", output.shape)
+
+client.close()

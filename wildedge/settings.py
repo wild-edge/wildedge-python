@@ -95,7 +95,7 @@ def read_runtime_env(
     flush_timeout = float(
         env.get(
             constants.ENV_FLUSH_TIMEOUT,
-            str(constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC),
+            str(constants.DEFAULT_RUNTIME_FLUSH_TIMEOUT_SEC),
         )
     )
     return RuntimeEnv(
