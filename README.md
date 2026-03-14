@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Coverage](https://codecov.io/gh/wildedge/wildedge-python/branch/main/graph/badge.svg)](https://codecov.io/gh/wildedge/wildedge-python)
 
-On-device ML inference monitoring for Python. Tracks latency, errors, and model metadata — no inputs or outputs captured.
+On-device ML inference monitoring for Python. Tracks latency, errors, and model metadata. No inputs or outputs captured.
 
 ## Install
 
@@ -16,9 +16,9 @@ On-device ML inference monitoring for Python. Tracks latency, errors, and model 
 uv add wildedge-sdk
 ```
 
-## CLI — zero code changes
+## CLI
 
-Drop `wildedge run` in front of your existing command. WildEdge instruments the runtime before your code starts — no SDK calls required in user code.
+Drop `wildedge run` in front of your existing command. WildEdge instruments the runtime before your code starts. No SDK calls required in user code.
 
 ```bash
 WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
@@ -61,10 +61,10 @@ client.instrument("transformers", hubs=["huggingface"])
 | `timm` | `timm.create_model()` | `huggingface`, `torchhub` | [timm_example.py](examples/timm_example.py) |
 | `gguf` | `llama_cpp.Llama.__init__` | `huggingface` | [gguf_example.py](examples/gguf_example.py) |
 | `onnx` | `ort.InferenceSession` | `huggingface` | [onnx_example.py](examples/onnx_example.py) |
-| `ultralytics` | `ultralytics.YOLO.__init__` | — | — |
-| `tensorflow` | `tf.keras.models.load_model`, `tf.saved_model.load` | — | [tensorflow_example.py](examples/tensorflow_example.py) |
+| `ultralytics` | `ultralytics.YOLO.__init__` | - | - |
+| `tensorflow` | `tf.keras.models.load_model`, `tf.saved_model.load` | - | [tensorflow_example.py](examples/tensorflow_example.py) |
 | `torch` | forward hooks via `client.load()` | `torchhub` | [pytorch_example.py](examples/pytorch_example.py) |
-| `keras` | forward hooks via `client.load()` | — | [keras_example.py](examples/keras_example.py) |
+| `keras` | forward hooks via `client.load()` | - | [keras_example.py](examples/keras_example.py) |
 
 For `torch` and `keras`, models are user-defined subclasses so there's no constructor to patch. Use `client.load()` to get load/unload tracking alongside inference:
 
@@ -89,20 +89,20 @@ def run(input):
 
 | Parameter | Default | Env var | Description |
 |---|---|---|---|
-| `dsn` | — | `WILDEDGE_DSN` | `https://<secret>@ingest.wildedge.dev/<key>` |
-| `app_version` | `None` | — | Your app's version string |
+| `dsn` | - | `WILDEDGE_DSN` | `https://<secret>@ingest.wildedge.dev/<key>` |
+| `app_version` | `None` | - | Your app's version string |
 | `app_identity` | `<project_key>` | `WILDEDGE_APP_IDENTITY` | Namespace for offline persistence; set per-app in multi-process workloads |
 | `debug` | `false` | `WILDEDGE_DEBUG` | Log events to console |
-| `batch_size` | `10` | — | Events per transmission (1–100) |
-| `flush_interval_sec` | `60` | — | Max seconds between flushes (1–3600) |
-| `max_queue_size` | `200` | — | In-memory buffer limit (10–10000) |
-| `enable_offline_persistence` | `true` | — | Persist unsent events to disk and replay on restart |
-| `max_event_age_sec` | `900` | — | Max age before dead-lettering |
-| `enable_dead_letter_persistence` | `false` | — | Persist dropped batches to disk |
+| `batch_size` | `10` | - | Events per transmission (1-100) |
+| `flush_interval_sec` | `60` | - | Max seconds between flushes (1-3600) |
+| `max_queue_size` | `200` | - | In-memory buffer limit (10-10000) |
+| `enable_offline_persistence` | `true` | - | Persist unsent events to disk and replay on restart |
+| `max_event_age_sec` | `900` | - | Max age before dead-lettering |
+| `enable_dead_letter_persistence` | `false` | - | Persist dropped batches to disk |
 
 ## Privacy
 
-WildEdge captures **no inputs or outputs** — only metadata: latency, errors, model info, and download provenance. All inference runs locally; only telemetry is transmitted over HTTPS.
+WildEdge captures **no inputs or outputs**. Only metadata: latency, errors, model info, and download provenance. All inference runs locally; only telemetry is transmitted over HTTPS.
 
 Report security issues to security@wildedge.dev.
 

@@ -6,7 +6,7 @@
 # wildedge-sdk = { path = "..", editable = true }
 # ///
 """
-Keras integration example — run with: uv run keras_example.py
+Keras integration example. Run with: uv run keras_example.py
 
 Keras models are user-defined subclasses, so wildedge cannot patch the
 constructor directly like with timm or PyTorch. Use client.load() to

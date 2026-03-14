@@ -234,7 +234,7 @@ def classify_output_meta(
 def weights_file_exists(model_arg: object) -> bool:
     """Return True if the weights file appears to already be on disk."""
     if not isinstance(model_arg, str):
-        return True  # not a path string — weights already in memory or a loaded object
+        return True  # not a path string; weights already in memory or a loaded object
     p = Path(model_arg)
     if p.is_file():
         return True

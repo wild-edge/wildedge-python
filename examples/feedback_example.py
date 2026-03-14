@@ -6,7 +6,7 @@
 # wildedge-sdk = { path = "..", editable = true }
 # ///
 """
-Feedback example — run with: uv run feedback_example.py
+Feedback example. Run with: uv run feedback_example.py
 
 Simulates an automated quality gate: after each inference, the top-1 confidence
 score drives a thumbs_up / thumbs_down feedback event with no human input.

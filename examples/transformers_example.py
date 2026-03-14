@@ -69,7 +69,7 @@ def run_embed() -> None:
     print("Feature extraction (BERT):")
     for sent in sentences:
         result = pipe(sent)
-        # result shape: [1, seq_len, hidden_size] — take CLS token embedding
+        # result shape: [1, seq_len, hidden_size]; take CLS token embedding
         cls_embedding = result[0][0]
         dims = len(cls_embedding)
         norm = sum(v**2 for v in cls_embedding) ** 0.5
@@ -89,7 +89,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # instrument() patches transformers.pipeline and AutoModel.from_pretrained
-    # before any model is loaded — everything below is tracked automatically.
+    # before any model is loaded; everything below is tracked automatically.
     client = wildedge.WildEdge(app_version="1.0.0")  # set WILDEDGE_DSN env var
     client.instrument("transformers", hubs=["huggingface"])
 
@@ -99,7 +99,7 @@ def main() -> None:
     ]()
 
     client.flush()
-    print("\nDone — events flushed to WildEdge.")
+    print("\nDone. Events flushed to WildEdge.")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@
 # [tool.uv.sources]
 # wildedge-sdk = { path = "..", editable = true }
 # ///
-"""ONNX Runtime integration example — run with: uv run onnx_example.py"""
+"""ONNX Runtime integration example. Run with: uv run onnx_example.py"""
 
 import numpy as np
 import onnxruntime as ort

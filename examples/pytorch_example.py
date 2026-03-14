@@ -5,7 +5,7 @@
 # [tool.uv.sources]
 # wildedge-sdk = { path = "..", editable = true }
 # ///
-"""PyTorch integration example — run with: uv run pytorch_example.py"""
+"""PyTorch integration example. Run with: uv run pytorch_example.py"""
 
 import torch
 import torch.nn as nn

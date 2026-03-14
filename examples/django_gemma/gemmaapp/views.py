@@ -1,7 +1,7 @@
 """Gemma inference view.
 
 The Llama constructor is patched automatically by `wildedge run --integrations gguf`
-via sitecustomize.py — load/unload/inference events are tracked without any
+via sitecustomize.py; load/unload/inference events are tracked without any
 wildedge imports here.
 
 On macOS, waitress (thread-pool, no fork) is used as the WSGI server.
@@ -30,7 +30,7 @@ _llm = Llama.from_pretrained(
     verbose=False,
 )
 
-# Llama inference is not thread-safe on a single context — serialise requests.
+# Llama inference is not thread-safe on a single context; serialise requests.
 _llm_lock = threading.Lock()
 
 

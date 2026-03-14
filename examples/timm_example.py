@@ -6,9 +6,9 @@
 # wildedge-sdk = { path = "..", editable = true }
 # ///
 """
-timm integration example — run with: uv run timm_example.py
+timm integration example. Run with: uv run timm_example.py
 
-timm models are standard PyTorch nn.Module subclasses — wildedge patches
+timm models are standard PyTorch nn.Module subclasses; wildedge patches
 timm.create_model at client initialisation, so load timing, download tracking,
 and unload tracking happen automatically. Inference tracking uses the existing
 PyTorch forward hooks.

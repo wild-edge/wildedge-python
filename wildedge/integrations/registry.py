@@ -2,8 +2,7 @@
 
 Contains only ML *framework* integrations (inference tracking, load/unload
 timing).  Model hub and repository trackers (download provenance) live in
-``wildedge.hubs.registry`` — they are orthogonal concerns with different
-activation semantics.
+``wildedge.hubs.registry``. They have different activation semantics.
 """
 
 from __future__ import annotations

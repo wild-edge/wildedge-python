@@ -6,7 +6,7 @@
 # wildedge-sdk = { path = "..", editable = true }
 # ///
 """
-MLX / mlx-lm integration example — Apple Silicon only.
+MLX / mlx-lm integration example. Apple Silicon only.
 
 WildEdge patches mlx_lm.load and mlx_lm.generate at client initialisation.
 Load timing, HuggingFace Hub download tracking, inference metrics (tokens/sec,
@@ -50,7 +50,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # instrument() patches mlx_lm.load and mlx_lm.generate — must be called
+    # instrument() patches mlx_lm.load and mlx_lm.generate; must be called
     # before any model is loaded.
     client = wildedge.WildEdge(app_version="1.0.0")  # set WILDEDGE_DSN env var
     client.instrument("mlx", hubs=["huggingface"])
@@ -71,7 +71,7 @@ def main() -> None:
         print(f"    A: {response}\n")
 
     client.flush()
-    print("Done — events flushed to WildEdge.")
+    print("Done. Events flushed to WildEdge.")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Gunicorn configuration — Linux only.
+"""Gunicorn configuration. Linux only.
 
 On macOS use waitress instead (demo.sh selects automatically).
 Requires llama-cpp-python built without Metal:

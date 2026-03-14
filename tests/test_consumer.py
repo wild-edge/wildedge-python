@@ -411,7 +411,7 @@ class TestConsumerForkSafety:
 
         consumer._pause()
         # stopped is False (reset by _pause) and queue is empty, so flush
-        # calls drain_once which returns False immediately — no transmit calls.
+        # calls drain_once which returns False immediately; no transmit calls.
         consumer.flush(timeout=0.1)
         mock_tx.send.assert_not_called()
 
