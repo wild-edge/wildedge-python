@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -9,7 +10,7 @@ from typing import TYPE_CHECKING
 from wildedge import constants
 from wildedge.device import CURRENT_PLATFORM
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.logging import logger
+from wildedge.integrations.common import debug_failure
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -29,11 +30,10 @@ _tf_auto_patched = False
 TF_AUTO_LOAD_PATCH_NAME = "tensorflow_auto_load"
 
 
-def _debug_tensorflow_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: tensorflow %s failed: %s", context, exc)
+debug_tensorflow_failure = functools.partial(debug_failure, "tensorflow")
 
 
-def _is_tensorflow_model(obj: object) -> bool:
+def is_tensorflow_model(obj: object) -> bool:
     return any(
         c.__name__ == "Model"
         and ("keras" in c.__module__ or c.__module__.startswith("tensorflow"))
@@ -41,7 +41,7 @@ def _is_tensorflow_model(obj: object) -> bool:
     )
 
 
-def _detect_accelerator(obj: object) -> str:
+def detect_accelerator(obj: object) -> str:
     try:
         weights = getattr(obj, "weights", None) or []
         if weights:
@@ -49,11 +49,11 @@ def _detect_accelerator(obj: object) -> str:
             if any(g in device.upper() for g in ("GPU", "CUDA")):
                 return CURRENT_PLATFORM.gpu_accelerator_for_offload()
     except Exception as exc:
-        _debug_tensorflow_failure("accelerator detection", exc)
+        debug_tensorflow_failure("accelerator detection", exc)
     return "cpu"
 
 
-def _build_patched_call(original_call):
+def build_patched_call(original_call):
     def patched_call(self_inner, *args, **kwargs):
         handle = getattr(self_inner, TENSORFLOW_HANDLE_ATTR, None)
         if handle is None:
@@ -79,7 +79,7 @@ def _build_patched_call(original_call):
     return patched_call
 
 
-def _patch_predict_once(obj: object) -> None:
+def patch_predict_once(obj: object) -> None:
     if getattr(obj, TENSORFLOW_PREDICT_PATCHED_ATTR, False):
         return
 
@@ -113,7 +113,7 @@ def _patch_predict_once(obj: object) -> None:
     setattr(obj, TENSORFLOW_PREDICT_PATCHED_ATTR, True)
 
 
-def _build_load_patch(client_ref: object, original_load):
+def build_load_patch(client_ref: object, original_load):
     def patched_load(*args, **kwargs):  # type: ignore[no-untyped-def]
         t0 = time.perf_counter()
         model = original_load(*args, **kwargs)
@@ -130,7 +130,7 @@ def _build_load_patch(client_ref: object, original_load):
 
 class TensorflowExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
-        return _is_tensorflow_model(obj)
+        return is_tensorflow_model(obj)
 
     def extract_info(
         self, obj: object, overrides: dict
@@ -156,14 +156,14 @@ class TensorflowExtractor(BaseExtractor):
         return model_id, info
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
-        handle.detected_accelerator = _detect_accelerator(obj)
+        handle.detected_accelerator = detect_accelerator(obj)
         setattr(obj, TENSORFLOW_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,
             patch_name=TENSORFLOW_CALL_PATCH_NAME,
-            make_patched_call=_build_patched_call,
+            make_patched_call=build_patched_call,
         )
-        _patch_predict_once(obj)
+        patch_predict_once(obj)
 
     @classmethod
     def install_auto_load_patch(cls, client_ref: object) -> None:
@@ -179,7 +179,7 @@ class TensorflowExtractor(BaseExtractor):
                 keras_models = _tf.keras.models
                 saved_model = _tf.saved_model
             except Exception as exc:
-                _debug_tensorflow_failure("auto-load patch setup", exc)
+                debug_tensorflow_failure("auto-load patch setup", exc)
                 return
 
             load_model = getattr(keras_models, "load_model", None)
@@ -188,7 +188,7 @@ class TensorflowExtractor(BaseExtractor):
                 and getattr(load_model, "__wildedge_patch_name__", None)
                 != TF_AUTO_LOAD_PATCH_NAME
             ):
-                keras_models.load_model = _build_load_patch(client_ref, load_model)
+                keras_models.load_model = build_load_patch(client_ref, load_model)
 
             saved_model_load = getattr(saved_model, "load", None)
             if (
@@ -196,6 +196,6 @@ class TensorflowExtractor(BaseExtractor):
                 and getattr(saved_model_load, "__wildedge_patch_name__", None)
                 != TF_AUTO_LOAD_PATCH_NAME
             ):
-                saved_model.load = _build_load_patch(client_ref, saved_model_load)
+                saved_model.load = build_load_patch(client_ref, saved_model_load)
 
             _tf_auto_patched = True

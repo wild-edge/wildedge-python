@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 import threading
 import time
@@ -17,6 +18,11 @@ from wildedge.events.inference import (
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
+from wildedge.integrations.common import (
+    debug_failure,
+    dtype_to_quantization,
+    image_brightness_histogram,
+)
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
@@ -51,8 +57,7 @@ YOLO_AUTO_LOAD_PATCH_NAME = "ultralytics_auto_load"
 YOLO_FAMILY_RE = re.compile(r"^(yolo(?:v\d+|\d+))", re.IGNORECASE)
 
 
-def debug_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: ultralytics %s failed: %s", context, exc)
+debug_ultralytics_failure = functools.partial(debug_failure, "ultralytics")
 
 
 def is_yolo(obj: object) -> bool:
@@ -72,7 +77,7 @@ def detect_accelerator(obj: object) -> str:
             except StopIteration:
                 pass
     except Exception as exc:
-        debug_failure("accelerator detection", exc)
+        debug_ultralytics_failure("accelerator detection", exc)
     return "cpu"
 
 
@@ -82,18 +87,9 @@ def detect_quantization(obj: object) -> str | None:
         if inner is None:
             return None
         for p in inner.parameters():
-            dtype = str(p.dtype)
-            if "bfloat16" in dtype:
-                return "bf16"
-            if "float16" in dtype:
-                return "f16"
-            if "int8" in dtype or "qint" in dtype:
-                return "int8"
-            if "float32" in dtype:
-                return "f32"
-            break  # only need the first parameter's dtype
+            return dtype_to_quantization(str(p.dtype))
     except Exception as exc:
-        debug_failure("quantization detection", exc)
+        debug_ultralytics_failure("quantization detection", exc)
     return None
 
 
@@ -117,16 +113,9 @@ def image_input_meta(arr: object) -> ImageInputMeta | None:
         span = t_max - t_min
         norm = (floats - t_min) / span if span > 0 else floats
 
-        brightness_mean = round(float(norm.mean()), 4)
-        brightness_stddev = round(float(norm.std()), 4)
-
-        flat = norm.flatten()
-        edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-        buckets = [
-            int(((flat >= lo) & (flat < hi)).sum()) for lo, hi in zip(edges, edges[1:])
-        ]
-        buckets[-1] += int((flat == 1.0).sum())
-
+        brightness_mean, brightness_stddev, buckets = image_brightness_histogram(
+            norm.flatten()
+        )
         return ImageInputMeta(
             width=int(w),
             height=int(h),
@@ -139,7 +128,7 @@ def image_input_meta(arr: object) -> ImageInputMeta | None:
             ),
         )
     except Exception as exc:
-        debug_failure("image input meta extraction", exc)
+        debug_ultralytics_failure("image input meta extraction", exc)
         return None
 
 
@@ -188,7 +177,7 @@ def detection_output_meta(
             num_classes=len(names) if names else None,
         )
     except Exception as exc:
-        debug_failure("detection output meta extraction", exc)
+        debug_ultralytics_failure("detection output meta extraction", exc)
         return None
 
 
@@ -227,7 +216,7 @@ def classify_output_meta(
             avg_confidence=top1_conf,
         )
     except Exception as exc:
-        debug_failure("classify output meta extraction", exc)
+        debug_ultralytics_failure("classify output meta extraction", exc)
         return None
 
 
@@ -268,7 +257,7 @@ def build_download_record(obj: object, load_ms: int) -> dict | None:
             "bandwidth_bps": bandwidth_bps,
         }
     except Exception as exc:
-        debug_failure("download record build", exc)
+        debug_ultralytics_failure("download record build", exc)
     return None
 
 
@@ -292,7 +281,7 @@ def build_patched_call(original_call):  # type: ignore[no-untyped-def]
                     if isinstance(source[0], np.ndarray):
                         input_meta = image_input_meta(source[0])
             except Exception as exc:
-                debug_failure("input meta extraction", exc)
+                debug_ultralytics_failure("input meta extraction", exc)
 
         t0 = time.perf_counter()
         try:
@@ -312,7 +301,7 @@ def build_patched_call(original_call):  # type: ignore[no-untyped-def]
                     else:
                         output_meta = detection_output_meta(results, names)
                 except Exception as exc:
-                    debug_failure("output meta extraction", exc)
+                    debug_ultralytics_failure("output meta extraction", exc)
 
             handle.track_inference(
                 duration_ms=duration_ms,
@@ -384,7 +373,7 @@ class UltralyticsExtractor(BaseExtractor):
             if ckpt_path:
                 return Path(ckpt_path).stat().st_size
         except Exception as exc:
-            debug_failure("model size detection", exc)
+            debug_ultralytics_failure("model size detection", exc)
         return None
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import threading
 import time
@@ -15,6 +16,11 @@ from wildedge.events.inference import (
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor
+from wildedge.integrations.common import (
+    debug_failure,
+    dtype_to_quantization,
+    image_brightness_histogram,
+)
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
@@ -39,11 +45,10 @@ _GENERIC_GRAPH_NAMES = {"torch_jit", "main", "model", "network", "graph", "onnx_
 ONNX_AUTO_LOAD_PATCH_NAME = "onnx_auto_load"
 
 
-def _debug_onnx_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: onnx %s failed: %s", context, exc)
+debug_onnx_failure = functools.partial(debug_failure, "onnx")
 
 
-def _model_id_from_path(path: str) -> str | None:
+def model_id_from_path(path: str) -> str | None:
     """Derive a useful model_id from an ONNX file path.
 
     Handles two cases:
@@ -57,7 +62,7 @@ def _model_id_from_path(path: str) -> str | None:
     return stem if stem and stem not in _GENERIC_GRAPH_NAMES else None
 
 
-def _is_ort_session(obj: object) -> bool:
+def is_ort_session(obj: object) -> bool:
     return ort is not None and isinstance(obj, ort.InferenceSession)
 
 
@@ -72,37 +77,31 @@ _PROVIDER_TO_ACCELERATOR: dict[str, str] = {
 }
 
 
-def _detect_accelerator(session: Any) -> str:
+def detect_accelerator(session: Any) -> str:
     try:
         for provider in session.get_providers():
             acc = _PROVIDER_TO_ACCELERATOR.get(provider)
             if acc:
                 return acc
     except Exception as exc:
-        _debug_onnx_failure("accelerator detection", exc)
+        debug_onnx_failure("accelerator detection", exc)
     return "cpu"
 
 
-def _detect_quantization(session: Any) -> str | None:
+def detect_quantization(session: Any) -> str | None:
     """Inspect graph nodes for quantization markers."""
     # Best effort: infer quantization from input dtype
     try:
         inputs = session.get_inputs()
         if inputs:
-            dtype = inputs[0].type
-            if "int8" in dtype or "uint8" in dtype:
-                return "int8"
-            if "float16" in dtype:
-                return "f16"
-            if "float32" in dtype:
-                return "f32"
+            return dtype_to_quantization(inputs[0].type)
     except Exception as exc:
-        _debug_onnx_failure("quantization detection", exc)
+        debug_onnx_failure("quantization detection", exc)
 
     return None
 
 
-def _image_input_meta(arr: Any) -> ImageInputMeta | None:
+def image_input_meta(arr: Any) -> ImageInputMeta | None:
     """Extract ImageInputMeta from a (N, C, H, W) numpy array. Best-effort, never raises."""
     try:
         if np is None:
@@ -118,16 +117,9 @@ def _image_input_meta(arr: Any) -> ImageInputMeta | None:
         span = t_max - t_min
         norm = (floats - t_min) / span if span > 0 else floats
 
-        brightness_mean = round(float(norm.mean()), 4)
-        brightness_stddev = round(float(norm.std()), 4)
-
-        flat = norm.flatten()
-        edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-        buckets = [
-            int(((flat >= lo) & (flat < hi)).sum()) for lo, hi in zip(edges, edges[1:])
-        ]
-        buckets[-1] += int((flat == 1.0).sum())
-
+        brightness_mean, brightness_stddev, buckets = image_brightness_histogram(
+            norm.flatten()
+        )
         return ImageInputMeta(
             width=int(w),
             height=int(h),
@@ -140,13 +132,13 @@ def _image_input_meta(arr: Any) -> ImageInputMeta | None:
             ),
         )
     except Exception as exc:
-        _debug_onnx_failure("image input meta extraction", exc)
+        debug_onnx_failure("image input meta extraction", exc)
         return None
 
 
 class OnnxExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
-        return _is_ort_session(obj)
+        return is_ort_session(obj)
 
     def extract_info(
         self, obj: object, overrides: dict
@@ -177,7 +169,7 @@ class OnnxExtractor(BaseExtractor):
 
         quantization = overrides.pop("quantization", None)
         if quantization is None:
-            quantization = _detect_quantization(obj)
+            quantization = detect_quantization(obj)
             if quantization is None:
                 logger.warning(
                     "wildedge: ONNX model quantization could not be detected - sending as null"
@@ -200,7 +192,7 @@ class OnnxExtractor(BaseExtractor):
         return model_id, info
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
-        handle.detected_accelerator = _detect_accelerator(obj)
+        handle.detected_accelerator = detect_accelerator(obj)
 
         # Detect classification output at hook-install time from session metadata.
         num_classes: int = 0
@@ -215,7 +207,7 @@ class OnnxExtractor(BaseExtractor):
                 ):
                     num_classes = out_shape[1]
         except Exception as exc:
-            _debug_onnx_failure("output shape inspection", exc)
+            debug_onnx_failure("output shape inspection", exc)
 
         original_run = obj.run  # type: ignore[union-attr]
 
@@ -230,10 +222,10 @@ class OnnxExtractor(BaseExtractor):
                 try:
                     batch_size = int(first.shape[0])
                 except Exception as exc:
-                    _debug_onnx_failure("batch size extraction", exc)
+                    debug_onnx_failure("batch size extraction", exc)
                 if len(getattr(first, "shape", ())) == 4:
                     input_modality = "image"
-                    input_meta = _image_input_meta(first)
+                    input_meta = image_input_meta(first)
 
             t0 = time.perf_counter()
             try:
@@ -264,7 +256,7 @@ class OnnxExtractor(BaseExtractor):
                         )
                         output_modality = "classification"
                     except Exception as exc:
-                        _debug_onnx_failure("classification output metadata", exc)
+                        debug_onnx_failure("classification output metadata", exc)
 
                 handle.track_inference(
                     duration_ms=duration_ms,
@@ -321,7 +313,7 @@ class OnnxExtractor(BaseExtractor):
                 c = client_ref()  # type: ignore[call-arg]
                 if c is not None and not c.closed:
                     model_id = (
-                        _model_id_from_path(path_arg)
+                        model_id_from_path(path_arg)
                         if isinstance(path_arg, str)
                         else None
                     )

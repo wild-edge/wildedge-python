@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import threading
 import time
@@ -16,7 +17,7 @@ from wildedge.events.inference import (
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.logging import logger
+from wildedge.integrations.common import debug_failure, dtype_to_quantization
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -41,11 +42,10 @@ PIPELINE_HANDLE_ATTR = "__wildedge_pipeline_handle__"
 _tl = threading.local()
 
 
-def _debug_failure(context: str, exc: BaseException) -> None:
-    logger.debug("wildedge: transformers %s failed: %s", context, exc)
+debug_transformers_failure = functools.partial(debug_failure, "transformers")
 
 
-def _is_pretrained_model(obj: object) -> bool:
+def is_pretrained_model(obj: object) -> bool:
     """String-check avoids importing transformers when not installed."""
     for cls in type(obj).__mro__:
         if cls.__name__ == "PreTrainedModel" and "transformers" in cls.__module__:
@@ -53,14 +53,14 @@ def _is_pretrained_model(obj: object) -> bool:
     return False
 
 
-def _is_pipeline(obj: object) -> bool:
+def is_pipeline(obj: object) -> bool:
     for cls in type(obj).__mro__:
         if cls.__name__ == "Pipeline" and "transformers" in cls.__module__:
             return True
     return False
 
 
-def _extract_model_config(obj: object) -> tuple[str | None, str | None, str | None]:
+def extract_model_config(obj: object) -> tuple[str | None, str | None, str | None]:
     """Returns (name_or_path, model_type, architectures[0]). Never raises."""
     try:
         config = getattr(obj, "config", None)
@@ -75,17 +75,17 @@ def _extract_model_config(obj: object) -> tuple[str | None, str | None, str | No
         arch = archs[0] if archs else None
         return name_or_path, model_type, arch
     except Exception as exc:
-        _debug_failure("config extraction", exc)
+        debug_transformers_failure("config extraction", exc)
         return None, None, None
 
 
-def _is_local_path(name_or_path: str | None) -> bool:
+def is_local_path(name_or_path: str | None) -> bool:
     if not name_or_path:
         return False
     return os.path.sep in name_or_path or os.path.exists(name_or_path)
 
 
-def _detect_quantization(obj: object) -> str | None:
+def detect_quantization(obj: object) -> str | None:
     try:
         # Prefer quantization_config (bitsandbytes, GPTQ, AWQ, etc.)
         config = getattr(obj, "config", None)
@@ -109,19 +109,13 @@ def _detect_quantization(obj: object) -> str | None:
         model = getattr(obj, "model", obj)
         dtype = getattr(model, "dtype", None)
         if dtype is not None:
-            s = str(dtype)
-            if "bfloat16" in s:
-                return "bf16"
-            if "float16" in s:
-                return "f16"
-            if "int8" in s:
-                return "int8"
+            return dtype_to_quantization(str(dtype))
     except Exception as exc:
-        _debug_failure("quantization detection", exc)
+        debug_transformers_failure("quantization detection", exc)
     return None
 
 
-def _detect_accelerator(obj: object) -> str:
+def detect_accelerator(obj: object) -> str:
     try:
         model = getattr(obj, "model", obj)
         first = next(model.parameters())  # type: ignore[union-attr]
@@ -131,7 +125,7 @@ def _detect_accelerator(obj: object) -> str:
     return "cpu"
 
 
-def _infer_task_from_arch(arch: str | None) -> str | None:
+def infer_task_from_arch(arch: str | None) -> str | None:
     """Guess broad task category from architecture class name."""
     if not arch:
         return None
@@ -152,7 +146,7 @@ def _infer_task_from_arch(arch: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _pipeline_input_meta(inputs: object) -> TextInputMeta | None:
+def pipeline_input_meta(inputs: object) -> TextInputMeta | None:
     try:
         texts: list[str] = []
         if isinstance(inputs, str):
@@ -165,11 +159,11 @@ def _pipeline_input_meta(inputs: object) -> TextInputMeta | None:
         word_count = sum(len(t.split()) for t in texts)
         return TextInputMeta(char_count=char_count, word_count=word_count)
     except Exception as exc:
-        _debug_failure("pipeline input meta", exc)
+        debug_transformers_failure("pipeline input meta", exc)
         return None
 
 
-def _pipeline_output_meta(
+def pipeline_output_meta(
     task: str | None, outputs: object
 ) -> ClassificationOutputMeta | GenerationOutputMeta | EmbeddingOutputMeta | None:
     if task is None:
@@ -229,11 +223,11 @@ def _pipeline_output_meta(
             return EmbeddingOutputMeta(dimensions=dims)
 
     except Exception as exc:
-        _debug_failure("pipeline output meta", exc)
+        debug_transformers_failure("pipeline output meta", exc)
     return None
 
 
-def _pipeline_modalities(task: str | None) -> tuple[str | None, str | None]:
+def pipeline_modalities(task: str | None) -> tuple[str | None, str | None]:
     if not task:
         return "text", None
     t = task.lower()
@@ -246,7 +240,7 @@ def _pipeline_modalities(task: str | None) -> tuple[str | None, str | None]:
     return "text", None
 
 
-def _build_pipeline_patched_call(original_call):  # type: ignore[no-untyped-def]
+def build_pipeline_patched_call(original_call):  # type: ignore[no-untyped-def]
     def patched_call(self_inner, inputs, *args, **kwargs):  # type: ignore[no-untyped-def]
         handle = getattr(self_inner, PIPELINE_HANDLE_ATTR, None)
         if handle is None:
@@ -258,14 +252,14 @@ def _build_pipeline_patched_call(original_call):  # type: ignore[no-untyped-def]
             if isinstance(inputs, list)
             else (1 if isinstance(inputs, str) else None)
         )
-        input_meta = _pipeline_input_meta(inputs)
-        input_modality, output_modality = _pipeline_modalities(task)
+        input_meta = pipeline_input_meta(inputs)
+        input_modality, output_modality = pipeline_modalities(task)
 
         t0 = time.perf_counter()
         try:
             outputs = original_call(self_inner, inputs, *args, **kwargs)
             duration_ms = elapsed_ms(t0)
-            output_meta = _pipeline_output_meta(task, outputs)
+            output_meta = pipeline_output_meta(task, outputs)
             handle.track_inference(
                 duration_ms=duration_ms,
                 batch_size=batch_size,
@@ -293,12 +287,12 @@ def _build_pipeline_patched_call(original_call):  # type: ignore[no-untyped-def]
 
 class TransformersExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
-        return _is_pretrained_model(obj) or _is_pipeline(obj)
+        return is_pretrained_model(obj) or is_pipeline(obj)
 
     def extract_info(
         self, obj: object, overrides: dict
     ) -> tuple[str | None, ModelInfo]:
-        name_or_path, model_type, arch = _extract_model_config(obj)
+        name_or_path, model_type, arch = extract_model_config(obj)
 
         model_name = arch or model_type or type(obj).__name__
         model_id = overrides.pop("id", None) or name_or_path or model_name
@@ -306,8 +300,8 @@ class TransformersExtractor(BaseExtractor):
         version = overrides.pop("version", "unknown")
         source = overrides.pop("source", None)
         if source is None:
-            source = "local" if _is_local_path(name_or_path) else "huggingface"
-        quantization = overrides.pop("quantization", None) or _detect_quantization(obj)
+            source = "local" if is_local_path(name_or_path) else "huggingface"
+        quantization = overrides.pop("quantization", None) or detect_quantization(obj)
 
         info = ModelInfo(
             model_name=model_name,
@@ -330,24 +324,24 @@ class TransformersExtractor(BaseExtractor):
             buffers = sum(b.numel() * b.element_size() for b in model.buffers())  # type: ignore[union-attr]
             return params + buffers
         except Exception as exc:
-            _debug_failure("memory estimation", exc)
+            debug_transformers_failure("memory estimation", exc)
             return None
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
-        handle.detected_accelerator = _detect_accelerator(obj)
+        handle.detected_accelerator = detect_accelerator(obj)
 
-        if _is_pipeline(obj):
+        if is_pipeline(obj):
             setattr(obj, PIPELINE_HANDLE_ATTR, handle)
             patch_instance_call_once(
                 obj,
                 patch_name=PIPELINE_CALL_PATCH_NAME,
-                make_patched_call=_build_pipeline_patched_call,
+                make_patched_call=build_pipeline_patched_call,
             )
         else:
             # PreTrainedModel: use PyTorch forward hooks
             _local = threading.local()
-            _, _, arch = _extract_model_config(obj)
-            task_hint = _infer_task_from_arch(arch)
+            _, _, arch = extract_model_config(obj)
+            task_hint = infer_task_from_arch(arch)
 
             def pre_hook(module, args):  # type: ignore[no-untyped-def]
                 _local.t0 = time.perf_counter()
@@ -370,7 +364,7 @@ class TransformersExtractor(BaseExtractor):
                         if len(shape) >= 2:
                             input_meta = TextInputMeta(token_count=int(shape[1]))
                 except Exception as exc:
-                    _debug_failure("forward hook input extraction", exc)
+                    debug_transformers_failure("forward hook input extraction", exc)
 
                 handle.track_inference(
                     duration_ms=duration_ms,

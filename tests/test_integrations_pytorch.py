@@ -8,10 +8,10 @@ from wildedge.integrations.pytorch import (
     PytorchExtractor,
 )
 from wildedge.integrations.pytorch import (
-    _detect_accelerator as torch_detect_accelerator,
+    detect_accelerator as torch_detect_accelerator,
 )
 from wildedge.integrations.pytorch import (
-    _detect_quantization as torch_detect_quantization,
+    detect_quantization as torch_detect_quantization,
 )
 from wildedge.model import ModelHandle, ModelInfo
 
