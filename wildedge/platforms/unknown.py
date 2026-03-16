@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from wildedge.platforms.base import debug_detection_failure
+from wildedge.platforms.hardware import HardwareContext
 
 
 class UnknownPlatform:
@@ -45,3 +46,6 @@ class UnknownPlatform:
 
     def gpu_accelerator_for_offload(self) -> str:
         return "cpu"
+
+    def hardware_context(self) -> HardwareContext:
+        return HardwareContext()

@@ -25,6 +25,7 @@ from wildedge.events import (
     TextInputMeta,
 )
 from wildedge.logging import logger
+from wildedge.platforms.hardware import HardwareContext
 
 
 @dataclass
@@ -141,6 +142,7 @@ class ModelHandle:
         | EmbeddingOutputMeta
         | None = None,
         generation_config: GenerationConfig | None = None,
+        hardware: HardwareContext | None = None,
     ) -> str:
         event = InferenceEvent(
             model_id=self.model_id,
@@ -153,6 +155,7 @@ class ModelHandle:
             input_meta=input_meta,
             output_meta=output_meta,
             generation_config=generation_config,
+            hardware=hardware,
         )
         self.last_inference_id = event.inference_id
         self.publish(event.to_dict())

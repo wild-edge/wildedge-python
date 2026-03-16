@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from wildedge.platforms.hardware import HardwareContext
+
 
 @dataclass
 class HistogramSummary:
@@ -278,6 +280,7 @@ class InferenceEvent:
         | None
     ) = None
     generation_config: GenerationConfig | None = None
+    hardware: HardwareContext | None = None
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     inference_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -302,6 +305,8 @@ class InferenceEvent:
             inference_data["output_meta"] = self.output_meta.to_dict()
         if self.generation_config is not None:
             inference_data["generation_config"] = self.generation_config.to_dict()
+        if self.hardware is not None:
+            inference_data["hardware"] = self.hardware.to_dict()
 
         return {
             "event_id": self.event_id,

@@ -17,11 +17,14 @@ from wildedge.events import (
     ImageInputMeta,
     TextInputMeta,
 )
+from wildedge.platforms.hardware import HardwareContext, ThermalContext
 from wildedge.queue import QueuePolicy
 from wildedge.timing import Timer
 
 __all__ = [
     "WildEdge",
+    "HardwareContext",
+    "ThermalContext",
     "track",
     "QueuePolicy",
     "DeviceInfo",

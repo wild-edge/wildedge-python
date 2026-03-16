@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import ctypes
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from wildedge.logging import logger
+
+if TYPE_CHECKING:
+    from wildedge.platforms.hardware import HardwareContext
 
 
 class PlatformAdapter(Protocol):
@@ -25,6 +28,8 @@ class PlatformAdapter(Protocol):
     def gpu_accelerators(self) -> tuple[list[str], str | None]: ...
 
     def gpu_accelerator_for_offload(self) -> str: ...
+
+    def hardware_context(self) -> HardwareContext: ...
 
 
 def debug_detection_failure(context: str, exc: BaseException) -> None:
