@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -330,8 +331,8 @@ def test_doctor_uses_project_key_for_default_namespace(monkeypatch, capsys):
     rc = cli.main(["doctor", "--integrations", "onnx"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "/test-prod/pending_queue" in out
-    assert "/test-prod/dead_letters" in out
+    assert str(Path("test-prod") / "pending_queue") in out
+    assert str(Path("test-prod") / "dead_letters") in out
 
 
 def test_doctor_uses_app_identity_override_for_namespace(monkeypatch, capsys):
@@ -342,8 +343,8 @@ def test_doctor_uses_app_identity_override_for_namespace(monkeypatch, capsys):
     rc = cli.main(["doctor", "--integrations", "onnx"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "/my-app/pending_queue" in out
-    assert "/my-app/dead_letters" in out
+    assert str(Path("my-app") / "pending_queue") in out
+    assert str(Path("my-app") / "dead_letters") in out
 
 
 def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):

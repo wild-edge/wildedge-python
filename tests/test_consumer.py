@@ -3,6 +3,8 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.device import DeviceInfo
@@ -435,6 +437,10 @@ class TestConsumerForkSafety:
 
 
 class TestForkRegistration:
+    @pytest.mark.skipif(
+        not hasattr(os, "register_at_fork"),
+        reason="os.register_at_fork not available on Windows",
+    )
     def test_register_at_fork_wires_pause_and_resume(self, monkeypatch):
         """WildEdge.__init__ registers _pause and _resume via os.register_at_fork."""
         from wildedge.client import WildEdge
