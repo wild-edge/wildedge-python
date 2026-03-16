@@ -8,7 +8,15 @@ from pathlib import Path
 from wildedge.platforms.base import debug_detection_failure
 from wildedge.platforms.hardware import HardwareContext
 
-_libc = ctypes.CDLL(None)
+_libc: ctypes.CDLL | None = None
+
+
+def _get_libc() -> ctypes.CDLL:
+    global _libc
+    if _libc is None:
+        _libc = ctypes.CDLL(None)
+    return _libc
+
 
 _CF_STRING_ENCODING_UTF8 = 0x08000100
 _CF_NUMBER_SINT32_TYPE = 3
@@ -18,7 +26,9 @@ def _sysctl_uint32(name: bytes) -> int | None:
     try:
         buf = ctypes.c_uint32(0)
         size = ctypes.c_size_t(ctypes.sizeof(buf))
-        ret = _libc.sysctlbyname(name, ctypes.byref(buf), ctypes.byref(size), None, 0)
+        ret = _get_libc().sysctlbyname(
+            name, ctypes.byref(buf), ctypes.byref(size), None, 0
+        )
         return int(buf.value) if ret == 0 else None
     except Exception as exc:
         debug_detection_failure(f"macos sysctl_uint32({name!r})", exc)
@@ -29,7 +39,9 @@ def _sysctl_uint64(name: bytes) -> int | None:
     try:
         buf = ctypes.c_uint64(0)
         size = ctypes.c_size_t(ctypes.sizeof(buf))
-        ret = _libc.sysctlbyname(name, ctypes.byref(buf), ctypes.byref(size), None, 0)
+        ret = _get_libc().sysctlbyname(
+            name, ctypes.byref(buf), ctypes.byref(size), None, 0
+        )
         return int(buf.value) if ret == 0 else None
     except Exception as exc:
         debug_detection_failure(f"macos sysctl_uint64({name!r})", exc)
@@ -52,7 +64,9 @@ class MacOSPlatform:
         try:
             buf = ctypes.create_string_buffer(128)
             size = ctypes.c_size_t(ctypes.sizeof(buf))
-            ret = _libc.sysctlbyname(b"hw.model", buf, ctypes.byref(size), None, 0)
+            ret = _get_libc().sysctlbyname(
+                b"hw.model", buf, ctypes.byref(size), None, 0
+            )
             if ret == 0:
                 val = buf.value.decode().strip()
                 return val or None
