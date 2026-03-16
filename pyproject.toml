@@ -38,6 +38,7 @@ ban-relative-imports = "all"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 log_level = "ERROR"
+asyncio_mode = "auto"
 markers = [
     "requires_linux: test only on Linux",
     "requires_macos: test only on macOS",
@@ -47,6 +48,7 @@ markers = [
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pytest-asyncio>=0.25",
     "pytest-mock>=3.15.1",
     "ruff>=0.15.4",
     "tox",

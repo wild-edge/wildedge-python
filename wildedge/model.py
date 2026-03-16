@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from wildedge.events import (
+    ApiMeta,
     AudioInputMeta,
     ClassificationOutputMeta,
     DetectionOutputMeta,
@@ -144,6 +145,7 @@ class ModelHandle:
         | None = None,
         generation_config: GenerationConfig | None = None,
         hardware: HardwareContext | None = None,
+        api_meta: ApiMeta | None = None,
     ) -> str:
         if hardware is None and is_sampling():
             hardware = capture_hardware()
@@ -159,6 +161,7 @@ class ModelHandle:
             output_meta=output_meta,
             generation_config=generation_config,
             hardware=hardware,
+            api_meta=api_meta,
         )
         self.last_inference_id = event.inference_id
         self.publish(event.to_dict())
