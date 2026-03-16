@@ -12,7 +12,6 @@ except ImportError:
     _np = None  # type: ignore[assignment]
 
 from wildedge import constants
-from wildedge.device import CURRENT_PLATFORM
 from wildedge.events.inference import ClassificationOutputMeta, TopKPrediction
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.integrations.common import (
@@ -21,6 +20,7 @@ from wildedge.integrations.common import (
     num_classes_from_output_shape,
 )
 from wildedge.model import ModelInfo
+from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:

@@ -16,10 +16,10 @@ from urllib.parse import urlparse
 
 from wildedge import constants
 from wildedge.client import parse_dsn
-from wildedge.device import get_device_id_path
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
+from wildedge.platforms import get_device_id_path
 from wildedge.settings import read_client_env, resolve_app_identity
 
 

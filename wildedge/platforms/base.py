@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
+import hmac
+import locale
+import os
+import platform
+import uuid
 from abc import ABC, abstractmethod
+from datetime import datetime
 from pathlib import Path
 
+from wildedge import constants
 from wildedge.logging import logger
+from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
 
 
@@ -64,6 +73,79 @@ class Platform(ABC):
             cpu_freq_mhz=cpu_cur,
             cpu_freq_max_mhz=cpu_max,
         )
+
+    def get_device_id_path(self) -> Path:
+        return self.config_base() / constants.DEVICE_ID_DIR / constants.DEVICE_ID_FILE
+
+    def load_or_create_device_uuid(self) -> str:
+        path = self.get_device_id_path()
+        try:
+            if path.exists():
+                stored = path.read_text().strip()
+                if stored:
+                    return stored
+        except OSError as exc:
+            debug_detection_failure("device_uuid read", exc)
+
+        new_id = str(uuid.uuid4())
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(new_id)
+        except OSError as exc:
+            debug_detection_failure("device_uuid write", exc)
+        return new_id
+
+    def detect_device(
+        self, api_key: str, app_version: str | None, overrides: dict | None = None
+    ) -> DeviceInfo:
+        raw_uuid = self.load_or_create_device_uuid()
+        device_id = hmac_device_id(api_key, raw_uuid)
+        gpu_accs, gpu_name = self.gpu_accelerators()
+        info = DeviceInfo(
+            app_version=app_version,
+            device_id=device_id,
+            device_type=self.wire_type,
+            device_model=self.device_model(),
+            os_version=self.os_version(),
+            locale=detect_locale(),
+            timezone=detect_timezone(),
+            cpu_arch=platform.machine() or None,
+            cpu_cores=os.cpu_count(),
+            ram_total_bytes=self.ram_bytes(),
+            disk_total_bytes=self.disk_bytes(),
+            accelerators=["cpu", *gpu_accs],
+            gpu_name=gpu_name,
+        )
+        if overrides:
+            for k, v in overrides.items():
+                if hasattr(info, k):
+                    setattr(info, k, v)
+        return info
+
+
+def hmac_device_id(api_key: str, raw_id: str) -> str:
+    return hmac.new(
+        key=api_key.encode(),
+        msg=raw_id.encode(),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+
+def detect_locale() -> str | None:
+    try:
+        loc = locale.getlocale()
+        return loc[0] if loc else None
+    except Exception as exc:
+        debug_detection_failure("locale", exc)
+        return None
+
+
+def detect_timezone() -> str | None:
+    try:
+        return datetime.now().astimezone().tzname()
+    except Exception as exc:
+        debug_detection_failure("timezone", exc)
+        return None
 
 
 def debug_detection_failure(context: str, exc: BaseException) -> None:

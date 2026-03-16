@@ -19,7 +19,7 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 
 import wildedge
-from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
+from wildedge import GenerationOutputMeta, TextInputMeta, capture_hardware
 from wildedge.timing import Timer
 
 REPO = "bartowski/gemma-2-2b-it-GGUF"
@@ -92,6 +92,7 @@ for prompt in prompts:
 
         handle.track_inference(
             duration_ms=t.elapsed_ms,
+            hardware=capture_hardware(),
             input_modality="text",
             output_modality="text",
             success=True,

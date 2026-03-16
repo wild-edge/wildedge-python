@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 import wildedge
-from wildedge.device import DeviceInfo
+from wildedge.platforms.device_info import DeviceInfo
 
 
 class _DummyConsumer:

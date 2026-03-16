@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.dead_letters import DeadLetterStore
-from wildedge.device import DeviceInfo, detect_device
 from wildedge.hubs.base import BaseHubTracker
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.registry import supported_hubs
@@ -34,6 +33,8 @@ from wildedge.paths import (
     default_model_registry_path,
     default_pending_queue_dir,
 )
+from wildedge.platforms import detect_device
+from wildedge.platforms.device_info import DeviceInfo
 from wildedge.queue import EventQueue, QueuePolicy
 from wildedge.settings import read_client_env, resolve_app_identity
 from wildedge.timing import Timer, elapsed_ms

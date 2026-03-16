@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wildedge.client import WildEdge
-from wildedge.device import DeviceInfo
 from wildedge.model import ModelInfo
+from wildedge.platforms.device_info import DeviceInfo
 
 PLATFORM_MARKS = {
     "requires_linux": "linux",

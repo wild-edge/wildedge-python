@@ -202,7 +202,7 @@ def test_unexpected_status_keeps_events_in_consumer_queue():
     # End-to-end regression: TransmitError from an unexpected status must cause the
     # consumer to retain events for retry, not lose them.
     from wildedge.consumer import Consumer
-    from wildedge.device import DeviceInfo
+    from wildedge.platforms.device_info import DeviceInfo
     from wildedge.queue import EventQueue
 
     queue = EventQueue(max_size=100)

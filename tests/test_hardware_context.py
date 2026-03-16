@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from wildedge.events.inference import InferenceEvent
-from wildedge.platforms import capture
+from wildedge.platforms import capture_hardware
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
 from wildedge.platforms.linux import LinuxPlatform
 
@@ -70,7 +70,7 @@ def test_capture_sets_accelerator_actual(monkeypatch):
     monkeypatch.setattr(
         LinuxPlatform, "hardware_context", lambda self: HardwareContext()
     )
-    assert capture(accelerator_actual="gpu").accelerator_actual == "gpu"
+    assert capture_hardware(accelerator_actual="gpu").accelerator_actual == "gpu"
 
 
 def test_capture_preserves_existing_accelerator_when_not_passed(monkeypatch):
@@ -80,4 +80,4 @@ def test_capture_preserves_existing_accelerator_when_not_passed(monkeypatch):
         "hardware_context",
         lambda self: HardwareContext(accelerator_actual="mps"),
     )
-    assert capture().accelerator_actual == "mps"
+    assert capture_hardware().accelerator_actual == "mps"

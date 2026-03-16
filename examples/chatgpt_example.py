@@ -18,7 +18,13 @@ Requires: WILDEDGE_DSN and OPENAI_API_KEY environment variables.
 from openai import OpenAI
 
 import wildedge
-from wildedge import FeedbackType, GenerationConfig, GenerationOutputMeta, TextInputMeta
+from wildedge import (
+    FeedbackType,
+    GenerationConfig,
+    GenerationOutputMeta,
+    TextInputMeta,
+    capture_hardware,
+)
 from wildedge.timing import Timer
 
 MODEL = "gpt-4o"
@@ -72,6 +78,7 @@ for turn_index, prompt in enumerate(prompts):
 
         inference_id = handle.track_inference(
             duration_ms=t.elapsed_ms,
+            hardware=capture_hardware(),
             input_modality="text",
             output_modality="text",
             success=True,

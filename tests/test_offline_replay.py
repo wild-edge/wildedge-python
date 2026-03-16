@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from wildedge.client import WildEdge
-from wildedge.device import DeviceInfo
+from wildedge.platforms.device_info import DeviceInfo
 
 
 class _DummyConsumer:

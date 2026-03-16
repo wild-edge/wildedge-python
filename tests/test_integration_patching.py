@@ -6,11 +6,11 @@ from unittest.mock import patch
 import pytest
 
 from wildedge.client import WildEdge
-from wildedge.device import DeviceInfo
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.integrations.gguf import GgufExtractor
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
+from wildedge.platforms.device_info import DeviceInfo
 
 
 def test_hf_install_patch_is_idempotent(monkeypatch):
