@@ -5,11 +5,10 @@ import shutil
 import sys
 from pathlib import Path
 
-from wildedge.platforms.base import debug_detection_failure
-from wildedge.platforms.hardware import HardwareContext
+from wildedge.platforms.base import Platform, debug_detection_failure
 
 
-class UnknownPlatform:
+class UnknownPlatform(Platform):
     wire_type = sys.platform
 
     def config_base(self) -> Path:
@@ -31,9 +30,6 @@ class UnknownPlatform:
             debug_detection_failure("unknown os_version", exc)
             return None
 
-    def ram_bytes(self) -> int | None:
-        return None
-
     def disk_bytes(self) -> int | None:
         try:
             return shutil.disk_usage("/").total
@@ -46,6 +42,3 @@ class UnknownPlatform:
 
     def gpu_accelerator_for_offload(self) -> str:
         return "cpu"
-
-    def hardware_context(self) -> HardwareContext:
-        return HardwareContext()

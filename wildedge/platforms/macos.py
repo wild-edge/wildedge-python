@@ -5,8 +5,7 @@ import platform
 import shutil
 from pathlib import Path
 
-from wildedge.platforms.base import debug_detection_failure
-from wildedge.platforms.hardware import HardwareContext
+from wildedge.platforms.base import Platform, debug_detection_failure
 
 _libc: ctypes.CDLL | None = None
 
@@ -48,7 +47,7 @@ def _sysctl_uint64(name: bytes) -> int | None:
         return None
 
 
-class MacOSPlatform:
+class MacOSPlatform(Platform):
     wire_type = "macos"
 
     def config_base(self) -> Path:
@@ -85,9 +84,6 @@ class MacOSPlatform:
             else None
         )
         return total, available
-
-    def ram_bytes(self) -> int | None:
-        return self.meminfo()[0]
 
     def disk_bytes(self) -> int | None:
         try:
@@ -204,14 +200,3 @@ class MacOSPlatform:
         except Exception as exc:
             debug_detection_failure("macos battery", exc)
             return None, None
-
-    def hardware_context(self) -> HardwareContext:
-        _, mem_available = self.meminfo()
-        bat_level, bat_charging = self.battery()
-        return HardwareContext(
-            memory_available_bytes=mem_available,
-            battery_level=bat_level,
-            battery_charging=bat_charging,
-            # cpu_freq not available on macOS (no public API on Apple Silicon)
-            # thermal not available via public Python API
-        )

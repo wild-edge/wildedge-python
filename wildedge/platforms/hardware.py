@@ -1,4 +1,4 @@
-"""Hardware context dataclasses and inference-time capture."""
+"""Hardware context dataclasses."""
 
 from __future__ import annotations
 
@@ -53,19 +53,3 @@ class HardwareContext:
             if v is not None:
                 d[k] = v
         return d
-
-
-def capture(accelerator_actual: str | None = None) -> HardwareContext:
-    """Read current hardware state. Never raises.
-
-    Pass ``accelerator_actual`` if the runtime reports which accelerator was
-    used; it may differ from the accelerator requested at load time.
-    """
-    # Lazy import avoids a circular dependency: __init__.py imports platform
-    # modules which import this file.
-    from wildedge.platforms import CURRENT_PLATFORM  # noqa: PLC0415
-
-    ctx = CURRENT_PLATFORM.hardware_context()
-    if accelerator_actual is not None:
-        ctx.accelerator_actual = accelerator_actual
-    return ctx

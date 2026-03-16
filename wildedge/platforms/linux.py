@@ -6,12 +6,13 @@ import shutil
 from pathlib import Path
 
 from wildedge.platforms.base import (
+    Platform,
     cuda_device_count,
     debug_detection_failure,
     hip_device_count,
     nvml_gpu_name,
 )
-from wildedge.platforms.hardware import HardwareContext, ThermalContext
+from wildedge.platforms.hardware import ThermalContext
 
 # Thermal zone type substrings that identify a CPU zone.
 CPU_THERMAL_ZONE_TYPES = ("cpu", "x86_pkg", "acpi", "soc", "pkg")
@@ -26,7 +27,7 @@ TRIP_POINT_STATES: tuple[tuple[str, str, str], ...] = (
 TRIP_POINT_DEFAULT = ("nominal", "active")
 
 
-class LinuxPlatform:
+class LinuxPlatform(Platform):
     wire_type = "linux"
 
     def config_base(self) -> Path:
@@ -82,9 +83,6 @@ class LinuxPlatform:
             debug_detection_failure("linux meminfo", exc)
         return total, available
 
-    def ram_bytes(self) -> int | None:
-        return self.meminfo()[0]
-
     def disk_bytes(self) -> int | None:
         try:
             return shutil.disk_usage("/").total
@@ -105,19 +103,6 @@ class LinuxPlatform:
     def gpu_accelerator_for_offload(self) -> str:
         accs, _ = self.gpu_accelerators()
         return accs[0] if accs else "cpu"
-
-    def hardware_context(self) -> HardwareContext:
-        bat_level, bat_charging = self.battery()
-        cpu_cur, cpu_max = self.cpu_freq()
-        _, mem_available = self.meminfo()
-        return HardwareContext(
-            thermal=self.thermal(),
-            battery_level=bat_level,
-            battery_charging=bat_charging,
-            memory_available_bytes=mem_available,
-            cpu_freq_mhz=cpu_cur,
-            cpu_freq_max_mhz=cpu_max,
-        )
 
     def cpu_freq(self) -> tuple[int | None, int | None]:
         """Read current and max CPU frequency (MHz) from cpufreq for cpu0."""

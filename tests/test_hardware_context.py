@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from wildedge.events.inference import InferenceEvent
-from wildedge.platforms.hardware import HardwareContext, ThermalContext, capture
+from wildedge.platforms import capture
+from wildedge.platforms.hardware import HardwareContext, ThermalContext
 from wildedge.platforms.linux import LinuxPlatform
 
 

@@ -7,11 +7,11 @@ import shutil
 from pathlib import Path
 
 from wildedge.platforms.base import (
+    Platform,
     cuda_device_count,
     debug_detection_failure,
     nvml_gpu_name,
 )
-from wildedge.platforms.hardware import HardwareContext
 
 try:
     import winreg as _winreg  # type: ignore[import]  # Windows only
@@ -44,7 +44,7 @@ class _SystemPowerStatus(ctypes.Structure):
     ]
 
 
-class WindowsPlatform:
+class WindowsPlatform(Platform):
     wire_type = "windows"
 
     def config_base(self) -> Path:
@@ -89,9 +89,6 @@ class WindowsPlatform:
             debug_detection_failure("windows meminfo", exc)
             return None, None
 
-    def ram_bytes(self) -> int | None:
-        return self.meminfo()[0]
-
     def disk_bytes(self) -> int | None:
         try:
             drive = os.environ.get("SystemDrive", "C:\\")
@@ -129,12 +126,3 @@ class WindowsPlatform:
         except Exception as exc:
             debug_detection_failure("windows battery", exc)
             return None, None
-
-    def hardware_context(self) -> HardwareContext:
-        _, mem_available = self.meminfo()
-        bat_level, bat_charging = self.battery()
-        return HardwareContext(
-            memory_available_bytes=mem_available,
-            battery_level=bat_level,
-            battery_charging=bat_charging,
-        )

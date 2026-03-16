@@ -1,35 +1,69 @@
 from __future__ import annotations
 
 import ctypes
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
 
 from wildedge.logging import logger
-
-if TYPE_CHECKING:
-    from wildedge.platforms.hardware import HardwareContext
+from wildedge.platforms.hardware import HardwareContext, ThermalContext
 
 
-class PlatformAdapter(Protocol):
+class Platform(ABC):
     wire_type: str
 
+    @abstractmethod
     def config_base(self) -> Path: ...
+
+    @abstractmethod
     def state_base(self) -> Path: ...
+
+    @abstractmethod
     def cache_base(self) -> Path: ...
 
+    @abstractmethod
     def device_model(self) -> str | None: ...
 
+    @abstractmethod
     def os_version(self) -> str | None: ...
 
-    def ram_bytes(self) -> int | None: ...
-
+    @abstractmethod
     def disk_bytes(self) -> int | None: ...
 
+    @abstractmethod
     def gpu_accelerators(self) -> tuple[list[str], str | None]: ...
 
+    @abstractmethod
     def gpu_accelerator_for_offload(self) -> str: ...
 
-    def hardware_context(self) -> HardwareContext: ...
+    # Optional hardware introspection — subclasses override what they support.
+
+    def meminfo(self) -> tuple[int | None, int | None]:
+        return None, None
+
+    def ram_bytes(self) -> int | None:
+        return self.meminfo()[0]
+
+    def battery(self) -> tuple[float | None, bool | None]:
+        return None, None
+
+    def cpu_freq(self) -> tuple[int | None, int | None]:
+        return None, None
+
+    def thermal(self) -> ThermalContext | None:
+        return None
+
+    def hardware_context(self) -> HardwareContext:
+        _, mem_available = self.meminfo()
+        bat_level, bat_charging = self.battery()
+        cpu_cur, cpu_max = self.cpu_freq()
+        return HardwareContext(
+            thermal=self.thermal(),
+            battery_level=bat_level,
+            battery_charging=bat_charging,
+            memory_available_bytes=mem_available,
+            cpu_freq_mhz=cpu_cur,
+            cpu_freq_max_mhz=cpu_max,
+        )
 
 
 def debug_detection_failure(context: str, exc: BaseException) -> None:
