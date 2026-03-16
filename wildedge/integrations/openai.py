@@ -30,18 +30,15 @@ OPENAI_INIT_PATCH_NAME = "openai_auto_load"
 debug_openai_failure = functools.partial(debug_failure, "openai")
 
 
+SOURCE_BY_HOSTNAME: dict[str, str] = {
+    "api.openai.com": "openai",
+    "openrouter.ai": "openrouter",
+}
+
+
 def source_from_base_url(base_url: str | None) -> str:
-    if not base_url:
-        return "openai"
-    s = base_url.lower()
-    if "openrouter" in s:
-        return "openrouter"
-    if "openai.com" in s:
-        return "openai"
-    try:
-        return urlparse(s).hostname or s
-    except Exception:
-        return s
+    hostname = urlparse(base_url.lower()).hostname if base_url else ""
+    return SOURCE_BY_HOSTNAME.get(hostname or "", hostname or "openai")
 
 
 def build_input_meta(messages: list, tokens_in: int | None) -> TextInputMeta | None:
@@ -112,6 +109,42 @@ def build_api_meta(response: object) -> ApiMeta | None:
         return None
 
 
+def resolve_handle(
+    model_id: str,
+    completions: object,
+    model_handles: dict[str, ModelHandle],
+    client: object,
+    source: str,
+) -> ModelHandle | None:
+    if model_id not in model_handles:
+        try:
+            model_handles[model_id] = client.register_model(  # type: ignore[attr-defined]
+                completions, model_id=model_id, source=source
+            )
+        except Exception as exc:
+            debug_openai_failure("model registration", exc)
+    return model_handles.get(model_id)
+
+
+def record_inference(
+    handle: ModelHandle,
+    result: object,
+    messages: list,
+    duration: int,
+) -> None:
+    usage = getattr(result, "usage", None)
+    tokens_in = getattr(usage, "prompt_tokens", None) if usage else None
+    handle.track_inference(
+        duration_ms=duration,
+        input_modality="text",
+        output_modality="generation",
+        success=True,
+        input_meta=build_input_meta(messages, tokens_in),
+        output_meta=build_output_meta(result, duration),
+        api_meta=build_api_meta(result),
+    )
+
+
 def wrap_sync_completions(completions: object, source: str, client_ref: object) -> None:
     original_create = completions.create  # type: ignore[attr-defined]
     model_handles: dict[str, ModelHandle] = {}
@@ -120,37 +153,15 @@ def wrap_sync_completions(completions: object, source: str, client_ref: object) 
         model_id: str | None = kwargs.get("model") or (args[0] if args else None)
         messages: list = kwargs.get("messages", [])
         is_streaming: bool = bool(kwargs.get("stream", False))
-
         c = client_ref()  # type: ignore[call-arg]
         if c is None or c.closed or not model_id:
             return original_create(*args, **kwargs)
-
-        if model_id not in model_handles:
-            try:
-                model_handles[model_id] = c.register_model(
-                    completions, model_id=model_id, source=source
-                )
-            except Exception as exc:
-                debug_openai_failure("model registration", exc)
-
-        handle = model_handles.get(model_id)
+        handle = resolve_handle(model_id, completions, model_handles, c, source)
         t0 = time.perf_counter()
         try:
             result = original_create(*args, **kwargs)
-            if is_streaming or handle is None:
-                return result
-            duration = elapsed_ms(t0)
-            usage = getattr(result, "usage", None)
-            tokens_in = getattr(usage, "prompt_tokens", None) if usage else None
-            handle.track_inference(
-                duration_ms=duration,
-                input_modality="text",
-                output_modality="generation",
-                success=True,
-                input_meta=build_input_meta(messages, tokens_in),
-                output_meta=build_output_meta(result, duration),
-                api_meta=build_api_meta(result),
-            )
+            if not is_streaming and handle is not None:
+                record_inference(handle, result, messages, elapsed_ms(t0))
             return result
         except Exception as exc:
             if handle is not None:
@@ -173,37 +184,15 @@ def wrap_async_completions(
         model_id: str | None = kwargs.get("model") or (args[0] if args else None)
         messages: list = kwargs.get("messages", [])
         is_streaming: bool = bool(kwargs.get("stream", False))
-
         c = client_ref()  # type: ignore[call-arg]
         if c is None or c.closed or not model_id:
             return await original_create(*args, **kwargs)
-
-        if model_id not in model_handles:
-            try:
-                model_handles[model_id] = c.register_model(
-                    completions, model_id=model_id, source=source
-                )
-            except Exception as exc:
-                debug_openai_failure("model registration", exc)
-
-        handle = model_handles.get(model_id)
+        handle = resolve_handle(model_id, completions, model_handles, c, source)
         t0 = time.perf_counter()
         try:
             result = await original_create(*args, **kwargs)
-            if is_streaming or handle is None:
-                return result
-            duration = elapsed_ms(t0)
-            usage = getattr(result, "usage", None)
-            tokens_in = getattr(usage, "prompt_tokens", None) if usage else None
-            handle.track_inference(
-                duration_ms=duration,
-                input_modality="text",
-                output_modality="generation",
-                success=True,
-                input_meta=build_input_meta(messages, tokens_in),
-                output_meta=build_output_meta(result, duration),
-                api_meta=build_api_meta(result),
-            )
+            if not is_streaming and handle is not None:
+                record_inference(handle, result, messages, elapsed_ms(t0))
             return result
         except Exception as exc:
             if handle is not None:
