@@ -25,6 +25,7 @@ from wildedge.events import (
     TextInputMeta,
 )
 from wildedge.logging import logger
+from wildedge.platforms import capture_hardware, is_sampling
 from wildedge.platforms.hardware import HardwareContext
 
 
@@ -144,6 +145,8 @@ class ModelHandle:
         generation_config: GenerationConfig | None = None,
         hardware: HardwareContext | None = None,
     ) -> str:
+        if hardware is None and is_sampling():
+            hardware = capture_hardware()
         event = InferenceEvent(
             model_id=self.model_id,
             duration_ms=duration_ms,

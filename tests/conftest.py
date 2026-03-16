@@ -10,6 +10,15 @@ from wildedge.client import WildEdge
 from wildedge.model import ModelInfo
 from wildedge.platforms.device_info import DeviceInfo
 
+
+@pytest.fixture(autouse=True)
+def reset_hardware_sampler():
+    yield
+    from wildedge.platforms import stop_sampler
+
+    stop_sampler()
+
+
 PLATFORM_MARKS = {
     "requires_linux": "linux",
     "requires_macos": "darwin",
@@ -88,5 +97,8 @@ def client_with_stubbed_runtime():
         patch("wildedge.client.Transmitter"),
         patch("wildedge.client.Consumer"),
     ):
-        client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+        client = WildEdge(
+            dsn="https://secret@ingest.wildedge.dev/key",
+            sampling_interval_s=None,
+        )
     return client

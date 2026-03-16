@@ -99,6 +99,7 @@ def run(input):
 | `enable_offline_persistence` | `true` | - | Persist unsent events to disk and replay on restart |
 | `max_event_age_sec` | `900` | - | Max age before dead-lettering |
 | `enable_dead_letter_persistence` | `false` | - | Persist dropped batches to disk |
+| `sampling_interval_s` | `30.0` | - | Seconds between background hardware snapshots; `None` to disable |
 
 ## Privacy
 

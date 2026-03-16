@@ -33,7 +33,7 @@ from wildedge.paths import (
     default_model_registry_path,
     default_pending_queue_dir,
 )
-from wildedge.platforms import detect_device
+from wildedge.platforms import detect_device, start_sampler, stop_sampler
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.queue import EventQueue, QueuePolicy
 from wildedge.settings import read_client_env, resolve_app_identity
@@ -146,6 +146,7 @@ class WildEdge:
         dead_letter_dir: str | None = None,
         max_dead_letter_batches: int = constants.DEFAULT_MAX_DEAD_LETTER_BATCHES,
         on_delivery_failure: Callable[[str, int, int], None] | None = None,
+        sampling_interval_s: float | None = 30.0,
     ):
         env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
         dsn = env.dsn
@@ -231,6 +232,9 @@ class WildEdge:
             dead_letter_store=self.dead_letter_store,
             on_delivery_failure=on_delivery_failure,
         )
+
+        if sampling_interval_s:
+            start_sampler(interval_s=sampling_interval_s)
 
         self.auto_loaded: set[str] = set()
         # Active hub trackers keyed by hub name. Populated by _activate_hub()
@@ -622,6 +626,7 @@ class WildEdge:
     def close(self, timeout: float | None = None) -> None:
         """Best-effort shutdown; pass timeout to attempt bounded flush first."""
         self.closed = True
+        stop_sampler()
         if timeout is None:
             self.consumer.close()
         else:

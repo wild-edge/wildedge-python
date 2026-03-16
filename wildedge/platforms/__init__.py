@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -8,8 +9,29 @@ from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext
 from wildedge.platforms.linux import LinuxPlatform
 from wildedge.platforms.macos import MacOSPlatform
+from wildedge.platforms.sampler import HardwareSampler
 from wildedge.platforms.unknown import UnknownPlatform
 from wildedge.platforms.windows import WindowsPlatform
+
+_sampler: HardwareSampler | None = None
+
+
+def start_sampler(interval_s: float) -> None:
+    global _sampler
+    _sampler = HardwareSampler(platform=CURRENT_PLATFORM, interval_s=interval_s)
+    _sampler.start()
+
+
+def stop_sampler() -> None:
+    global _sampler
+    if _sampler is not None:
+        _sampler.stop()
+        _sampler = None
+
+
+def is_sampling() -> bool:
+    return _sampler is not None
+
 
 PLATFORMS: dict[str, Platform] = {
     "linux": LinuxPlatform(),
@@ -36,7 +58,7 @@ def detect_device(
 
 
 def capture_hardware(accelerator_actual: str | None = None) -> HardwareContext:
-    ctx = CURRENT_PLATFORM.hardware_context()
+    ctx = _sampler.snapshot() if _sampler else CURRENT_PLATFORM.hardware_context()
     if accelerator_actual is not None:
-        ctx.accelerator_actual = accelerator_actual
+        return dataclasses.replace(ctx, accelerator_actual=accelerator_actual)
     return ctx

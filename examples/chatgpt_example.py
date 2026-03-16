@@ -5,11 +5,13 @@
 # [tool.uv.sources]
 # wildedge-sdk = { path = "..", editable = true }
 # ///
-"""ChatGPT (OpenAI API): fully manual integration.
+"""ChatGPT (OpenAI API): fully manual integration with explicit hardware capture.
 
 Shows how to instrument a remote LLM with no local model file.
 Tracks input/output token counts, generation config, latency, errors,
-and user feedback without any auto-instrumentation hooks.
+and user feedback without any auto-instrumentation hooks. The background
+hardware sampler is disabled; hardware context is captured explicitly via
+capture_hardware() and passed to track_inference().
 
 Run with: uv run chatgpt_example.py
 Requires: WILDEDGE_DSN and OPENAI_API_KEY environment variables.
@@ -32,6 +34,7 @@ MODEL_VERSION = "2024-08-06"
 
 client = wildedge.WildEdge(
     app_version="1.0.0",  # set WILDEDGE_DSN env var
+    sampling_interval_s=None,  # disabled: hardware captured explicitly per call
 )
 
 # Remote models have no local object to inspect, so register with a
