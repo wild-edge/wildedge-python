@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.dead_letters import DeadLetterStore
-from wildedge.device import DeviceInfo, detect_device
 from wildedge.hubs.base import BaseHubTracker
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.registry import supported_hubs
@@ -34,6 +33,8 @@ from wildedge.paths import (
     default_model_registry_path,
     default_pending_queue_dir,
 )
+from wildedge.platforms import detect_device, start_sampler, stop_sampler
+from wildedge.platforms.device_info import DeviceInfo
 from wildedge.queue import EventQueue, QueuePolicy
 from wildedge.settings import read_client_env, resolve_app_identity
 from wildedge.timing import Timer, elapsed_ms
@@ -145,6 +146,7 @@ class WildEdge:
         dead_letter_dir: str | None = None,
         max_dead_letter_batches: int = constants.DEFAULT_MAX_DEAD_LETTER_BATCHES,
         on_delivery_failure: Callable[[str, int, int], None] | None = None,
+        sampling_interval_s: float | None = constants.DEFAULT_SAMPLING_INTERVAL_S,
     ):
         env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
         dsn = env.dsn
@@ -231,7 +233,14 @@ class WildEdge:
             on_delivery_failure=on_delivery_failure,
         )
 
+        if sampling_interval_s:
+            start_sampler(interval_s=sampling_interval_s)
+
         self.auto_loaded: set[str] = set()
+        # Stores the active weakref.finalize for each auto-loaded model so that
+        # when a wrapping object (e.g. a Pipeline) supersedes the inner model, the
+        # original finalizer can be detached and re-registered on the outer object.
+        self._auto_load_finalizers: dict[str, weakref.ref] = {}
         # Active hub trackers keyed by hub name. Populated by _activate_hub()
         # when instrument() is called with a hub name.
         self.hub_trackers: dict[str, BaseHubTracker] = {}
@@ -530,7 +539,31 @@ class WildEdge:
             downloads = thread_records
 
         handle = self.register_model(obj, model_id=model_id)
+        already_tracked = handle.model_id in self.auto_loaded
         self.auto_loaded.add(handle.model_id)
+
+        if already_tracked:
+            # A wrapping object (e.g. Pipeline) is superseding the inner model
+            # that was already registered (e.g. via from_pretrained). Wire up
+            # hooks on the new object so inference is tracked, transfer the
+            # unload finalizer so only one unload event fires, and skip
+            # duplicate download/load events.
+            extractor = self._find_extractor(obj)
+            if extractor is not None:
+                extractor.install_hooks(obj, handle)
+            prev_fin = self._auto_load_finalizers.pop(handle.model_id, None)
+            if prev_fin is not None:
+                prev_fin.detach()
+            loaded_at = time.perf_counter()
+
+            def _on_unload_superseded() -> None:
+                handle.track_unload(
+                    duration_ms=0, reason="gc", uptime_ms=elapsed_ms(loaded_at)
+                )
+
+            fin = weakref.finalize(obj, _on_unload_superseded)
+            self._auto_load_finalizers[handle.model_id] = fin
+            return
 
         memory = self._memory_bytes_for(obj)
 
@@ -571,7 +604,8 @@ class WildEdge:
                 duration_ms=0, reason="gc", uptime_ms=elapsed_ms(loaded_at)
             )
 
-        weakref.finalize(obj, _on_unload)
+        fin = weakref.finalize(obj, _on_unload)
+        self._auto_load_finalizers[handle.model_id] = fin
 
     def load(self, model_class: type, *args: Any, **kwargs: Any) -> object:
         """
@@ -621,6 +655,7 @@ class WildEdge:
     def close(self, timeout: float | None = None) -> None:
         """Best-effort shutdown; pass timeout to attempt bounded flush first."""
         self.closed = True
+        stop_sampler()
         if timeout is None:
             self.consumer.close()
         else:

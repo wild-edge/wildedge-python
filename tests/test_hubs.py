@@ -6,6 +6,8 @@ import os
 import types
 from unittest.mock import patch
 
+import pytest
+
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.torchhub import TorchHubTracker
 
@@ -18,7 +20,10 @@ def test_scan_cache_returns_real_files_skips_symlinks(tmp_path):
     real_file = tmp_path / "blob"
     real_file.write_bytes(b"x" * 100)
     link = tmp_path / "link"
-    link.symlink_to(real_file)
+    try:
+        link.symlink_to(real_file)
+    except OSError:
+        pytest.skip("symlinks require elevated privileges on Windows")
 
     tracker = HuggingFaceHubTracker()
     with patch.object(tracker, "cache_dir", return_value=str(tmp_path)):

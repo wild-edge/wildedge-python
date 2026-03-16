@@ -2,7 +2,6 @@
 
 from wildedge.client import WildEdge
 from wildedge.decorators import track
-from wildedge.device import DeviceInfo
 from wildedge.events import (
     AdapterDownload,
     AdapterLoad,
@@ -17,11 +16,17 @@ from wildedge.events import (
     ImageInputMeta,
     TextInputMeta,
 )
+from wildedge.platforms import capture_hardware
+from wildedge.platforms.device_info import DeviceInfo
+from wildedge.platforms.hardware import HardwareContext, ThermalContext
 from wildedge.queue import QueuePolicy
 from wildedge.timing import Timer
 
 __all__ = [
     "WildEdge",
+    "capture_hardware",
+    "HardwareContext",
+    "ThermalContext",
     "track",
     "QueuePolicy",
     "DeviceInfo",

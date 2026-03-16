@@ -5,12 +5,14 @@
 # [tool.uv.sources]
 # wildedge-sdk = { path = "..", editable = true }
 # ///
-"""Gemma 2 GGUF: fully manual integration, no auto-instrumentation.
+"""Gemma 2 GGUF: fully manual integration with background hardware sampling.
 
 Shows explicit download / load / inference / error tracking without
-client.instrument() or any automatic hooks.
+client.instrument() or any automatic hooks. Hardware context is captured
+automatically on every track_inference() call via the background sampler
+started by WildEdge (sampling_interval_s=30 by default).
 
-Run with: uv run gguf_gemma_manual_example.py
+Run with: uv run gguf_gemma_example.py
 """
 
 import os
@@ -19,7 +21,7 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 
 import wildedge
-from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
+from wildedge import GenerationOutputMeta, TextInputMeta
 from wildedge.timing import Timer
 
 REPO = "bartowski/gemma-2-2b-it-GGUF"

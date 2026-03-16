@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from wildedge import constants
-from wildedge.device import CURRENT_PLATFORM
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.integrations.common import debug_failure
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
+from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.timing import elapsed_ms
 
 try:

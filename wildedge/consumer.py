@@ -16,7 +16,7 @@ from wildedge.queue import EventQueue
 from wildedge.transmitter import TransmitError, Transmitter
 
 if TYPE_CHECKING:
-    from wildedge.device import DeviceInfo
+    from wildedge.platforms.device_info import DeviceInfo
 
 
 class Consumer:

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from wildedge import constants
 from wildedge.batch import build_batch
-from wildedge.device import DeviceInfo
+from wildedge.platforms.device_info import DeviceInfo
 
 
 def make_device() -> DeviceInfo:

@@ -21,19 +21,23 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import platform
 
 from transformers import pipeline
 
 import wildedge
+
+_DEVICE = "mps" if platform.machine() == "arm64" else "cpu"
 
 
 def run_classify() -> None:
     pipe = pipeline(
         "text-classification",
         model="distilbert-base-uncased-finetuned-sst-2-english",
+        device=_DEVICE,
     )
     inputs = [
-        "I absolutely loved this film — the performances were outstanding!",
+        "I absolutely loved this film, the performances were outstanding!",
         "The service was awful and the food arrived cold.",
         "An average experience, nothing special either way.",
     ]
@@ -47,7 +51,7 @@ def run_classify() -> None:
 
 
 def run_generate() -> None:
-    pipe = pipeline("text-generation", model="gpt2", max_new_tokens=40)
+    pipe = pipeline("text-generation", model="gpt2", max_new_tokens=40, device=_DEVICE)
     prompts = [
         "The future of on-device AI is",
         "Once upon a time, a small robot learned",
@@ -60,7 +64,7 @@ def run_generate() -> None:
 
 
 def run_embed() -> None:
-    pipe = pipeline("feature-extraction", model="bert-base-uncased")
+    pipe = pipeline("feature-extraction", model="bert-base-uncased", device=_DEVICE)
     sentences = [
         "Machine learning is transforming every industry.",
         "On-device inference keeps your data private.",
@@ -88,8 +92,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # instrument() patches transformers.pipeline and AutoModel.from_pretrained
-    # before any model is loaded; everything below is tracked automatically.
     client = wildedge.WildEdge(app_version="1.0.0")  # set WILDEDGE_DSN env var
     client.instrument("transformers", hubs=["huggingface"])
 

@@ -1,22 +1,64 @@
 from __future__ import annotations
 
+import dataclasses
 import sys
+from pathlib import Path
 
-from wildedge.platforms.base import PlatformAdapter
+from wildedge.platforms.base import Platform
+from wildedge.platforms.device_info import DeviceInfo
+from wildedge.platforms.hardware import HardwareContext
 from wildedge.platforms.linux import LinuxPlatform
 from wildedge.platforms.macos import MacOSPlatform
+from wildedge.platforms.sampler import HardwareSampler
 from wildedge.platforms.unknown import UnknownPlatform
 from wildedge.platforms.windows import WindowsPlatform
 
-PLATFORMS: dict[str, PlatformAdapter] = {
+_sampler: HardwareSampler | None = None
+
+
+def start_sampler(interval_s: float) -> None:
+    global _sampler
+    _sampler = HardwareSampler(platform=CURRENT_PLATFORM, interval_s=interval_s)
+    _sampler.start()
+
+
+def stop_sampler() -> None:
+    global _sampler
+    if _sampler is not None:
+        _sampler.stop()
+        _sampler = None
+
+
+def is_sampling() -> bool:
+    return _sampler is not None
+
+
+PLATFORMS: dict[str, Platform] = {
     "linux": LinuxPlatform(),
     "darwin": MacOSPlatform(),
     "win32": WindowsPlatform(),
 }
 
 
-def get_current_platform() -> PlatformAdapter:
+def get_current_platform() -> Platform:
     return PLATFORMS.get(sys.platform, UnknownPlatform())
 
 
 CURRENT_PLATFORM = get_current_platform()
+
+
+def get_device_id_path() -> Path:
+    return CURRENT_PLATFORM.get_device_id_path()
+
+
+def detect_device(
+    api_key: str, app_version: str | None, overrides: dict | None = None
+) -> DeviceInfo:
+    return CURRENT_PLATFORM.detect_device(api_key, app_version, overrides)
+
+
+def capture_hardware(accelerator_actual: str | None = None) -> HardwareContext:
+    ctx = _sampler.snapshot() if _sampler else CURRENT_PLATFORM.hardware_context()
+    if accelerator_actual is not None:
+        return dataclasses.replace(ctx, accelerator_actual=accelerator_actual)
+    return ctx

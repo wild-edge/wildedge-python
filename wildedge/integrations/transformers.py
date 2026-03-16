@@ -16,7 +16,7 @@ from wildedge.events.inference import (
     TextInputMeta,
     TopKPrediction,
 )
-from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
+from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import debug_failure, dtype_to_quantization
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
@@ -32,13 +32,17 @@ if TYPE_CHECKING:
 # --- Patch state ---
 _transformers_patched = False
 _TRANSFORMERS_PATCH_LOCK = threading.Lock()
-TRANSFORMERS_AUTO_LOAD_PATCH_NAME = "transformers_auto_load"
 
-# --- Pipeline instance patching ---
+# Patch names used to guard against double-patching.
+TRANSFORMERS_AUTO_LOAD_PATCH_NAME = "transformers_auto_load"
+PIPELINE_INIT_PATCH_NAME = "transformers_pipeline_init"
 PIPELINE_CALL_PATCH_NAME = "transformers_pipeline_call"
+
+# Per-instance attribute that stores the ModelHandle on a pipeline object.
 PIPELINE_HANDLE_ATTR = "__wildedge_pipeline_handle__"
 
-# Thread-local flag: suppress from_pretrained tracking when called inside pipeline()
+# Thread-local flag: suppress from_pretrained tracking when called inside
+# Pipeline.__init__ so the pipeline-level tracking takes precedence.
 _tl = threading.local()
 
 
@@ -120,8 +124,8 @@ def detect_accelerator(obj: object) -> str:
         model = getattr(obj, "model", obj)
         first = next(model.parameters())  # type: ignore[union-attr]
         return str(getattr(first.device, "type", "cpu") or "cpu")
-    except Exception:
-        pass
+    except Exception as exc:
+        debug_transformers_failure("accelerator detection", exc)
     return "cpu"
 
 
@@ -142,7 +146,7 @@ def infer_task_from_arch(arch: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline call patching
+# Pipeline input/output helpers
 # ---------------------------------------------------------------------------
 
 
@@ -240,46 +244,6 @@ def pipeline_modalities(task: str | None) -> tuple[str | None, str | None]:
     return "text", None
 
 
-def build_pipeline_patched_call(original_call):  # type: ignore[no-untyped-def]
-    def patched_call(self_inner, inputs, *args, **kwargs):  # type: ignore[no-untyped-def]
-        handle = getattr(self_inner, PIPELINE_HANDLE_ATTR, None)
-        if handle is None:
-            return original_call(self_inner, inputs, *args, **kwargs)
-
-        task = getattr(self_inner, "task", None)
-        batch_size: int | None = (
-            len(inputs)
-            if isinstance(inputs, list)
-            else (1 if isinstance(inputs, str) else None)
-        )
-        input_meta = pipeline_input_meta(inputs)
-        input_modality, output_modality = pipeline_modalities(task)
-
-        t0 = time.perf_counter()
-        try:
-            outputs = original_call(self_inner, inputs, *args, **kwargs)
-            duration_ms = elapsed_ms(t0)
-            output_meta = pipeline_output_meta(task, outputs)
-            handle.track_inference(
-                duration_ms=duration_ms,
-                batch_size=batch_size,
-                input_modality=input_modality,
-                output_modality=output_modality,
-                input_meta=input_meta,
-                output_meta=output_meta,
-                success=True,
-            )
-            return outputs
-        except Exception as exc:
-            handle.track_error(
-                error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-            )
-            raise
-
-    return patched_call
-
-
 # ---------------------------------------------------------------------------
 # Extractor
 # ---------------------------------------------------------------------------
@@ -331,12 +295,9 @@ class TransformersExtractor(BaseExtractor):
         handle.detected_accelerator = detect_accelerator(obj)
 
         if is_pipeline(obj):
+            # Attach handle to the instance; the class-level __call__ patch
+            # picks it up and no-ops for instances without this attribute.
             setattr(obj, PIPELINE_HANDLE_ATTR, handle)
-            patch_instance_call_once(
-                obj,
-                patch_name=PIPELINE_CALL_PATCH_NAME,
-                make_patched_call=build_pipeline_patched_call,
-            )
         else:
             # PreTrainedModel: use PyTorch forward hooks
             _local = threading.local()
@@ -385,14 +346,13 @@ class TransformersExtractor(BaseExtractor):
 
     @classmethod
     def install_auto_load_patch(cls, client_ref: object) -> None:
-        """Patch transformers.pipeline and PreTrainedModel.from_pretrained.
+        """Patch Pipeline.__init__, Pipeline.__call__, and from_pretrained.
 
-        Called once at WildEdge client initialisation. Any subsequent
-        ``pipeline(...)`` or ``AutoModel.from_pretrained(...)`` call is timed
-        and registered automatically. HuggingFace Hub downloads are intercepted
-        for the duration of the call and emitted as a model_download event.
-        A thread-local guard prevents double-tracking when pipeline() calls
-        from_pretrained() internally.
+        Patches at the class level so both ``import transformers; transformers.pipeline()``
+        and ``from transformers import pipeline; pipeline()`` are intercepted correctly.
+        The Pipeline.__init__ patch times load and calls _on_model_auto_loaded with the
+        fully-constructed pipeline (model already on its target device). The __call__
+        patch dispatches inference tracking via the per-instance handle attribute.
         """
         global _transformers_patched
         if _transformers_patched or _transformers is None:
@@ -401,39 +361,88 @@ class TransformersExtractor(BaseExtractor):
         with _TRANSFORMERS_PATCH_LOCK:
             if _transformers_patched:
                 return
-            cls._patch_pipeline(client_ref)
+            cls._patch_pipeline_init(client_ref)
+            cls._patch_pipeline_call()
             cls._patch_from_pretrained(client_ref)
             _transformers_patched = True
 
     @classmethod
-    def _patch_pipeline(cls, client_ref: object) -> None:
-        original_pipeline = _transformers.pipeline
+    def _patch_pipeline_init(cls, client_ref: object) -> None:
+        original_init = _transformers.Pipeline.__init__
         if (
-            getattr(original_pipeline, "__wildedge_patch_name__", None)
-            == TRANSFORMERS_AUTO_LOAD_PATCH_NAME
+            getattr(original_init, "__wildedge_patch_name__", None)
+            == PIPELINE_INIT_PATCH_NAME
         ):
             return
 
-        def patched_pipeline(*args, **kwargs):  # type: ignore[no-untyped-def]
+        def patched_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
             c = client_ref()  # type: ignore[call-arg]
             hub_before = (
                 c._snapshot_hub_caches() if c is not None and not c.closed else {}
             )
             t0 = time.perf_counter()
-            _tl.inside_pipeline = True
+            _tl.inside_pipeline_init = True
             try:
-                pipe = original_pipeline(*args, **kwargs)
+                original_init(self, *args, **kwargs)
             finally:
-                _tl.inside_pipeline = False
+                _tl.inside_pipeline_init = False
             load_ms = elapsed_ms(t0)
             if c is not None and not c.closed:
                 downloads = c._diff_hub_caches(hub_before, load_ms) or None
-                c._on_model_auto_loaded(pipe, load_ms=load_ms, downloads=downloads)
-            return pipe
+                c._on_model_auto_loaded(self, load_ms=load_ms, downloads=downloads)
 
-        patched_pipeline.__wildedge_patch_name__ = TRANSFORMERS_AUTO_LOAD_PATCH_NAME  # type: ignore[attr-defined]
-        patched_pipeline.__wildedge_original_call__ = original_pipeline  # type: ignore[attr-defined]
-        _transformers.pipeline = patched_pipeline
+        patched_init.__wildedge_patch_name__ = PIPELINE_INIT_PATCH_NAME  # type: ignore[attr-defined]
+        patched_init.__wildedge_original_call__ = original_init  # type: ignore[attr-defined]
+        _transformers.Pipeline.__init__ = patched_init
+
+    @classmethod
+    def _patch_pipeline_call(cls) -> None:
+        original_call = _transformers.Pipeline.__call__
+        if (
+            getattr(original_call, "__wildedge_patch_name__", None)
+            == PIPELINE_CALL_PATCH_NAME
+        ):
+            return
+
+        def patched_call(self, inputs, *args, **kwargs):  # type: ignore[no-untyped-def]
+            handle = getattr(self, PIPELINE_HANDLE_ATTR, None)
+            if handle is None:
+                return original_call(self, inputs, *args, **kwargs)
+
+            task = getattr(self, "task", None)
+            batch_size: int | None = (
+                len(inputs)
+                if isinstance(inputs, list)
+                else (1 if isinstance(inputs, str) else None)
+            )
+            input_meta = pipeline_input_meta(inputs)
+            input_modality, output_modality = pipeline_modalities(task)
+
+            t0 = time.perf_counter()
+            try:
+                outputs = original_call(self, inputs, *args, **kwargs)
+                duration_ms = elapsed_ms(t0)
+                output_meta = pipeline_output_meta(task, outputs)
+                handle.track_inference(
+                    duration_ms=duration_ms,
+                    batch_size=batch_size,
+                    input_modality=input_modality,
+                    output_modality=output_modality,
+                    input_meta=input_meta,
+                    output_meta=output_meta,
+                    success=True,
+                )
+                return outputs
+            except Exception as exc:
+                handle.track_error(
+                    error_code="UNKNOWN",
+                    error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                )
+                raise
+
+        patched_call.__wildedge_patch_name__ = PIPELINE_CALL_PATCH_NAME  # type: ignore[attr-defined]
+        patched_call.__wildedge_original_call__ = original_call  # type: ignore[attr-defined]
+        _transformers.Pipeline.__call__ = patched_call
 
     @classmethod
     def _patch_from_pretrained(cls, client_ref: object) -> None:
@@ -447,8 +456,8 @@ class TransformersExtractor(BaseExtractor):
         original_func = original_bound.__func__
 
         def patched_from_pretrained(model_cls, *args, **kwargs):  # type: ignore[no-untyped-def]
-            # Don't double-track models loaded inside pipeline()
-            if getattr(_tl, "inside_pipeline", False):
+            # Don't double-track models loaded inside Pipeline.__init__
+            if getattr(_tl, "inside_pipeline_init", False):
                 return original_func(model_cls, *args, **kwargs)
             c = client_ref()  # type: ignore[call-arg]
             hub_before = (

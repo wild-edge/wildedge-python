@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from wildedge.platforms.base import (
+    Platform,
     cuda_device_count,
     debug_detection_failure,
     nvml_gpu_name,
@@ -18,7 +19,32 @@ except ImportError:
     _winreg = None  # type: ignore[assignment]
 
 
-class WindowsPlatform:
+class _MEMORYSTATUSEX(ctypes.Structure):
+    _fields_ = [
+        ("dwLength", ctypes.c_ulong),
+        ("dwMemoryLoad", ctypes.c_ulong),
+        ("ullTotalPhys", ctypes.c_ulonglong),
+        ("ullAvailPhys", ctypes.c_ulonglong),
+        ("ullTotalPageFile", ctypes.c_ulonglong),
+        ("ullAvailPageFile", ctypes.c_ulonglong),
+        ("ullTotalVirtual", ctypes.c_ulonglong),
+        ("ullAvailVirtual", ctypes.c_ulonglong),
+        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+    ]
+
+
+class _SystemPowerStatus(ctypes.Structure):
+    _fields_ = [
+        ("ACLineStatus", ctypes.c_ubyte),
+        ("BatteryFlag", ctypes.c_ubyte),
+        ("BatteryLifePercent", ctypes.c_ubyte),
+        ("SystemStatusFlag", ctypes.c_ubyte),
+        ("BatteryLifeTime", ctypes.c_ulong),
+        ("BatteryFullLifeTime", ctypes.c_ulong),
+    ]
+
+
+class WindowsPlatform(Platform):
     wire_type = "windows"
 
     def config_base(self) -> Path:
@@ -52,29 +78,16 @@ class WindowsPlatform:
             debug_detection_failure("windows os_version", exc)
             return None
 
-    def ram_bytes(self) -> int | None:
+    def meminfo(self) -> tuple[int | None, int | None]:
+        """Return (total_bytes, available_bytes) from a single GlobalMemoryStatusEx call."""
         try:
-
-            class MEMORYSTATUSEX(ctypes.Structure):
-                _fields_ = [
-                    ("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-                ]
-
-            stat = MEMORYSTATUSEX()
+            stat = _MEMORYSTATUSEX()
             stat.dwLength = ctypes.sizeof(stat)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))  # type: ignore[attr-defined]
-            return stat.ullTotalPhys
+            return stat.ullTotalPhys, stat.ullAvailPhys
         except Exception as exc:
-            debug_detection_failure("windows ram_bytes", exc)
-            return None
+            debug_detection_failure("windows meminfo", exc)
+            return None, None
 
     def disk_bytes(self) -> int | None:
         try:
@@ -92,3 +105,24 @@ class WindowsPlatform:
     def gpu_accelerator_for_offload(self) -> str:
         accs, _ = self.gpu_accelerators()
         return accs[0] if accs else "cpu"
+
+    def battery(self) -> tuple[float | None, bool | None]:
+        """Read battery level and charging state via GetSystemPowerStatus."""
+        try:
+            status = _SystemPowerStatus()
+            if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):  # type: ignore[attr-defined]
+                return None, None
+            # BatteryLifePercent == 255 means unknown
+            level = (
+                status.BatteryLifePercent / 100.0
+                if status.BatteryLifePercent != 255
+                else None
+            )
+            # ACLineStatus: 0=offline, 1=online, 255=unknown
+            charging = (
+                bool(status.ACLineStatus == 1) if status.ACLineStatus != 255 else None
+            )
+            return level, charging
+        except Exception as exc:
+            debug_detection_failure("windows battery", exc)
+            return None, None

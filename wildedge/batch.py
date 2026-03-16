@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from wildedge import constants
-from wildedge.device import DeviceInfo
+from wildedge.platforms.device_info import DeviceInfo
 
 
 def _sanitize_event(event: dict) -> dict:

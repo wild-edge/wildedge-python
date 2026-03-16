@@ -5,10 +5,10 @@ import shutil
 import sys
 from pathlib import Path
 
-from wildedge.platforms.base import debug_detection_failure
+from wildedge.platforms.base import Platform, debug_detection_failure
 
 
-class UnknownPlatform:
+class UnknownPlatform(Platform):
     wire_type = sys.platform
 
     def config_base(self) -> Path:
@@ -29,9 +29,6 @@ class UnknownPlatform:
         except Exception as exc:
             debug_detection_failure("unknown os_version", exc)
             return None
-
-    def ram_bytes(self) -> int | None:
-        return None
 
     def disk_bytes(self) -> int | None:
         try:

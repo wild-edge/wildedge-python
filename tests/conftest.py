@@ -1,13 +1,39 @@
 """Shared fixtures for the WildEdge SDK test suite."""
 
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from wildedge.client import WildEdge
-from wildedge.device import DeviceInfo
 from wildedge.model import ModelInfo
+from wildedge.platforms.device_info import DeviceInfo
+
+
+@pytest.fixture(autouse=True)
+def reset_hardware_sampler():
+    yield
+    from wildedge.platforms import stop_sampler
+
+    stop_sampler()
+
+
+PLATFORM_MARKS = {
+    "requires_linux": "linux",
+    "requires_macos": "darwin",
+    "requires_windows": "win32",
+}
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        for mark_name, required_platform in PLATFORM_MARKS.items():
+            if item.get_closest_marker(mark_name) and sys.platform != required_platform:
+                item.add_marker(
+                    pytest.mark.skip(reason=f"requires {required_platform}")
+                )
+                break
 
 
 @pytest.fixture
@@ -71,5 +97,8 @@ def client_with_stubbed_runtime():
         patch("wildedge.client.Transmitter"),
         patch("wildedge.client.Consumer"),
     ):
-        client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+        client = WildEdge(
+            dsn="https://secret@ingest.wildedge.dev/key",
+            sampling_interval_s=None,
+        )
     return client
