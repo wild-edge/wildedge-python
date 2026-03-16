@@ -38,6 +38,7 @@ def clear_runtime_env() -> None:
         constants.ENV_STRICT_INTEGRATIONS,
         constants.ENV_PROPAGATE,
         constants.ENV_PRINT_STARTUP_REPORT,
+        constants.ENV_SAMPLING_INTERVAL,
     ):
         os.environ.pop(key, None)
 
@@ -106,7 +107,12 @@ def install_runtime(*, install_signal_handlers: bool = True) -> RuntimeContext:
     if not env.dsn:
         raise RuntimeConfigError(f"{ENV_DSN} must be set to use `wildedge run`.")
 
-    client = WildEdge(dsn=env.dsn, app_version=env.app_version, debug=env.debug)
+    client = WildEdge(
+        dsn=env.dsn,
+        app_version=env.app_version,
+        debug=env.debug,
+        sampling_interval_s=env.sampling_interval_s,
+    )
     statuses: list[dict[str, str]] = []
 
     for integration in env.integrations:

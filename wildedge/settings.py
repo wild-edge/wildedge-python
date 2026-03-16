@@ -27,6 +27,7 @@ class RuntimeEnv:
     integrations: list[str]
     hubs: list[str]
     propagate: bool
+    sampling_interval_s: float | None
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,13 @@ def read_runtime_env(
             str(constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC),
         )
     )
+    raw_sampling = env.get(constants.ENV_SAMPLING_INTERVAL)
+    sampling_interval_s: float | None
+    if raw_sampling is None:
+        sampling_interval_s = constants.DEFAULT_SAMPLING_INTERVAL_S
+    else:
+        parsed_sampling = float(raw_sampling)
+        sampling_interval_s = parsed_sampling if parsed_sampling > 0 else None
     return RuntimeEnv(
         dsn=env.get(constants.ENV_DSN),
         app_version=env.get(constants.ENV_APP_VERSION),
@@ -110,6 +118,7 @@ def read_runtime_env(
         ),
         hubs=parse_hub_list(env.get(constants.ENV_HUBS), all_hubs),
         propagate=parse_bool(env.get(constants.ENV_PROPAGATE, "1")),
+        sampling_interval_s=sampling_interval_s,
     )
 
 

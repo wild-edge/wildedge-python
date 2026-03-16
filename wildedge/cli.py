@@ -47,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated hub trackers to enable (huggingface, torchhub). Default: none.",
     )
     run.add_argument(
+        "--sampling-interval",
+        type=float,
+        default=constants.DEFAULT_SAMPLING_INTERVAL_S,
+        help="Hardware sampling interval in seconds. 0 to disable. Default: 30.",
+    )
+    run.add_argument(
         "--flush-timeout",
         type=float,
         default=constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,
@@ -111,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--network-check",
         action="store_true",
         help="Attempt TCP reachability check to DSN host:port.",
+    )
+    doctor.add_argument(
+        "--sampling-interval",
+        type=float,
+        default=constants.DEFAULT_SAMPLING_INTERVAL_S,
+        help="Validate intended hardware sampling interval (seconds). 0 to disable.",
     )
     doctor.add_argument(
         "--batch-size",
@@ -228,6 +240,7 @@ def run_command(parsed: argparse.Namespace) -> int:
         env[constants.ENV_DEBUG] = "1"
     env[constants.ENV_INTEGRATIONS] = parsed.integrations
     env[constants.ENV_HUBS] = parsed.hubs
+    env[constants.ENV_SAMPLING_INTERVAL] = str(parsed.sampling_interval)
     env[constants.ENV_FLUSH_TIMEOUT] = str(parsed.flush_timeout)
     env[constants.ENV_PROPAGATE] = "1" if parsed.propagate else "0"
     env[constants.ENV_STRICT_INTEGRATIONS] = "1" if parsed.strict_integrations else "0"
@@ -293,6 +306,8 @@ def validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
         return False, "max_event_age_sec must be > 0"
     if parsed.max_dead_letter_batches < 0:
         return False, "max_dead_letter_batches must be >= 0"
+    if parsed.sampling_interval < 0:
+        return False, "sampling_interval must be >= 0 (0 = disabled)"
     return True, "OK"
 
 

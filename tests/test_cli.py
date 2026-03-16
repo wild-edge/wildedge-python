@@ -153,7 +153,7 @@ def test_install_runtime_default_flush_timeout_is_shutdown_budget(monkeypatch):
     class FakeWildEdge:
         SUPPORTED_INTEGRATIONS = {"onnx"}
 
-        def __init__(self, *, dsn, app_version, debug):  # type: ignore[no-untyped-def]
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
             pass
 
         def instrument(self, name):  # type: ignore[no-untyped-def]
@@ -183,7 +183,7 @@ def test_install_runtime_instruments_requested_integrations(monkeypatch):
     class FakeWildEdge:
         SUPPORTED_INTEGRATIONS = {"onnx", "torch"}
 
-        def __init__(self, *, dsn, app_version, debug):  # type: ignore[no-untyped-def]
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
             assert dsn == "https://secret@ingest.wildedge.dev/key"
             assert app_version == "2.0.0"
             assert debug is True
@@ -219,7 +219,7 @@ def test_install_runtime_strict_integrations_raises(monkeypatch):
     class FakeWildEdge:
         SUPPORTED_INTEGRATIONS = {"onnx"}
 
-        def __init__(self, *, dsn, app_version, debug):  # type: ignore[no-untyped-def]
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
             pass
 
         def instrument(self, name):  # type: ignore[no-untyped-def]
@@ -369,7 +369,7 @@ def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):
 
 def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
     class FakeWildEdge:
-        def __init__(self, *, dsn, app_version, debug):  # type: ignore[no-untyped-def]
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
             pass
 
         def instrument(self, name):  # type: ignore[no-untyped-def]

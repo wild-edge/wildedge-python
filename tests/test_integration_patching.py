@@ -10,6 +10,7 @@ from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.integrations.gguf import GgufExtractor
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
+from wildedge.integrations.transformers import TransformersExtractor
 from wildedge.platforms.device_info import DeviceInfo
 
 
@@ -103,6 +104,85 @@ def test_timm_install_patch_is_idempotent(monkeypatch):
     PytorchExtractor.install_timm_patch(client_ref)
     second = fake_timm.create_model
     assert first is second
+
+
+def test_transformers_install_patch_is_idempotent(monkeypatch):
+    import wildedge.integrations.transformers as tf_mod
+
+    class FakePipeline:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, inputs, *args, **kwargs):
+            return []
+
+    class FakePreTrainedModel:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return cls()
+
+    fake_transformers = types.SimpleNamespace(
+        Pipeline=FakePipeline,
+        PreTrainedModel=FakePreTrainedModel,
+    )
+    monkeypatch.setattr(tf_mod, "_transformers", fake_transformers)
+    monkeypatch.setattr(tf_mod, "_transformers_patched", False)
+
+    def client_ref():
+        return None
+
+    TransformersExtractor.install_auto_load_patch(client_ref)
+    first_init = fake_transformers.Pipeline.__init__
+    first_call = fake_transformers.Pipeline.__call__
+    TransformersExtractor.install_auto_load_patch(client_ref)
+    assert fake_transformers.Pipeline.__init__ is first_init
+    assert fake_transformers.Pipeline.__call__ is first_call
+
+
+def test_transformers_from_import_style_intercepted(monkeypatch):
+    """from transformers import pipeline; pipeline() must be intercepted."""
+    import wildedge.integrations.transformers as tf_mod
+
+    loaded = []
+
+    class FakePipeline:
+        def __init__(self, *args, **kwargs):
+            loaded.append(self)
+
+        def __call__(self, inputs, *args, **kwargs):
+            return []
+
+    class FakePreTrainedModel:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return cls()
+
+    fake_transformers = types.SimpleNamespace(
+        Pipeline=FakePipeline,
+        PreTrainedModel=FakePreTrainedModel,
+    )
+
+    client = types.SimpleNamespace(
+        closed=False,
+        _snapshot_hub_caches=lambda: {},
+        _diff_hub_caches=lambda before, ms: None,
+        _on_model_auto_loaded=lambda obj, **kw: loaded.append(("tracked", obj)),
+    )
+
+    monkeypatch.setattr(tf_mod, "_transformers", fake_transformers)
+    monkeypatch.setattr(tf_mod, "_transformers_patched", False)
+
+    TransformersExtractor.install_auto_load_patch(lambda: client)
+
+    # Simulate `from transformers import pipeline; pipeline = FakePipeline`
+    # The user holds a direct reference to the original class, but __init__
+    # is now patched at the class level, so construction is still intercepted.
+    original_cls = FakePipeline
+    original_cls("text-classification", model="distilbert")
+
+    assert any(
+        event == "tracked" for event, _ in [t for t in loaded if isinstance(t, tuple)]
+    )
 
 
 def test_gguf_install_auto_load_patch_is_idempotent(monkeypatch):
