@@ -35,10 +35,10 @@ class _MEMORYSTATUSEX(ctypes.Structure):
 
 class _SystemPowerStatus(ctypes.Structure):
     _fields_ = [
-        ("ACLineStatus", ctypes.c_byte),
-        ("BatteryFlag", ctypes.c_byte),
-        ("BatteryLifePercent", ctypes.c_byte),
-        ("SystemStatusFlag", ctypes.c_byte),
+        ("ACLineStatus", ctypes.c_ubyte),
+        ("BatteryFlag", ctypes.c_ubyte),
+        ("BatteryLifePercent", ctypes.c_ubyte),
+        ("SystemStatusFlag", ctypes.c_ubyte),
         ("BatteryLifeTime", ctypes.c_ulong),
         ("BatteryFullLifeTime", ctypes.c_ulong),
     ]
