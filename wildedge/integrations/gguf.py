@@ -115,7 +115,7 @@ def build_patched_call(original_call):
             handle.track_inference(
                 duration_ms=duration_ms,
                 input_modality="text",
-                output_modality="text",
+                output_modality="generation",
                 input_meta=input_meta,
                 success=True,
                 output_meta=output_meta,

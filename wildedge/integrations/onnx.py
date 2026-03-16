@@ -13,6 +13,7 @@ from wildedge.events.inference import (
     ClassificationOutputMeta,
     HistogramSummary,
     ImageInputMeta,
+    TextInputMeta,
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor
@@ -20,6 +21,7 @@ from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
     image_brightness_histogram,
+    infer_input_modality_from_names,
 )
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
@@ -102,7 +104,7 @@ def detect_quantization(session: Any) -> str | None:
 
 
 def image_input_meta(arr: Any) -> ImageInputMeta | None:
-    """Extract ImageInputMeta from a (N, C, H, W) numpy array. Best-effort, never raises."""
+    """Extract ImageInputMeta from a (N, C, H, W) numpy array. Returns None on any error."""
     try:
         if np is None:
             return None
@@ -209,13 +211,22 @@ class OnnxExtractor(BaseExtractor):
         except Exception as exc:
             debug_onnx_failure("output shape inspection", exc)
 
+        # Static input modality from named inputs. 4D tensor shape overrides to "image" below.
+        static_input_modality: str | None = None
+        try:
+            input_names = [inp.name for inp in obj.get_inputs()]  # type: ignore[union-attr]
+            static_input_modality = infer_input_modality_from_names(input_names)
+        except Exception as exc:
+            debug_onnx_failure("input modality detection", exc)
+
         original_run = obj.run  # type: ignore[union-attr]
 
         def patched_run(output_names, input_feed, run_options=None):
             first = next(iter(input_feed.values()), None) if input_feed else None
 
             batch_size: int | None = None
-            input_modality = "structured"
+            # 4D tensor overrides static modality to "image".
+            input_modality = static_input_modality or "structured"
             input_meta = None
 
             if first is not None and hasattr(first, "shape"):
@@ -226,6 +237,14 @@ class OnnxExtractor(BaseExtractor):
                 if len(getattr(first, "shape", ())) == 4:
                     input_modality = "image"
                     input_meta = image_input_meta(first)
+                elif static_input_modality in ("text", "audio"):
+                    ids = input_feed.get("input_ids")
+                    if (
+                        ids is not None
+                        and hasattr(ids, "shape")
+                        and len(ids.shape) >= 2
+                    ):
+                        input_meta = TextInputMeta(token_count=int(ids.shape[1]))
 
             t0 = time.perf_counter()
             try:
