@@ -18,7 +18,9 @@ from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.settings import read_runtime_env
 
-SUPPORTED_SIGNALS = [signal.SIGINT, signal.SIGTERM]
+SUPPORTED_SIGNALS = [signal.SIGINT]
+if platform.system() != "Windows":
+    SUPPORTED_SIGNALS.append(signal.SIGTERM)
 STATUS_OK_PATCHED = "OK_PATCHED"
 STATUS_OK_NOOP = "OK_NOOP"
 STATUS_SKIP_MISSING_DEP = "SKIP_MISSING_DEP"
