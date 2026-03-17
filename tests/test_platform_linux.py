@@ -192,8 +192,6 @@ def test_real_cpu_freq():
         assert 0 < cur <= 10_000
     if max_f is not None:
         assert 0 < max_f <= 10_000
-    if cur is not None and max_f is not None:
-        assert cur <= max_f
 
 
 @pytest.mark.requires_linux

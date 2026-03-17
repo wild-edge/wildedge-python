@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, devel ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, devel ]
 
 jobs:
   test:
@@ -62,10 +62,10 @@ jobs:
         uv run coverage xml -o coverage.xml
         uv run coverage json -o coverage.json
     - name: Build PR coverage comment
-      if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')
+      if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'devel')
       run: python scripts/build_coverage_comment.py
     - name: Post sticky PR coverage comment
-      if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')
+      if: github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'devel')
       uses: marocchino/sticky-pull-request-comment@v2
       with:
         header: coverage-report

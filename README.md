@@ -9,7 +9,7 @@
 
 On-device ML inference monitoring for Python. Tracks latency, errors, and model metadata without any code modifications.
 
-> **Pre-release:** The API is unstable and may change between versions.
+> **Pre-release:** The API is unstable and may change between versions. Semantic versioning will apply from the first stable release.
 
 ## Install
 

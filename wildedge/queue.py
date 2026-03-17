@@ -35,6 +35,7 @@ class EventQueue:
         self.disk_dir = Path(disk_dir).expanduser() if disk_dir else None
         self._event_paths: deque[Path] = deque()
         self.lock = threading.Lock()
+        self._persist_seq = 0
         if self.persist_to_disk:
             if self.disk_dir is None:
                 raise ValueError("disk_dir is required when persist_to_disk=True")
@@ -63,7 +64,8 @@ class EventQueue:
         if not self.persist_to_disk:
             return
         assert self.disk_dir is not None
-        filename = f"{time.time_ns()}-{uuid.uuid4()}.json"
+        filename = f"{time.time_ns():020d}-{self._persist_seq:010d}-{uuid.uuid4()}.json"
+        self._persist_seq += 1
         path = self.disk_dir / filename
         path.write_text(json.dumps(event, separators=(",", ":"), ensure_ascii=True))
         self._event_paths.append(path)
