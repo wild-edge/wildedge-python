@@ -206,6 +206,11 @@ class TestConsumerFlush:
 
     def test_flush_does_not_tight_loop_on_transmit_error(self, monkeypatch):
         monkeypatch.setattr(Consumer, "run", lambda self: None)
+        sleep_calls = []
+        monkeypatch.setattr(
+            "wildedge.consumer.time.sleep", lambda s: sleep_calls.append(s)
+        )
+
         queue = EventQueue(max_size=100)
         queue.add({"event_id": "e1", "event_type": "inference", "model_id": "m"})
         mock_transmitter = MagicMock(spec=Transmitter)
@@ -213,7 +218,8 @@ class TestConsumerFlush:
 
         consumer = self._make_consumer(queue, mock_transmitter)
         consumer.flush(timeout=0.2)
-        assert mock_transmitter.send.call_count == 1
+        assert sleep_calls, "flush must sleep between retries, not tight-loop"
+        assert all(s > 0 for s in sleep_calls)
 
     def test_next_retry_delay_scales_and_caps(self):
         queue = EventQueue(max_size=100)
