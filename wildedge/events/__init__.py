@@ -3,6 +3,7 @@
 from wildedge.events.error import ErrorCode, ErrorEvent
 from wildedge.events.feedback import FeedbackEvent, FeedbackType
 from wildedge.events.inference import (
+    ApiMeta,
     AudioInputMeta,
     ClassificationOutputMeta,
     DetectionOutputMeta,
@@ -20,6 +21,7 @@ from wildedge.events.model_load import AdapterLoad, ModelLoadEvent
 from wildedge.events.model_unload import ModelUnloadEvent
 
 __all__ = [
+    "ApiMeta",
     "AdapterDownload",
     "AdapterLoad",
     "AudioInputMeta",

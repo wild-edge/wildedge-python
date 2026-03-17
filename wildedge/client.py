@@ -21,6 +21,7 @@ from wildedge.integrations.gguf import GgufExtractor
 from wildedge.integrations.keras import KerasExtractor
 from wildedge.integrations.mlx import MlxExtractor
 from wildedge.integrations.onnx import OnnxExtractor
+from wildedge.integrations.openai import OpenAIExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
 from wildedge.integrations.registry import noop_integrations, supported_integrations
 from wildedge.integrations.tensorflow import TensorflowExtractor
@@ -84,6 +85,7 @@ def parse_dsn(dsn: str) -> tuple[str, str, str]:
 DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     OnnxExtractor(),
     GgufExtractor(),
+    OpenAIExtractor(),
     UltralyticsExtractor(),
     TransformersExtractor(),
     MlxExtractor(),
@@ -112,6 +114,7 @@ class WildEdge:
         "gguf": GgufExtractor.install_auto_load_patch,
         "mlx": MlxExtractor.install_auto_load_patch,
         "onnx": OnnxExtractor.install_auto_load_patch,
+        "openai": OpenAIExtractor.install_auto_load_patch,
         "timm": PytorchExtractor.install_timm_patch,
         "tensorflow": TensorflowExtractor.install_auto_load_patch,
         "transformers": TransformersExtractor.install_auto_load_patch,

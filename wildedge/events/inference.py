@@ -225,6 +225,8 @@ class GenerationOutputMeta:
     task: str = "generation"
     tokens_in: int | None = None
     tokens_out: int | None = None
+    cached_input_tokens: int | None = None
+    reasoning_tokens_out: int | None = None
     time_to_first_token_ms: int | None = None
     tokens_per_second: float | None = None
     stop_reason: str | None = None
@@ -239,12 +241,32 @@ class GenerationOutputMeta:
                 "task": self.task,
                 "tokens_in": self.tokens_in,
                 "tokens_out": self.tokens_out,
+                "cached_input_tokens": self.cached_input_tokens,
+                "reasoning_tokens_out": self.reasoning_tokens_out,
                 "time_to_first_token_ms": self.time_to_first_token_ms,
                 "tokens_per_second": self.tokens_per_second,
                 "stop_reason": self.stop_reason,
                 "context_used": self.context_used,
                 "avg_token_entropy": self.avg_token_entropy,
                 "safety_triggered": self.safety_triggered,
+            }.items()
+            if v is not None
+        }
+
+
+@dataclass
+class ApiMeta:
+    resolved_model_id: str | None = None
+    system_fingerprint: str | None = None
+    service_tier: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            k: v
+            for k, v in {
+                "resolved_model_id": self.resolved_model_id,
+                "system_fingerprint": self.system_fingerprint,
+                "service_tier": self.service_tier,
             }.items()
             if v is not None
         }
@@ -281,6 +303,7 @@ class InferenceEvent:
     ) = None
     generation_config: GenerationConfig | None = None
     hardware: HardwareContext | None = None
+    api_meta: ApiMeta | None = None
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     inference_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -307,6 +330,8 @@ class InferenceEvent:
             inference_data["generation_config"] = self.generation_config.to_dict()
         if self.hardware is not None:
             inference_data["hardware"] = self.hardware.to_dict()
+        if self.api_meta is not None:
+            inference_data["api_meta"] = self.api_meta.to_dict()
 
         return {
             "event_id": self.event_id,
