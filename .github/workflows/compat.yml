@@ -2,9 +2,9 @@ name: Compatibility
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, devel ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, devel ]
     types: [opened, synchronize, reopened, labeled]
   schedule:
     - cron: "0 3 * * *"
