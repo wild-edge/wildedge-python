@@ -1,8 +1,6 @@
 # Contributing
 
-Thank you for your interest in contributing to WildEdge Python SDK! We welcome contributions from the community.
-
-## Development Setup
+## Development setup
 
 1. Clone the repository:
    ```bash
@@ -25,7 +23,7 @@ Thank you for your interest in contributing to WildEdge Python SDK! We welcome c
    uv run tox
    ```
 
-## Code Style
+## Code style
 
 - Use `ruff` for linting and formatting:
   ```bash
@@ -35,19 +33,18 @@ Thank you for your interest in contributing to WildEdge Python SDK! We welcome c
 
 - Follow PEP 8 and PEP 484 (type hints).
 
-## Pull Request Process
+## Pull requests
 
-1. Fork the repository and create a feature branch.
+1. Fork the repository and create a feature branch off `devel`.
 2. Make your changes and ensure tests pass.
 3. Update documentation if needed.
-4. Submit a pull request with a clear description of changes.
+4. Submit a pull request with a clear description of the changes.
 
-## Reporting Issues
+## Reporting issues
 
 - Use GitHub Issues for bugs and feature requests.
-- Provide detailed steps to reproduce bugs.
-- Include Python version, OS, and relevant logs.
+- Include steps to reproduce, Python version, OS, and relevant logs.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+This project is licensed under the [Business Source License 1.1](LICENSE). By contributing, you agree that your contributions will be licensed under the same terms.
