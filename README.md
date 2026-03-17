@@ -5,10 +5,11 @@
 [![Tested on Linux](https://img.shields.io/badge/tested%20on-linux-blue)](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml)
 [![Tested on macOS](https://img.shields.io/badge/tested%20on-macOS-blue)](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml)
 [![Tested on Windows](https://img.shields.io/badge/tested%20on-windows-blue)](https://github.com/wildedge/wildedge-python/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Coverage](https://codecov.io/gh/wildedge/wildedge-python/branch/main/graph/badge.svg)](https://codecov.io/gh/wildedge/wildedge-python)
 
 On-device ML inference monitoring for Python. Tracks latency, errors, and model metadata. No inputs or outputs captured.
+
+> **Pre-release:** The API is unstable and may change between versions.
 
 ## Install
 
