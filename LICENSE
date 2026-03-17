@@ -1,21 +1,49 @@
-MIT License
+Business Source License 1.1
 
-Copyright (c) 2026 WildEdge
+Licensor: WildEdge
+Licensed Work: The python-sdk software and associated documentation files.
+Change Date: 2030-03-17
+Change License: Apache License, Version 2.0
+Additional Use Grant: You may use the Licensed Work for development, testing, and evaluation purposes only.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+---
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+### Business Source License 1.1
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Terms
+
+The Licensor hereby grants you the right to copy, modify, create derivative works, redistribute, and make non-production use of the Licensed Work. The Licensor may make an Additional Use Grant, above, permitting limited production use.
+
+Effective on the Change Date, or the fourth anniversary of the first public availability of a specific version of the Licensed Work under this License, whichever comes first, the Licensor hereby grants you rights under the terms of the Change License, and the rights granted in the paragraph above terminate.
+
+If your use of the Licensed Work does not comply with the requirements currently in effect as described in this License, you must purchase a commercial license from the Licensor, its affiliated entities, or authorized resellers, or you must refrain from using the Licensed Work.
+
+All copies of the Licensed Work must include this License.
+
+Any use of the Licensed Work in violation of this License will automatically terminate your rights under this License for the current and all other versions of the Licensed Work.
+
+This License does not grant you any right in any trademark or logo of Licensor or its affiliates.
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON AN “AS IS” BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS, EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND TITLE.
+
+---
+
+### Definitions
+
+“License” means this Business Source License.
+
+“Licensor” means the individual or entity that offers the Licensed Work under the terms of this License.
+
+“Licensed Work” means the work of authorship made available under this License.
+
+“Use” means to use, reproduce, modify, distribute, or otherwise exploit the Licensed Work.
+
+“Change Date” means the date specified by the Licensor after which the Licensed Work will be governed by the Change License.
+
+“Change License” means the license that will govern the Licensed Work after the Change Date.
+
+---
+
+### Notice
+
+The text of this License is based on the Business Source License 1.1, published by MariaDB plc.
