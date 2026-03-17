@@ -126,6 +126,30 @@ class TestEventQueue:
         assert q2.length() == 2
         assert q2.peek() == make_event(1)
 
+    def test_persistent_queue_rehydrates_order_when_timestamps_collide(
+        self, tmp_path, monkeypatch
+    ):
+        fixed_ns = 1_000_000_000_000_000_000
+        monkeypatch.setattr("wildedge.queue.time.time_ns", lambda: fixed_ns)
+
+        q1 = EventQueue(
+            max_size=10,
+            policy=QueuePolicy.OPPORTUNISTIC,
+            persist_to_disk=True,
+            disk_dir=str(tmp_path),
+        )
+        for i in range(5):
+            q1.add(make_event(i))
+
+        q2 = EventQueue(
+            max_size=10,
+            policy=QueuePolicy.OPPORTUNISTIC,
+            persist_to_disk=True,
+            disk_dir=str(tmp_path),
+        )
+        assert q2.length() == 5
+        assert [e["event_id"] for e in q2.peek_many(5)] == ["0", "1", "2", "3", "4"]
+
     def test_persistent_queue_remove_deletes_files(self, tmp_path):
         q = EventQueue(
             max_size=10,
