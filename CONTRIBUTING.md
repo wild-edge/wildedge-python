@@ -4,7 +4,7 @@
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/wildedge/wildedge-python.git
+   git clone https://github.com/wild-edge/wildedge-python.git
    cd wildedge-python
    ```
 

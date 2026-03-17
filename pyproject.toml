@@ -1,6 +1,6 @@
 [project]
 name = "wildedge-sdk"
-version = "0.1.0"
+version = "0.1.1"
 description = "On-device ML inference monitoring for Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,9 +28,8 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://wildedge.dev"
-Documentation = "https://docs.wildedge.dev"
-Source = "https://github.com/wildedge/wildedge-python"
-Changelog = "https://github.com/wildedge/wildedge-python/blob/main/CHANGELOG.md"
+Source = "https://github.com/wild-edge/wildedge-python"
+Changelog = "https://github.com/wild-edge/wildedge-python/releases"
 
 [project.scripts]
 wildedge = "wildedge.cli:main"

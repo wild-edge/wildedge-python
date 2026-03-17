@@ -419,7 +419,7 @@ wheels = [
 
 [[package]]
 name = "wildedge-sdk"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 
 [package.dev-dependencies]

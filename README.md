@@ -59,21 +59,21 @@ client.instrument("transformers", hubs=["huggingface"])
 
 | Integration | Example |
 |---|---|
-| `transformers` | [transformers_example.py](examples/transformers_example.py) |
-| `mlx` | [mlx_example.py](examples/mlx_example.py) |
-| `timm` | [timm_example.py](examples/timm_example.py) |
-| `gguf` | [gguf_example.py](examples/gguf_example.py) |
-| `onnx` | [onnx_example.py](examples/onnx_example.py) |
+| `transformers` | [transformers_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/transformers_example.py) |
+| `mlx` | [mlx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/mlx_example.py) |
+| `timm` | [timm_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/timm_example.py) |
+| `gguf` | [gguf_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/gguf_example.py) |
+| `onnx` | [onnx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/onnx_example.py) |
 | `ultralytics` | - |
-| `tensorflow` | [tensorflow_example.py](examples/tensorflow_example.py) |
-| `torch` | [pytorch_example.py](examples/pytorch_example.py) |
-| `keras` | [keras_example.py](examples/keras_example.py) |
+| `tensorflow` | [tensorflow_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/tensorflow_example.py) |
+| `torch` | [pytorch_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/pytorch_example.py) |
+| `keras` | [keras_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/keras_example.py) |
 
 **Remote models**
 
 | Integration | Example |
 |---|---|
-| `openai` | [openai_example.py](examples/openai_example.py) |
+| `openai` | [openai_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/openai_example.py) |
 
 **Hub tracking**
 
@@ -84,7 +84,7 @@ Pass `hubs=` to track model download provenance. Hubs are framework-agnostic and
 | `huggingface` | Downloads via `huggingface_hub` |
 | `torchhub` | Downloads via `torch.hub` |
 
-For unsupported frameworks, see [Manual tracking](docs/manual-tracking.md).
+For unsupported frameworks, see [Manual tracking](https://github.com/wild-edge/wildedge-python/blob/main/docs/manual-tracking.md).
 
 ## Configuration
 
@@ -96,7 +96,7 @@ For unsupported frameworks, see [Manual tracking](docs/manual-tracking.md).
 | `enable_offline_persistence` | `true` | Persist unsent events to disk and replay on restart |
 | `sampling_interval_s` | `30.0` | Seconds between background hardware snapshots. Set to `0` or `None` to disable (or `WILDEDGE_SAMPLING_INTERVAL_S`) |
 
-For advanced options (batching, queue tuning, dead-letter storage), see [Configuration](docs/configuration.md).
+For advanced options (batching, queue tuning, dead-letter storage), see [Configuration](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md).
 
 ## Privacy
 
@@ -104,7 +104,6 @@ Report security & priact issues to: wildedge@googlegroups.com.
 
 ## Links
 
-- [Documentation](https://docs.wildedge.dev)
-- [Compatibility Matrix](docs/compatibility.md)
-- [Changelog](CHANGELOG.md)
-- [License](LICENSE)
+- [Compatibility Matrix](https://github.com/wild-edge/wildedge-python/blob/main/docs/compatibility.md)
+- [Changelog](https://github.com/wild-edge/wildedge-python/releases)
+- [License](https://github.com/wild-edge/wildedge-python/blob/main/LICENSE)
