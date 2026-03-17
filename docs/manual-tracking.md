@@ -9,6 +9,15 @@ Use manual tracking when your framework is not covered by a WildEdge integration
 - You want to attach input/output metadata (token counts, image dimensions, confidence scores, etc.)
 - You want to record user feedback tied to a specific inference
 
+## torch and keras
+
+For `torch` and `keras`, models are user-defined subclasses with no constructor to patch. Use `client.load()` to get load, unload, and inference tracking automatically:
+
+```python
+model = client.load(MyModel)
+output = model(x)  # tracked automatically
+```
+
 ## Register your model
 
 Every model needs a handle before you can track events against it. Pass the model object and an explicit `model_id`:

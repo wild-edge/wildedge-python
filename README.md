@@ -84,30 +84,19 @@ Pass `hubs=` to track model download provenance. Hubs are framework-agnostic and
 | `huggingface` | Downloads via `huggingface_hub` |
 | `torchhub` | Downloads via `torch.hub` |
 
-For `torch` and `keras`, models are user-defined subclasses so there's no constructor to patch. Use `client.load()` to get load/unload tracking alongside inference:
-
-```python
-model = client.load(MyModel)
-output = model(x)  # tracked automatically
-```
-
 For unsupported frameworks, see [Manual tracking](docs/manual-tracking.md).
 
 ## Configuration
 
-| Parameter | Default | Env var | Description |
-|---|---|---|---|
-| `dsn` | - | `WILDEDGE_DSN` | `https://<secret>@ingest.wildedge.dev/<key>` |
-| `app_version` | `None` | - | Your app's version string |
-| `app_identity` | `<project_key>` | `WILDEDGE_APP_IDENTITY` | Namespace for offline persistence. Set per-app in multi-process workloads |
-| `debug` | `false` | `WILDEDGE_DEBUG` | Log events to console |
-| `batch_size` | `10` | - | Events per transmission (1-100) |
-| `flush_interval_sec` | `60` | - | Max seconds between flushes (1-3600) |
-| `max_queue_size` | `200` | - | In-memory buffer limit (10-10000) |
-| `enable_offline_persistence` | `true` | - | Persist unsent events to disk and replay on restart |
-| `max_event_age_sec` | `900` | - | Max age before dead-lettering |
-| `enable_dead_letter_persistence` | `false` | - | Persist dropped batches to disk |
-| `sampling_interval_s` | `30.0` | `WILDEDGE_SAMPLING_INTERVAL_S` | Seconds between background hardware snapshots. Set to `0` or `None` to disable |
+| Parameter | Default | Description |
+|---|---|---|
+| `dsn` | - | `https://<secret>@ingest.wildedge.dev/<key>` (or `WILDEDGE_DSN`) |
+| `app_version` | `None` | Your app's version string |
+| `app_identity` | `<project_key>` | Namespace for offline persistence. Set per-app in multi-process workloads (or `WILDEDGE_APP_IDENTITY`) |
+| `enable_offline_persistence` | `true` | Persist unsent events to disk and replay on restart |
+| `sampling_interval_s` | `30.0` | Seconds between background hardware snapshots. Set to `0` or `None` to disable (or `WILDEDGE_SAMPLING_INTERVAL_S`) |
+
+For advanced options (batching, queue tuning, dead-letter storage), see [Configuration](docs/configuration.md).
 
 ## Privacy
 
