@@ -1,8 +1,36 @@
 [project]
 name = "wildedge-sdk"
 version = "0.1.0"
+description = "On-device ML inference monitoring for Python"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+license = { file = "LICENSE" }
+authors = [
+    { name = "WildEdge", email = "wildedge@googlegroups.com" },
+]
+keywords = ["machine learning", "inference", "monitoring", "observability", "edge ai", "mlops", "on-device"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://wildedge.dev"
+Documentation = "https://docs.wildedge.dev"
+Source = "https://github.com/wildedge/wildedge-python"
+Changelog = "https://github.com/wildedge/wildedge-python/blob/main/CHANGELOG.md"
 
 [project.scripts]
 wildedge = "wildedge.cli:main"
