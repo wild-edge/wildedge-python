@@ -3,9 +3,21 @@ name: Compatibility
 on:
   push:
     branches: [ main, devel ]
+    paths:
+      - 'wildedge/**'
+      - 'tests/compat/**'
+      - 'scripts/compat_matrix.py'
+      - 'pyproject.toml'
+      - '.github/workflows/compat.yml'
   pull_request:
     branches: [ main, devel ]
     types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'wildedge/**'
+      - 'tests/compat/**'
+      - 'scripts/compat_matrix.py'
+      - 'pyproject.toml'
+      - '.github/workflows/compat.yml'
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
