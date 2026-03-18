@@ -4,8 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import subprocess
 import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,18 +23,18 @@ class Row:
     version_set: str
 
 
-WORKFLOW_ROWS: list[Row] = [
-    # compat job
-    *[
-        Row(py, integration, version_set)
-        for py in ("3.10", "3.11", "3.12", "3.13")
-        for integration in ("onnx", "torch", "timm", "tensorflow")
-        for version_set in ("min", "current")
-        if not (py == "3.13" and integration == "tensorflow")
-    ],
-    # compat-canary-314 job
-    *[Row("3.14", integration, "current") for integration in ("torch", "timm")],
-]
+def load_rows() -> list[Row]:
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "compat_matrix.py"), "rows"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    return [Row(**r) for r in json.loads(result.stdout)]
+
+
+WORKFLOW_ROWS: list[Row] = load_rows()
 
 
 UNSUPPORTED_MARKERS = (
@@ -67,10 +71,15 @@ def run_row(row: Row) -> tuple[str, str]:
         "run",
         "--python",
         row.python_version,
+        "--link-mode=copy",
         "--with-editable",
         ".",
         "--with",
         "pytest",
+        "--with",
+        "pytest-asyncio",
+        "--with",
+        "pytest-mock",
     ]
     for dep in deps:
         cmd.extend(["--with", dep])
@@ -84,9 +93,11 @@ def run_row(row: Row) -> tuple[str, str]:
         ]
     )
 
-    result = subprocess.run(
-        cmd, check=False, capture_output=True, text=True, cwd=REPO_ROOT
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        env = {**os.environ, "UV_PROJECT_ENVIRONMENT": tmpdir}
+        result = subprocess.run(
+            cmd, check=False, capture_output=True, text=True, cwd=REPO_ROOT, env=env
+        )
     output = f"{result.stdout}\n{result.stderr}".strip()
 
     if result.returncode == 0:
@@ -103,29 +114,42 @@ def main() -> int:
         action="store_true",
         help="Treat unsupported dependency rows as failures.",
     )
+    parser.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=os.cpu_count() or 4,
+        help="Number of rows to run in parallel (default: cpu count).",
+    )
     args = parser.parse_args()
 
     passed = 0
     failed = 0
     skipped = 0
 
-    for row in WORKFLOW_ROWS:
-        label = f"{row.python_version} | {row.integration} | {row.version_set}"
-        print(f"==> {label}")
-        status, output = run_row(row)
-        print(status)
-        if output:
-            print(output)
-        print()
+    futures = {}
+    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+        for row in WORKFLOW_ROWS:
+            futures[executor.submit(run_row, row)] = row
 
-        if status == "PASS":
-            passed += 1
-        elif status == "SKIP_UNSUPPORTED":
-            skipped += 1
-            if args.strict_unsupported:
+        for future in as_completed(futures):
+            row = futures[future]
+            label = f"{row.python_version} | {row.integration} | {row.version_set}"
+            status, output = future.result()
+            print(f"==> {label}")
+            print(status)
+            if output:
+                print(output)
+            print()
+
+            if status == "PASS":
+                passed += 1
+            elif status == "SKIP_UNSUPPORTED":
+                skipped += 1
+                if args.strict_unsupported:
+                    failed += 1
+            else:
                 failed += 1
-        else:
-            failed += 1
 
     print(
         "SUMMARY "

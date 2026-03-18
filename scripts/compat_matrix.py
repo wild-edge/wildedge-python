@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 MATRIX = {
@@ -33,6 +34,25 @@ MATRIX = {
         "min": ["tensorflow==2.16.1", "keras==3.3.3", "numpy==1.26.4"],
         "current": ["tensorflow==2.18.0", "keras==3.8.0", "numpy==2.0.2"],
     },
+    "gguf": {
+        "min": ["llama-cpp-python==0.2.90", "numpy==1.26.4"],
+        "current": ["llama-cpp-python==0.3.4", "numpy==2.1.3"],
+    },
+    "openai": {
+        "min": ["openai==1.30.0"],
+        "current": ["openai==1.61.0"],
+    },
+    "transformers": {
+        "min": ["transformers==4.40.0", "torch==2.4.1", "numpy==1.26.4"],
+        "current": ["transformers==4.47.0", "torch==2.6.0", "numpy==2.1.3"],
+    },
+    "ultralytics": {
+        "min": ["ultralytics==8.0.0", "numpy==1.26.4"],
+        "current": ["ultralytics==8.3.0", "numpy==2.1.3"],
+    },
+    "mlx": {
+        "current": ["mlx==0.22.0", "mlx-lm==0.21.0"],
+    },
 }
 
 SUPPORTED_PYTHON = {
@@ -40,6 +60,11 @@ SUPPORTED_PYTHON = {
     "torch": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "timm": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "tensorflow": ["3.10", "3.11", "3.12"],
+    "gguf": ["3.10", "3.11", "3.12", "3.13"],
+    "openai": ["3.10", "3.11", "3.12", "3.13"],
+    "transformers": ["3.10", "3.11", "3.12", "3.13"],
+    "ultralytics": ["3.10", "3.11", "3.12", "3.13"],
+    "mlx": ["3.12", "3.13"],
 }
 
 # Interpreter-specific overrides where upstream wheels are unavailable for older pins.
@@ -113,6 +138,17 @@ def print_deps(integration: str, version_set: str, python_version: str) -> int:
     return 0
 
 
+def print_rows() -> int:
+    rows = [
+        {"integration": integration, "version_set": version_set, "python_version": py}
+        for integration, sets in MATRIX.items()
+        for version_set in sets
+        for py in SUPPORTED_PYTHON[integration]
+    ]
+    print(json.dumps(rows))
+    return 0
+
+
 def print_table() -> int:
     print("| Integration | Version set | Dependencies | Supported Python |")
     print("|---|---|---|---|")
@@ -140,11 +176,14 @@ def main() -> int:
     deps.add_argument("--version-set", required=True, choices=["min", "current"])
     deps.add_argument("--python-version", required=True)
 
+    sub.add_parser("rows")
     sub.add_parser("table")
 
     args = parser.parse_args()
     if args.cmd == "deps":
         return print_deps(args.integration, args.version_set, args.python_version)
+    if args.cmd == "rows":
+        return print_rows()
     if args.cmd == "table":
         return print_table()
     return 2
