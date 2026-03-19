@@ -48,7 +48,7 @@ MATRIX = {
     },
     "ultralytics": {
         "min": ["ultralytics==8.0.0", "numpy==1.26.4"],
-        "current": ["ultralytics==8.3.0", "numpy==2.1.3"],
+        "current": ["ultralytics==8.3.4", "numpy==2.1.3"],
     },
     "mlx": {
         "current": ["mlx==0.22.0", "mlx-lm==0.21.0"],
