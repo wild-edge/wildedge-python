@@ -45,7 +45,6 @@ DEVICE_ID_FILE = "device_id"
 WILDEDGE_AUTOLOAD = (
     "WILDEDGE_AUTOLOAD"  # set to "1" by `wildedge run` to activate sitecustomize
 )
-WILDEDGE_AUTOLOAD_ACTIVE = "WILDEDGE_AUTOLOAD_ACTIVE"  # guard against double-init
 
 # Runtime validation limits
 BATCH_SIZE_MIN = 1

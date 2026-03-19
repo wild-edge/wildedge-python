@@ -11,18 +11,23 @@ from __future__ import annotations
 import os
 import sys
 
-_GUARD = "WILDEDGE_AUTOLOAD_ACTIVE"
 _AUTOLOAD = "WILDEDGE_AUTOLOAD"  # set to "1" by `wildedge run`
 _DSN = "WILDEDGE_DSN"  # user-configured DSN
 
-# Idempotent: skip if already initialized (e.g. in a forked worker that
-# exec'd a subprocess, or if sitecustomize.py is imported twice).
-if not os.environ.get(_GUARD):
+# sys.modules is used as the guard against re-entry within the same interpreter.
+# A module-level variable resets when the module object is re-created (e.g. if
+# _load_existing_sitecustomize finds this file via a second sys.path entry in an
+# editable install). os.environ would persist but propagates to child processes
+# spawned via exec (e.g. uvicorn --reload workers) and blocks their bootstrap.
+# sys.modules is process-local and survives module re-execution.
+_INSTALLED_MARKER = "wildedge.__autoload_installed__"
+
+if _INSTALLED_MARKER not in sys.modules:
     # Activate if the CLI launched this process, or if WILDEDGE_DSN is set
     # and the user has manually prepended wildedge/autoload/ to PYTHONPATH.
     if os.environ.get(_AUTOLOAD) or os.environ.get(_DSN):
         # Set the guard before importing wildedge to prevent re-entry.
-        os.environ[_GUARD] = "1"
+        sys.modules[_INSTALLED_MARKER] = True  # type: ignore[assignment]
         try:
             from wildedge.runtime.bootstrap import install_runtime  # noqa: PLC0415
 
