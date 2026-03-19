@@ -85,7 +85,7 @@ PYTHON_DEP_OVERRIDES = {
     },
     "transformers": {
         "min": {
-            "3.13": ["transformers==4.40.0", "torch==2.5.0", "numpy==2.1.3"],
+            "3.13": ["transformers==4.45.0", "torch==2.5.0", "numpy==2.1.3"],
         }
     },
     "timm": {
