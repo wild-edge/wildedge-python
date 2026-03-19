@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import subprocess
 import sys
+import textwrap
 from unittest.mock import patch
 
 import wildedge.autoload.sitecustomize as _sc_mod
+
+_MARKER = _sc_mod._INSTALLED_MARKER
 
 
 def _reload_sitecustomize():
@@ -17,10 +21,14 @@ def _reload_sitecustomize():
     return _sc_mod
 
 
-def test_guard_prevents_double_init(monkeypatch):
-    """WILDEDGE_AUTOLOAD_ACTIVE set: install_runtime not called."""
-    monkeypatch.setenv("WILDEDGE_AUTOLOAD_ACTIVE", "1")
+def test_gunicorn_prefork_skips_double_init(monkeypatch):
+    """Gunicorn pre-fork: sys.modules marker blocks re-init in the same interpreter.
+
+    In gunicorn's fork-only model, workers inherit the parent's sys.modules so
+    sitecustomize never re-executes. This covers the explicit reload edge case.
+    """
     monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
+    monkeypatch.setitem(sys.modules, _MARKER, True)  # type: ignore[arg-type]
 
     calls = []
     with patch("wildedge.runtime.bootstrap.install_runtime", side_effect=calls.append):
@@ -30,8 +38,8 @@ def test_guard_prevents_double_init(monkeypatch):
 
 
 def test_skips_when_no_dsn(monkeypatch):
-    """No DSN env vars: silent skip."""
-    monkeypatch.delenv("WILDEDGE_AUTOLOAD_ACTIVE", raising=False)
+    """No activation env vars present: silent skip regardless of server."""
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.delenv("WILDEDGE_AUTOLOAD", raising=False)
     monkeypatch.delenv("WILDEDGE_DSN", raising=False)
 
@@ -42,9 +50,13 @@ def test_skips_when_no_dsn(monkeypatch):
     assert calls == []
 
 
-def test_autoload_flag_triggers_install(monkeypatch):
-    """WILDEDGE_AUTOLOAD=1 present: install_runtime called with install_signal_handlers=False."""
-    monkeypatch.delenv("WILDEDGE_AUTOLOAD_ACTIVE", raising=False)
+def test_waitress_autoload_triggers_install(monkeypatch):
+    """Waitress (single-process, thread-pool): WILDEDGE_AUTOLOAD=1 bootstraps the runtime.
+
+    Waitress has no forking or reloader subprocess, so sitecustomize runs once
+    in the server process and install_runtime is called.
+    """
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
 
     calls = []
@@ -58,9 +70,13 @@ def test_autoload_flag_triggers_install(monkeypatch):
     assert calls == [{"install_signal_handlers": False}]
 
 
-def test_dsn_triggers_install(monkeypatch):
-    """WILDEDGE_DSN present: install_runtime called."""
-    monkeypatch.delenv("WILDEDGE_AUTOLOAD_ACTIVE", raising=False)
+def test_granian_dsn_triggers_install(monkeypatch):
+    """Granian (direct DSN config): WILDEDGE_DSN alone is sufficient to bootstrap.
+
+    Users running granian without `wildedge run` can set WILDEDGE_DSN and
+    prepend wildedge/autoload/ to PYTHONPATH to get instrumentation.
+    """
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.delenv("WILDEDGE_AUTOLOAD", raising=False)
     monkeypatch.setenv("WILDEDGE_DSN", "https://secret@ingest.wildedge.dev/key")
 
@@ -77,7 +93,7 @@ def test_dsn_triggers_install(monkeypatch):
 
 def test_bootstrap_exception_is_caught(monkeypatch, capsys):
     """Exception from install_runtime must not propagate; message written to stderr."""
-    monkeypatch.delenv("WILDEDGE_AUTOLOAD_ACTIVE", raising=False)
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
 
     with patch(
@@ -95,7 +111,7 @@ def test_chains_existing_sitecustomize(monkeypatch, tmp_path):
     sc_file = tmp_path / "sitecustomize.py"
     sc_file.write_text(f"open({str(marker)!r}, 'w').close()\n")
 
-    monkeypatch.delenv("WILDEDGE_AUTOLOAD_ACTIVE", raising=False)
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.delenv("WILDEDGE_AUTOLOAD", raising=False)
     monkeypatch.delenv("WILDEDGE_DSN", raising=False)
     sys.modules.pop("sitecustomize", None)
@@ -111,3 +127,52 @@ def test_chains_existing_sitecustomize(monkeypatch, tmp_path):
         _sc_mod._load_existing_sitecustomize()
 
     assert marker.exists(), "chained sitecustomize.py was not executed"
+
+
+def test_uvicorn_reload_worker_bootstraps(tmp_path):
+    """Uvicorn --reload: the server worker process bootstraps after the reloader already did.
+
+    Uvicorn's reloader runs sitecustomize in the reloader process, then spawns
+    the actual server worker via exec (fresh interpreter). The worker must be
+    instrumented. The old os.environ guard (WILDEDGE_AUTOLOAD_ACTIVE) propagated
+    across exec and blocked the worker's bootstrap. sys.modules is not inherited
+    across exec, so the worker re-initialises correctly.
+    """
+    import os
+    import pathlib
+
+    autoload_dir = str(
+        pathlib.Path(
+            importlib.util.find_spec("wildedge.autoload.sitecustomize").origin
+        ).parent
+    )
+
+    # Probe script: verify sitecustomize entered the bootstrap path in the child.
+    # install_runtime will raise (no DSN) but the marker is set before the call,
+    # so its presence in sys.modules means the worker reached the bootstrap code.
+    script = textwrap.dedent("""\
+        import sys
+        import wildedge.autoload.sitecustomize as sc
+        print("installed:", sc._INSTALLED_MARKER in sys.modules)
+    """)
+    script_file = tmp_path / "probe.py"
+    script_file.write_text(script)
+
+    env = os.environ.copy()
+    env["WILDEDGE_AUTOLOAD"] = "1"
+    # Simulate the env state the reloader leaves behind. This is what caused
+    # the regression with the old os.environ guard.
+    env["WILDEDGE_AUTOLOAD_ACTIVE"] = "1"
+    env.pop("WILDEDGE_DSN", None)
+
+    pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = autoload_dir + (os.pathsep + pythonpath if pythonpath else "")
+
+    result = subprocess.run(
+        [sys.executable, str(script_file)],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "installed: True" in result.stdout
