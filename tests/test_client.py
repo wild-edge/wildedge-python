@@ -31,6 +31,38 @@ def test_batch_size_too_low():
         WildEdge(dsn="https://test@test.com/key", batch_size=0)
 
 
+def test_no_dsn_is_noop(monkeypatch, caplog):
+    from wildedge.client import WildEdge
+
+    monkeypatch.delenv(constants.ENV_DSN, raising=False)
+    with caplog.at_level("WARNING"):
+        client = WildEdge()
+
+    assert client.noop is True
+    assert client.closed is True
+    assert "no DSN configured" in caplog.text
+
+
+def test_no_dsn_instrument_does_not_raise(monkeypatch):
+    from wildedge.client import WildEdge
+
+    monkeypatch.delenv(constants.ENV_DSN, raising=False)
+    client = WildEdge()
+
+    # No-DSN client should ignore instrument() entirely (even for unknown integration).
+    client.instrument("definitely-not-real")
+
+
+def test_no_dsn_publish_does_not_enqueue(monkeypatch):
+    from wildedge.client import WildEdge
+
+    monkeypatch.delenv(constants.ENV_DSN, raising=False)
+    client = WildEdge()
+
+    client.publish({"event_type": "inference", "model_id": "m"})
+    client.queue.add.assert_not_called()
+
+
 def test_batch_size_too_high():
     from wildedge.client import WildEdge
 

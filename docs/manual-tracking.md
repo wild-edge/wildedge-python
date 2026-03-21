@@ -25,7 +25,7 @@ Every model needs a handle before you can track events against it. Pass the mode
 ```python
 import wildedge
 
-client = wildedge.WildEdge()  # set WILDEDGE_DSN env var
+client = wildedge.WildEdge()  # uses WILDEDGE_DSN if set; otherwise no-op
 
 handle = client.register_model(
     my_model,

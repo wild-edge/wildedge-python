@@ -52,7 +52,9 @@ def main() -> None:
 
     # instrument() patches mlx_lm.load and mlx_lm.generate; must be called
     # before any model is loaded.
-    client = wildedge.WildEdge(app_version="1.0.0")  # set WILDEDGE_DSN env var
+    client = wildedge.WildEdge(
+        app_version="1.0.0"
+    )  # uses WILDEDGE_DSN if set; otherwise no-op
     client.instrument("mlx", hubs=["huggingface"])
 
     print(f"\nLoading {args.model} ...")
