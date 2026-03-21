@@ -11,17 +11,17 @@ WildEdge patches openai.OpenAI (and AsyncOpenAI) at instrumentation time, so
 inference tracking happens automatically for every chat.completions.create call.
 
 Run with: uv run openai_example.py
-Requires: WILDEDGE_DSN and OPENAI_API_KEY environment variables.
+Requires: OPENAI_API_KEY environment variable. Set WILDEDGE_DSN to send events.
 """
 
 from openai import OpenAI
 
 import wildedge
 
-client = wildedge.WildEdge(
-    app_version="1.0.0"
-)  # uses WILDEDGE_DSN if set; otherwise no-op
-client.instrument("openai")
+client = wildedge.init(
+    app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
+    integrations="openai",
+)
 
 openai_client = OpenAI()  # set OPENAI_API_KEY env var or pass api_key= explicitly
 

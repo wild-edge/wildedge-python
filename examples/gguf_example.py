@@ -12,10 +12,11 @@ from llama_cpp import Llama
 
 import wildedge
 
-client = wildedge.WildEdge(
+client = wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
+    integrations="gguf",
+    hubs=["huggingface"],
 )
-client.instrument("gguf", hubs=["huggingface"])
 
 model_path = hf_hub_download(
     "bartowski/Llama-3.2-1B-Instruct-GGUF",

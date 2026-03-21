@@ -19,10 +19,11 @@ import torch
 
 import wildedge
 
-client = wildedge.WildEdge(
+client = wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
+    integrations="timm",
+    hubs=["huggingface", "torchhub"],
 )
-client.instrument("timm", hubs=["huggingface", "torchhub"])
 
 model = timm.create_model("resnet18", pretrained=True)
 model.eval()
