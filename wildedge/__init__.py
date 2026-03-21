@@ -1,6 +1,7 @@
 """WildEdge Python SDK."""
 
 from wildedge.client import WildEdge
+from wildedge.convenience import init
 from wildedge.decorators import track
 from wildedge.events import (
     AdapterDownload,
@@ -24,6 +25,7 @@ from wildedge.timing import Timer
 
 __all__ = [
     "WildEdge",
+    "init",
     "capture_hardware",
     "HardwareContext",
     "ThermalContext",

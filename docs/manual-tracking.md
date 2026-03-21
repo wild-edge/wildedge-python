@@ -25,7 +25,10 @@ Every model needs a handle before you can track events against it. Pass the mode
 ```python
 import wildedge
 
-client = wildedge.WildEdge()  # uses WILDEDGE_DSN if set; otherwise no-op
+client = wildedge.init()  # uses WILDEDGE_DSN if set; otherwise no-op
+
+# Optional: enable auto-instrumentation alongside manual tracking.
+# client = wildedge.init(integrations=["transformers"], hubs=["huggingface"])
 
 handle = client.register_model(
     my_model,

@@ -47,13 +47,18 @@ Useful flags:
 ```python
 import wildedge
 
-client = wildedge.WildEdge(dsn="...")  # or WILDEDGE_DSN env var
-client.instrument("transformers", hubs=["huggingface"])
+client = wildedge.init(
+    dsn="...",  # or WILDEDGE_DSN env var
+    integrations=["transformers"],
+    hubs=["huggingface"],
+)
 
 # models loaded after this point are tracked automatically
 ```
 
 If no DSN is configured, the client becomes a no-op and logs a warning.
+
+`init(...)` is a convenience wrapper for `WildEdge(...)` + `instrument(...)`.
 
 ## Supported integrations
 

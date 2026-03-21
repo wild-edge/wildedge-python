@@ -17,10 +17,10 @@ import tensorflow as tf
 
 import wildedge
 
-client = wildedge.WildEdge(
+client = wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
+    integrations="tensorflow",
 )
-client.instrument("tensorflow")
 
 
 def build_and_save_model(save_path: Path) -> None:
@@ -40,7 +40,7 @@ with TemporaryDirectory() as temp_dir:
     model_path = Path(temp_dir) / "demo_model.keras"
     build_and_save_model(model_path)
 
-    # load_model is auto-instrumented by client.instrument("tensorflow")
+    # load_model is auto-instrumented by init(..., integrations="tensorflow")
     loaded = tf.keras.models.load_model(model_path)
 
     batch = np.random.randn(4, 16).astype(np.float32)

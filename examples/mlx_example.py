@@ -50,12 +50,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # instrument() patches mlx_lm.load and mlx_lm.generate; must be called
+    # init() constructs the client and instruments mlx; must be called
     # before any model is loaded.
-    client = wildedge.WildEdge(
-        app_version="1.0.0"
-    )  # uses WILDEDGE_DSN if set; otherwise no-op
-    client.instrument("mlx", hubs=["huggingface"])
+    client = wildedge.init(
+        app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
+        integrations="mlx",
+        hubs=["huggingface"],
+    )
 
     print(f"\nLoading {args.model} ...")
     model, tokenizer = mlx_lm.load(args.model)  # load + download tracked automatically
