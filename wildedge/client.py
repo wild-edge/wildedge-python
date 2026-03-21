@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.dead_letters import DeadLetterStore
+from wildedge.events import SpanEvent
 from wildedge.hubs.base import BaseHubTracker
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.registry import supported_hubs
@@ -39,6 +40,13 @@ from wildedge.platforms.device_info import DeviceInfo
 from wildedge.queue import EventQueue, QueuePolicy
 from wildedge.settings import read_client_env, resolve_app_identity
 from wildedge.timing import Timer, elapsed_ms
+from wildedge.tracing import (
+    SpanContext,
+    get_span_context,
+    merge_correlation_fields,
+    reset_span_context,
+    set_span_context,
+)
 from wildedge.transmitter import Transmitter
 
 DSN_FORMAT = "'https://<project-secret>@ingest.wildedge.dev/<project-key>'"
@@ -380,6 +388,176 @@ class WildEdge:
             )
 
         return handle
+
+    class _SpanContextManager:
+        def __init__(
+            self,
+            client: WildEdge,
+            *,
+            kind: str,
+            name: str,
+            status: str = "ok",
+            model_id: str | None = None,
+            input_summary: str | None = None,
+            output_summary: str | None = None,
+            span_attributes: dict[str, Any] | None = None,
+            trace_id: str | None = None,
+            span_id: str | None = None,
+            parent_span_id: str | None = None,
+            run_id: str | None = None,
+            agent_id: str | None = None,
+            step_index: int | None = None,
+            conversation_id: str | None = None,
+            attributes: dict[str, Any] | None = None,
+        ):
+            self._client = client
+            self._kind = kind
+            self._name = name
+            self._status = status
+            self._model_id = model_id
+            self._input_summary = input_summary
+            self._output_summary = output_summary
+            self._span_attributes = span_attributes
+            self._trace_id = trace_id
+            self._span_id = span_id
+            self._parent_span_id = parent_span_id
+            self._run_id = run_id
+            self._agent_id = agent_id
+            self._step_index = step_index
+            self._conversation_id = conversation_id
+            self._attributes = attributes
+            self._t0: float | None = None
+            self._span_token = None
+
+        def __enter__(self):
+            self._t0 = time.perf_counter()
+            if self._span_id is None:
+                self._span_id = str(uuid.uuid4())
+            if self._parent_span_id is None:
+                current = get_span_context()
+                self._parent_span_id = current.span_id if current else None
+            self._span_token = set_span_context(
+                SpanContext(
+                    span_id=self._span_id,
+                    parent_span_id=self._parent_span_id,
+                    step_index=self._step_index,
+                    attributes=self._attributes,
+                )
+            )
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if self._t0 is None:
+                return False
+            duration_ms = elapsed_ms(self._t0)
+            status = "error" if exc_type else self._status
+            self._client.track_span(
+                kind=self._kind,
+                name=self._name,
+                duration_ms=duration_ms,
+                status=status,
+                model_id=self._model_id,
+                input_summary=self._input_summary,
+                output_summary=self._output_summary,
+                span_attributes=self._span_attributes,
+                trace_id=self._trace_id,
+                span_id=self._span_id,
+                parent_span_id=self._parent_span_id,
+                run_id=self._run_id,
+                agent_id=self._agent_id,
+                step_index=self._step_index,
+                conversation_id=self._conversation_id,
+                attributes=self._attributes,
+            )
+            if self._span_token is not None:
+                reset_span_context(self._span_token)
+            return False
+
+    def span(
+        self,
+        *,
+        kind: str,
+        name: str,
+        status: str = "ok",
+        model_id: str | None = None,
+        input_summary: str | None = None,
+        output_summary: str | None = None,
+        span_attributes: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> _SpanContextManager:
+        """Context manager that times and emits a span event."""
+        return WildEdge._SpanContextManager(
+            self,
+            kind=kind,
+            name=name,
+            status=status,
+            model_id=model_id,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            span_attributes=span_attributes,
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            attributes=attributes,
+        )
+
+    def track_span(
+        self,
+        *,
+        kind: str,
+        name: str,
+        duration_ms: int,
+        status: str = "ok",
+        model_id: str | None = None,
+        input_summary: str | None = None,
+        output_summary: str | None = None,
+        span_attributes: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> str:
+        """Emit a span event for agentic workflows and tooling."""
+        correlation = merge_correlation_fields(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            attributes=attributes,
+        )
+        if correlation["span_id"] is None:
+            correlation["span_id"] = str(uuid.uuid4())
+        event = SpanEvent(
+            kind=kind,
+            name=name,
+            duration_ms=duration_ms,
+            status=status,
+            model_id=model_id,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            span_attributes=span_attributes,
+            **correlation,
+        )
+        self.publish(event.to_dict())
+        return correlation["span_id"]
 
     def _find_extractor(self, model_obj: object) -> BaseExtractor | None:
         for candidate in DEFAULT_EXTRACTORS:

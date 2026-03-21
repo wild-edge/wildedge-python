@@ -15,6 +15,7 @@ from wildedge.events import (
     GenerationConfig,
     GenerationOutputMeta,
     ImageInputMeta,
+    SpanEvent,
     TextInputMeta,
 )
 from wildedge.platforms import capture_hardware
@@ -22,6 +23,7 @@ from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
 from wildedge.queue import QueuePolicy
 from wildedge.timing import Timer
+from wildedge.tracing import span_context, trace_context
 
 __all__ = [
     "WildEdge",
@@ -42,7 +44,10 @@ __all__ = [
     "GenerationConfig",
     "AdapterLoad",
     "AdapterDownload",
+    "SpanEvent",
     "FeedbackType",
     "ErrorCode",
     "Timer",
+    "trace_context",
+    "span_context",
 ]

@@ -3,27 +3,21 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any
 
-
-class FeedbackType(str, Enum):
-    ACCEPT = "accept"
-    REJECT = "reject"
-    UNDO = "undo"
-    EDIT = "edit"
-    THUMBS_UP = "thumbs_up"
-    THUMBS_DOWN = "thumbs_down"
-    REPORT = "report"
+from wildedge.events.common import add_optional_fields
 
 
 @dataclass
-class FeedbackEvent:
-    model_id: str
-    related_inference_id: str
-    feedback_type: str | FeedbackType
-    delay_ms: int | None = None
-    edit_distance: int | None = None
+class SpanEvent:
+    kind: str
+    name: str
+    duration_ms: int
+    status: str
+    model_id: str | None = None
+    input_summary: str | None = None
+    output_summary: str | None = None
+    span_attributes: dict[str, Any] | None = None
     trace_id: str | None = None
     span_id: str | None = None
     parent_span_id: str | None = None
@@ -36,29 +30,26 @@ class FeedbackEvent:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
-        feedback_type = (
-            self.feedback_type.value
-            if isinstance(self.feedback_type, FeedbackType)
-            else self.feedback_type
-        )
-        feedback_data: dict[str, Any] = {
-            "related_inference_id": self.related_inference_id,
-            "feedback_type": feedback_type,
+        span_data: dict[str, Any] = {
+            "kind": self.kind,
+            "name": self.name,
+            "duration_ms": self.duration_ms,
+            "status": self.status,
         }
-        if self.delay_ms is not None:
-            feedback_data["delay_ms"] = self.delay_ms
-        if self.edit_distance is not None:
-            feedback_data["edit_distance"] = self.edit_distance
+        if self.input_summary is not None:
+            span_data["input_summary"] = self.input_summary
+        if self.output_summary is not None:
+            span_data["output_summary"] = self.output_summary
+        if self.span_attributes is not None:
+            span_data["attributes"] = self.span_attributes
 
         event = {
             "event_id": self.event_id,
-            "event_type": "feedback",
+            "event_type": "span",
             "timestamp": self.timestamp.isoformat(),
             "model_id": self.model_id,
-            "feedback": feedback_data,
+            "span": span_data,
         }
-        from wildedge.events.common import add_optional_fields
-
         add_optional_fields(
             event,
             {
