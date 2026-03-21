@@ -13,6 +13,7 @@ from wildedge import constants
 from wildedge.consumer import Consumer
 from wildedge.dead_letters import DeadLetterStore
 from wildedge.events import SpanEvent
+from wildedge.events.span import SpanKind, SpanStatus
 from wildedge.hubs.base import BaseHubTracker
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.registry import supported_hubs
@@ -42,10 +43,11 @@ from wildedge.settings import read_client_env, resolve_app_identity
 from wildedge.timing import Timer, elapsed_ms
 from wildedge.tracing import (
     SpanContext,
+    _merge_correlation_fields,
+    _reset_span_context,
+    _set_span_context,
     get_span_context,
-    merge_correlation_fields,
-    reset_span_context,
-    set_span_context,
+    trace_context,
 )
 from wildedge.transmitter import Transmitter
 
@@ -109,6 +111,97 @@ DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     TensorflowExtractor(),
     KerasExtractor(),
 ]
+
+
+class SpanContextManager:
+    def __init__(
+        self,
+        client: WildEdge,
+        *,
+        kind: SpanKind,
+        name: str,
+        status: SpanStatus = "ok",
+        model_id: str | None = None,
+        input_summary: str | None = None,
+        output_summary: str | None = None,
+        attributes: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
+    ):
+        self._client = client
+        self.kind = kind
+        self.name = name
+        self.status = status
+        self.model_id = model_id
+        self.input_summary = input_summary
+        self.output_summary = output_summary
+        self.attributes = attributes
+        self.trace_id = trace_id
+        self.span_id = span_id
+        self.parent_span_id = parent_span_id
+        self.run_id = run_id
+        self.agent_id = agent_id
+        self.step_index = step_index
+        self.conversation_id = conversation_id
+        self.context = context
+        self._t0: float | None = None
+        self._span_token = None
+
+    def __enter__(self):
+        self._t0 = time.perf_counter()
+        if self.span_id is None:
+            self.span_id = str(uuid.uuid4())
+        if self.parent_span_id is None:
+            current = get_span_context()
+            self.parent_span_id = current.span_id if current else None
+        self._span_token = _set_span_context(
+            SpanContext(
+                span_id=self.span_id,
+                parent_span_id=self.parent_span_id,
+                step_index=self.step_index,
+                attributes=self.context,
+            )
+        )
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._t0 is None:
+            return False
+        duration_ms = elapsed_ms(self._t0)
+        status = "error" if exc_type else self.status
+        self._client.track_span(
+            kind=self.kind,
+            name=self.name,
+            duration_ms=duration_ms,
+            status=status,
+            model_id=self.model_id,
+            input_summary=self.input_summary,
+            output_summary=self.output_summary,
+            attributes=self.attributes,
+            trace_id=self.trace_id,
+            span_id=self.span_id,
+            parent_span_id=self.parent_span_id,
+            run_id=self.run_id,
+            agent_id=self.agent_id,
+            step_index=self.step_index,
+            conversation_id=self.conversation_id,
+            context=self.context,
+        )
+        if self._span_token is not None:
+            _reset_span_context(self._span_token)
+        return False
+
+    async def __aenter__(self):
+        return self.__enter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return self.__exit__(exc_type, exc_val, exc_tb)
 
 
 class WildEdge:
@@ -389,100 +482,34 @@ class WildEdge:
 
         return handle
 
-    class _SpanContextManager:
-        def __init__(
-            self,
-            client: WildEdge,
-            *,
-            kind: str,
-            name: str,
-            status: str = "ok",
-            model_id: str | None = None,
-            input_summary: str | None = None,
-            output_summary: str | None = None,
-            span_attributes: dict[str, Any] | None = None,
-            trace_id: str | None = None,
-            span_id: str | None = None,
-            parent_span_id: str | None = None,
-            run_id: str | None = None,
-            agent_id: str | None = None,
-            step_index: int | None = None,
-            conversation_id: str | None = None,
-            attributes: dict[str, Any] | None = None,
-        ):
-            self._client = client
-            self._kind = kind
-            self._name = name
-            self._status = status
-            self._model_id = model_id
-            self._input_summary = input_summary
-            self._output_summary = output_summary
-            self._span_attributes = span_attributes
-            self._trace_id = trace_id
-            self._span_id = span_id
-            self._parent_span_id = parent_span_id
-            self._run_id = run_id
-            self._agent_id = agent_id
-            self._step_index = step_index
-            self._conversation_id = conversation_id
-            self._attributes = attributes
-            self._t0: float | None = None
-            self._span_token = None
-
-        def __enter__(self):
-            self._t0 = time.perf_counter()
-            if self._span_id is None:
-                self._span_id = str(uuid.uuid4())
-            if self._parent_span_id is None:
-                current = get_span_context()
-                self._parent_span_id = current.span_id if current else None
-            self._span_token = set_span_context(
-                SpanContext(
-                    span_id=self._span_id,
-                    parent_span_id=self._parent_span_id,
-                    step_index=self._step_index,
-                    attributes=self._attributes,
-                )
-            )
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            if self._t0 is None:
-                return False
-            duration_ms = elapsed_ms(self._t0)
-            status = "error" if exc_type else self._status
-            self._client.track_span(
-                kind=self._kind,
-                name=self._name,
-                duration_ms=duration_ms,
-                status=status,
-                model_id=self._model_id,
-                input_summary=self._input_summary,
-                output_summary=self._output_summary,
-                span_attributes=self._span_attributes,
-                trace_id=self._trace_id,
-                span_id=self._span_id,
-                parent_span_id=self._parent_span_id,
-                run_id=self._run_id,
-                agent_id=self._agent_id,
-                step_index=self._step_index,
-                conversation_id=self._conversation_id,
-                attributes=self._attributes,
-            )
-            if self._span_token is not None:
-                reset_span_context(self._span_token)
-            return False
+    def trace(
+        self,
+        *,
+        trace_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        conversation_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
+    ):
+        """Context manager that sets trace correlation fields."""
+        return trace_context(
+            trace_id=trace_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            conversation_id=conversation_id,
+            attributes=attributes,
+        )
 
     def span(
         self,
         *,
-        kind: str,
+        kind: SpanKind,
         name: str,
-        status: str = "ok",
+        status: SpanStatus = "ok",
         model_id: str | None = None,
         input_summary: str | None = None,
         output_summary: str | None = None,
-        span_attributes: dict[str, Any] | None = None,
+        attributes: dict[str, Any] | None = None,
         trace_id: str | None = None,
         span_id: str | None = None,
         parent_span_id: str | None = None,
@@ -490,10 +517,10 @@ class WildEdge:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
-    ) -> _SpanContextManager:
+        context: dict[str, Any] | None = None,
+    ) -> SpanContextManager:
         """Context manager that times and emits a span event."""
-        return WildEdge._SpanContextManager(
+        return SpanContextManager(
             self,
             kind=kind,
             name=name,
@@ -501,7 +528,7 @@ class WildEdge:
             model_id=model_id,
             input_summary=input_summary,
             output_summary=output_summary,
-            span_attributes=span_attributes,
+            attributes=attributes,
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -509,20 +536,20 @@ class WildEdge:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
 
     def track_span(
         self,
         *,
-        kind: str,
+        kind: SpanKind,
         name: str,
         duration_ms: int,
-        status: str = "ok",
+        status: SpanStatus = "ok",
         model_id: str | None = None,
         input_summary: str | None = None,
         output_summary: str | None = None,
-        span_attributes: dict[str, Any] | None = None,
+        attributes: dict[str, Any] | None = None,
         trace_id: str | None = None,
         span_id: str | None = None,
         parent_span_id: str | None = None,
@@ -530,10 +557,10 @@ class WildEdge:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Emit a span event for agentic workflows and tooling."""
-        correlation = merge_correlation_fields(
+        correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -541,7 +568,7 @@ class WildEdge:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
         if correlation["span_id"] is None:
             correlation["span_id"] = str(uuid.uuid4())
@@ -553,7 +580,7 @@ class WildEdge:
             model_id=model_id,
             input_summary=input_summary,
             output_summary=output_summary,
-            span_attributes=span_attributes,
+            attributes=attributes,
             **correlation,
         )
         self.publish(event.to_dict())

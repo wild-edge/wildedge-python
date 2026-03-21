@@ -21,8 +21,13 @@ def test_track_inference_uses_trace_context():
         publish,
     )
 
-    with trace_context(trace_id="trace-123", run_id="run-1", agent_id="agent-1"):
-        with span_context(span_id="span-abc", step_index=2):
+    with trace_context(
+        trace_id="trace-123",
+        run_id="run-1",
+        agent_id="agent-1",
+        attributes={"trace_key": "trace_val"},
+    ):
+        with span_context(span_id="span-abc", step_index=2, attributes={"span_key": 2}):
             handle.track_inference(duration_ms=5)
 
     assert events[0]["trace_id"] == "trace-123"
@@ -30,3 +35,4 @@ def test_track_inference_uses_trace_context():
     assert events[0]["run_id"] == "run-1"
     assert events[0]["agent_id"] == "agent-1"
     assert events[0]["step_index"] == 2
+    assert events[0]["attributes"] == {"trace_key": "trace_val", "span_key": 2}

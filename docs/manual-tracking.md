@@ -238,17 +238,35 @@ client.track_span(
 You can also attach optional correlation fields (`trace_id`, `span_id`,
 `parent_span_id`, `run_id`, `agent_id`, `step_index`, `conversation_id`) to any
 event by passing them into `track_inference`, `track_error`, `track_feedback`,
-or `track_span`.
+or `track_span`. Use `context=` for correlation attributes shared across events.
 
 ### Trace context helpers
 
-Use `trace_context()` and `span_context()` to auto-populate correlation fields
-for all events emitted inside the block:
+Use `client.trace()` and `client.span()` to auto-populate correlation fields for
+all events emitted inside the block. `client.span()` times the block and emits a
+span event on exit:
 
 ```python
 import wildedge
+from wildedge.timing import Timer
 
-with wildedge.trace_context(run_id="run-123", agent_id="agent-1"):
+client = wildedge.init()
+handle = client.register_model(my_model, model_id="my-org/my-model")
+
+with client.trace(run_id="run-123", agent_id="agent-1"):
+    with client.span(kind="agent_step", name="plan", step_index=1):
+        with Timer() as t:
+            result = my_model(prompt)
+        handle.track_inference(duration_ms=t.elapsed_ms, input_modality="text", output_modality="generation")
+```
+
+If you need to set correlation fields without emitting a span event, use the
+lower-level `span_context()` directly:
+
+```python
+with client.trace(run_id="run-123", agent_id="agent-1"):
     with wildedge.span_context(step_index=1):
-        handle.track_inference(duration_ms=12)
+        with Timer() as t:
+            result = my_model(prompt)
+        handle.track_inference(duration_ms=t.elapsed_ms, input_modality="text", output_modality="generation")
 ```
