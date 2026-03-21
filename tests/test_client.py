@@ -42,7 +42,6 @@ def test_no_dsn_is_noop(monkeypatch, caplog):
     assert client.closed is True
     assert "no DSN configured" in caplog.text
 
-
 def test_no_dsn_instrument_does_not_raise(monkeypatch):
     from wildedge.client import WildEdge
 
@@ -61,7 +60,6 @@ def test_no_dsn_publish_does_not_enqueue(monkeypatch):
 
     client.publish({"event_type": "inference", "model_id": "m"})
     client.queue.add.assert_not_called()
-
 
 def test_batch_size_too_high():
     from wildedge.client import WildEdge

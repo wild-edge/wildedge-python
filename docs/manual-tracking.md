@@ -215,3 +215,40 @@ handle.feedback(FeedbackType.THUMBS_DOWN)
 ```
 
 `FeedbackType` values: `THUMBS_UP`, `THUMBS_DOWN`.
+
+## Track spans for agentic workflows
+
+Use span events to track non-inference steps like planning, tool calls, retrieval, or memory updates.
+
+```python
+from wildedge.timing import Timer
+
+with Timer() as t:
+    tool_result = call_tool()
+
+client.track_span(
+    kind="tool",
+    name="call_tool",
+    duration_ms=t.elapsed_ms,
+    status="ok",
+    attributes={"tool": "search"},
+)
+```
+
+You can also attach optional correlation fields (`trace_id`, `span_id`,
+`parent_span_id`, `run_id`, `agent_id`, `step_index`, `conversation_id`) to any
+event by passing them into `track_inference`, `track_error`, `track_feedback`,
+or `track_span`.
+
+### Trace context helpers
+
+Use `trace_context()` and `span_context()` to auto-populate correlation fields
+for all events emitted inside the block:
+
+```python
+import wildedge
+
+with wildedge.trace_context(run_id="run-123", agent_id="agent-1"):
+    with wildedge.span_context(step_index=1):
+        handle.track_inference(duration_ms=12)
+```
