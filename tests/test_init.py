@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import wildedge
+import wildedge.convenience as convenience
 
 
 def test_init_calls_instrument_for_integrations(monkeypatch):
-    import wildedge.convenience as convenience
 
     calls: list[tuple[str | None, list[str] | None]] = []
 
@@ -28,7 +28,6 @@ def test_init_calls_instrument_for_integrations(monkeypatch):
 
 
 def test_init_hubs_only(monkeypatch):
-    import wildedge.convenience as convenience
 
     calls: list[tuple[str | None, list[str] | None]] = []
 
@@ -51,8 +50,6 @@ def test_init_hubs_only(monkeypatch):
 
 
 def test_init_logs_debug_when_no_integrations_or_hubs(monkeypatch):
-    import wildedge.convenience as convenience
-
     logs: list[str] = []
 
     class DummyClient:
