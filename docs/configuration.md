@@ -6,7 +6,7 @@ Full reference for all `WildEdge` client parameters.
 
 | Parameter | Default | Env var | Description |
 |---|---|---|---|
-| `dsn` | - | `WILDEDGE_DSN` | `https://<secret>@ingest.wildedge.dev/<key>` |
+| `dsn` | - | `WILDEDGE_DSN` | `https://<secret>@ingest.wildedge.dev/<key>`. If unset, the client is a no-op. |
 | `app_version` | `None` | - | Your app's version string |
 | `app_identity` | `<project_key>` | `WILDEDGE_APP_IDENTITY` | Namespace for offline persistence. Set per-app in multi-process workloads |
 | `enable_offline_persistence` | `true` | - | Persist unsent events to disk and replay on restart |

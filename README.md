@@ -53,6 +53,8 @@ client.instrument("transformers", hubs=["huggingface"])
 # models loaded after this point are tracked automatically
 ```
 
+If no DSN is configured, the client becomes a no-op and logs a warning.
+
 ## Supported integrations
 
 **On-device**
@@ -90,7 +92,7 @@ For unsupported frameworks, see [Manual tracking](https://github.com/wild-edge/w
 
 | Parameter | Default | Description |
 |---|---|---|
-| `dsn` | - | `https://<secret>@ingest.wildedge.dev/<key>` (or `WILDEDGE_DSN`) |
+| `dsn` | - | `https://<secret>@ingest.wildedge.dev/<key>` (or `WILDEDGE_DSN`). If unset, the client is a no-op. |
 | `app_version` | `None` | Your app's version string |
 | `app_identity` | `<project_key>` | Namespace for offline persistence. Set per-app in multi-process workloads (or `WILDEDGE_APP_IDENTITY`) |
 | `enable_offline_persistence` | `true` | Persist unsent events to disk and replay on restart |

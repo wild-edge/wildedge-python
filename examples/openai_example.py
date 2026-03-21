@@ -18,7 +18,9 @@ from openai import OpenAI
 
 import wildedge
 
-client = wildedge.WildEdge(app_version="1.0.0")  # set WILDEDGE_DSN env var
+client = wildedge.WildEdge(
+    app_version="1.0.0"
+)  # uses WILDEDGE_DSN if set; otherwise no-op
 client.instrument("openai")
 
 openai_client = OpenAI()  # set OPENAI_API_KEY env var or pass api_key= explicitly

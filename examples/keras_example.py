@@ -28,7 +28,7 @@ except ImportError as exc:
     exit(1)
 
 client = wildedge.WildEdge(
-    app_version="1.0.0",  # set WILDEDGE_DSN env var
+    app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
 )
 
 # Load a pre-trained MobileNetV2 model using client to track construction and lifecycle
