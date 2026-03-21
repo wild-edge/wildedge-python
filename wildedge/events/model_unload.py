@@ -21,7 +21,7 @@ class ModelUnloadEvent:
     agent_id: str | None = None
     step_index: int | None = None
     conversation_id: str | None = None
-    attributes: dict[str, Any] | None = None
+    context: dict[str, Any] | None = None
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -57,7 +57,7 @@ class ModelUnloadEvent:
                 "agent_id": self.agent_id,
                 "step_index": self.step_index,
                 "conversation_id": self.conversation_id,
-                "attributes": self.attributes,
+                "attributes": self.context,
             },
         )
         return event

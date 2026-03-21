@@ -40,19 +40,19 @@ def get_span_context() -> SpanContext | None:
     return _SPAN_CTX.get()
 
 
-def set_trace_context(ctx: TraceContext) -> contextvars.Token:
+def _set_trace_context(ctx: TraceContext) -> contextvars.Token:
     return _TRACE_CTX.set(ctx)
 
 
-def reset_trace_context(token: contextvars.Token) -> None:
+def _reset_trace_context(token: contextvars.Token) -> None:
     _TRACE_CTX.reset(token)
 
 
-def set_span_context(ctx: SpanContext) -> contextvars.Token:
+def _set_span_context(ctx: SpanContext) -> contextvars.Token:
     return _SPAN_CTX.set(ctx)
 
 
-def reset_span_context(token: contextvars.Token) -> None:
+def _reset_span_context(token: contextvars.Token) -> None:
     _SPAN_CTX.reset(token)
 
 
@@ -67,7 +67,7 @@ def trace_context(
 ):
     if trace_id is None:
         trace_id = str(uuid.uuid4())
-    token = set_trace_context(
+    token = _set_trace_context(
         TraceContext(
             trace_id=trace_id,
             run_id=run_id,
@@ -79,7 +79,7 @@ def trace_context(
     try:
         yield get_trace_context()
     finally:
-        reset_trace_context(token)
+        _reset_trace_context(token)
 
 
 @contextlib.contextmanager
@@ -90,12 +90,18 @@ def span_context(
     step_index: int | None = None,
     attributes: dict[str, Any] | None = None,
 ):
+    """Low-level context manager that sets span correlation fields without emitting a span event.
+
+    Prefer client.span() for most use cases. Use this only when you need correlation
+    fields attached to auto-instrumented events (e.g. an OpenAI call) without emitting
+    a redundant span wrapper.
+    """
     if span_id is None:
         span_id = str(uuid.uuid4())
     if parent_span_id is None:
         current = get_span_context()
         parent_span_id = current.span_id if current else None
-    token = set_span_context(
+    token = _set_span_context(
         SpanContext(
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -106,10 +112,10 @@ def span_context(
     try:
         yield get_span_context()
     finally:
-        reset_span_context(token)
+        _reset_span_context(token)
 
 
-def _merge_attributes(*candidates: dict[str, Any] | None) -> dict[str, Any] | None:
+def _merge_context(*candidates: dict[str, Any] | None) -> dict[str, Any] | None:
     merged: dict[str, Any] = {}
     for attrs in candidates:
         if not attrs:
@@ -118,7 +124,7 @@ def _merge_attributes(*candidates: dict[str, Any] | None) -> dict[str, Any] | No
     return merged or None
 
 
-def merge_correlation_fields(
+def _merge_correlation_fields(
     *,
     trace_id: str | None = None,
     span_id: str | None = None,
@@ -127,7 +133,7 @@ def merge_correlation_fields(
     agent_id: str | None = None,
     step_index: int | None = None,
     conversation_id: str | None = None,
-    attributes: dict[str, Any] | None = None,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     trace = get_trace_context()
     span = get_span_context()
@@ -143,10 +149,10 @@ def merge_correlation_fields(
     resolved_conversation_id = conversation_id or (
         trace.conversation_id if trace else None
     )
-    resolved_attributes = _merge_attributes(
+    resolved_context = _merge_context(
         trace.attributes if trace else None,
         span.attributes if span else None,
-        attributes,
+        context,
     )
 
     return {
@@ -157,5 +163,5 @@ def merge_correlation_fields(
         "agent_id": resolved_agent_id,
         "step_index": resolved_step_index,
         "conversation_id": resolved_conversation_id,
-        "attributes": resolved_attributes,
+        "context": resolved_context,
     }

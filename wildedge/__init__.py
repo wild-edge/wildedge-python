@@ -1,6 +1,6 @@
 """WildEdge Python SDK."""
 
-from wildedge.client import WildEdge
+from wildedge.client import SpanContextManager, WildEdge
 from wildedge.convenience import init
 from wildedge.decorators import track
 from wildedge.events import (
@@ -18,12 +18,19 @@ from wildedge.events import (
     SpanEvent,
     TextInputMeta,
 )
+from wildedge.events.span import SpanKind, SpanStatus
 from wildedge.platforms import capture_hardware
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
 from wildedge.queue import QueuePolicy
 from wildedge.timing import Timer
-from wildedge.tracing import span_context, trace_context
+from wildedge.tracing import (
+    SpanContext,
+    TraceContext,
+    get_span_context,
+    get_trace_context,
+    span_context,
+)
 
 __all__ = [
     "WildEdge",
@@ -48,6 +55,12 @@ __all__ = [
     "FeedbackType",
     "ErrorCode",
     "Timer",
-    "trace_context",
     "span_context",
+    "TraceContext",
+    "SpanContext",
+    "get_trace_context",
+    "get_span_context",
+    "SpanKind",
+    "SpanStatus",
+    "SpanContextManager",
 ]

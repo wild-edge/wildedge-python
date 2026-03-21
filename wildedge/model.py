@@ -28,7 +28,7 @@ from wildedge.events import (
 from wildedge.logging import logger
 from wildedge.platforms import capture_hardware, is_sampling
 from wildedge.platforms.hardware import HardwareContext
-from wildedge.tracing import merge_correlation_fields
+from wildedge.tracing import _merge_correlation_fields
 
 
 @dataclass
@@ -76,10 +76,10 @@ class ModelHandle:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        correlation = merge_correlation_fields(
+        correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -87,7 +87,7 @@ class ModelHandle:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
         event = ModelLoadEvent(
             model_id=self.model_id,
@@ -116,9 +116,9 @@ class ModelHandle:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
-        correlation = merge_correlation_fields(
+        correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -126,7 +126,7 @@ class ModelHandle:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
         event = ModelUnloadEvent(
             model_id=self.model_id,
@@ -157,10 +157,10 @@ class ModelHandle:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        correlation = merge_correlation_fields(
+        correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -168,7 +168,7 @@ class ModelHandle:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
         event = ModelDownloadEvent(
             model_id=self.model_id,
@@ -211,11 +211,11 @@ class ModelHandle:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> str:
         if hardware is None and is_sampling():
             hardware = capture_hardware()
-        correlation = merge_correlation_fields(
+        correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -223,7 +223,7 @@ class ModelHandle:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
         event = InferenceEvent(
             model_id=self.model_id,
@@ -258,9 +258,9 @@ class ModelHandle:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
-        correlation = merge_correlation_fields(
+        correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -268,7 +268,7 @@ class ModelHandle:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
         event = FeedbackEvent(
             model_id=self.model_id,
@@ -308,9 +308,9 @@ class ModelHandle:
         agent_id: str | None = None,
         step_index: int | None = None,
         conversation_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
-        correlation = merge_correlation_fields(
+        correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
             parent_span_id=parent_span_id,
@@ -318,7 +318,7 @@ class ModelHandle:
             agent_id=agent_id,
             step_index=step_index,
             conversation_id=conversation_id,
-            attributes=attributes,
+            context=context,
         )
         event = ErrorEvent(
             model_id=self.model_id,
