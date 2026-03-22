@@ -28,6 +28,7 @@ from wildedge.events import (
 from wildedge.logging import logger
 from wildedge.platforms import capture_hardware, is_sampling
 from wildedge.platforms.hardware import HardwareContext
+from wildedge.tracing import _merge_correlation_fields
 
 
 @dataclass
@@ -68,8 +69,26 @@ class ModelHandle:
         accelerator: str | None = None,
         success: bool = True,
         error_code: str | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        correlation = _merge_correlation_fields(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            context=context,
+        )
         event = ModelLoadEvent(
             model_id=self.model_id,
             duration_ms=duration_ms,
@@ -77,6 +96,7 @@ class ModelHandle:
             accelerator=accelerator or self.detected_accelerator,
             success=success,
             error_code=error_code,
+            **correlation,
             **kwargs,
         )
         self.publish(event.to_dict())
@@ -89,7 +109,25 @@ class ModelHandle:
         memory_freed_bytes: int | None = None,
         peak_memory_bytes: int | None = None,
         uptime_ms: int | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
+        correlation = _merge_correlation_fields(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            context=context,
+        )
         event = ModelUnloadEvent(
             model_id=self.model_id,
             duration_ms=duration_ms,
@@ -97,6 +135,7 @@ class ModelHandle:
             memory_freed_bytes=memory_freed_bytes,
             peak_memory_bytes=peak_memory_bytes,
             uptime_ms=uptime_ms,
+            **correlation,
         )
         self.publish(event.to_dict())
 
@@ -111,8 +150,26 @@ class ModelHandle:
         resumed: bool,
         cache_hit: bool,
         success: bool,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        correlation = _merge_correlation_fields(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            context=context,
+        )
         event = ModelDownloadEvent(
             model_id=self.model_id,
             source_url=source_url,
@@ -124,6 +181,7 @@ class ModelHandle:
             resumed=resumed,
             cache_hit=cache_hit,
             success=success,
+            **correlation,
             **kwargs,
         )
         self.publish(event.to_dict())
@@ -146,9 +204,27 @@ class ModelHandle:
         generation_config: GenerationConfig | None = None,
         hardware: HardwareContext | None = None,
         api_meta: ApiMeta | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> str:
         if hardware is None and is_sampling():
             hardware = capture_hardware()
+        correlation = _merge_correlation_fields(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            context=context,
+        )
         event = InferenceEvent(
             model_id=self.model_id,
             duration_ms=duration_ms,
@@ -162,6 +238,7 @@ class ModelHandle:
             generation_config=generation_config,
             hardware=hardware,
             api_meta=api_meta,
+            **correlation,
         )
         self.last_inference_id = event.inference_id
         self.publish(event.to_dict())
@@ -174,13 +251,32 @@ class ModelHandle:
         *,
         delay_ms: int | None = None,
         edit_distance: int | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
+        correlation = _merge_correlation_fields(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            context=context,
+        )
         event = FeedbackEvent(
             model_id=self.model_id,
             related_inference_id=related_inference_id,
             feedback_type=feedback_type,
             delay_ms=delay_ms,
             edit_distance=edit_distance,
+            **correlation,
         )
         self.publish(event.to_dict())
 
@@ -205,13 +301,32 @@ class ModelHandle:
         error_message: str | None = None,
         stack_trace_hash: str | None = None,
         related_event_id: str | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
+        correlation = _merge_correlation_fields(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            context=context,
+        )
         event = ErrorEvent(
             model_id=self.model_id,
             error_code=error_code,
             error_message=error_message,
             stack_trace_hash=stack_trace_hash,
             related_event_id=related_event_id,
+            **correlation,
         )
         self.publish(event.to_dict())
 

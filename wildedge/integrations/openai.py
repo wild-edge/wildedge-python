@@ -41,13 +41,21 @@ def source_from_base_url(base_url: str | None) -> str:
     return SOURCE_BY_HOSTNAME.get(hostname or "", hostname or "openai")
 
 
+def _msg_role(m) -> str | None:
+    return m.get("role") if isinstance(m, dict) else getattr(m, "role", None)
+
+
+def _msg_content(m) -> str | None:
+    return m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+
+
 def build_input_meta(messages: list, tokens_in: int | None) -> TextInputMeta | None:
     if not messages:
         return None
-    last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+    last_user = next((m for m in reversed(messages) if _msg_role(m) == "user"), None)
     if not last_user:
         return None
-    content = last_user.get("content", "")
+    content = _msg_content(last_user) or ""
     if not isinstance(content, str) or not content:
         return None
     return TextInputMeta(

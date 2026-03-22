@@ -38,6 +38,14 @@ class track:
         input_meta: Any = None,
         output_meta: Any = None,
         generation_config: Any = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        step_index: int | None = None,
+        conversation_id: str | None = None,
+        context: dict[str, Any] | None = None,
     ):
         self.handle = handle
         self.input_type = input_type
@@ -46,6 +54,16 @@ class track:
         self.input_meta = input_meta
         self.output_meta = output_meta
         self.generation_config = generation_config
+        self._correlation = dict(
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            run_id=run_id,
+            agent_id=agent_id,
+            step_index=step_index,
+            conversation_id=conversation_id,
+            context=context,
+        )
         self.start_time: float | None = None
 
     def __call__(self, func):
@@ -62,6 +80,7 @@ class track:
                     input_meta=self.input_meta,
                     output_meta=self.output_meta,
                     generation_config=self.generation_config,
+                    **self._correlation,
                 )
                 return result
             except Exception as exc:
@@ -69,6 +88,7 @@ class track:
                     self.handle.track_error(
                         error_code="UNKNOWN",
                         error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                        **self._correlation,
                     )
                 raise
 
@@ -89,6 +109,7 @@ class track:
                     error_message=str(exc_val)[: constants.ERROR_MSG_MAX_LEN]
                     if exc_val
                     else None,
+                    **self._correlation,
                 )
         else:
             self.handle.track_inference(
@@ -99,5 +120,6 @@ class track:
                 input_meta=self.input_meta,
                 output_meta=self.output_meta,
                 generation_config=self.generation_config,
+                **self._correlation,
             )
         return False
