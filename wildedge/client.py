@@ -175,6 +175,12 @@ class SpanContextManager:
             return False
         duration_ms = elapsed_ms(self._t0)
         status = "error" if exc_type else self.status
+        # Restore parent span context before emitting, so _merge_correlation_fields
+        # sees the parent context rather than this span (which would make the span
+        # appear as its own parent).
+        if self._span_token is not None:
+            _reset_span_context(self._span_token)
+            self._span_token = None
         self._client.track_span(
             kind=self.kind,
             name=self.name,
@@ -193,8 +199,6 @@ class SpanContextManager:
             conversation_id=self.conversation_id,
             context=self.context,
         )
-        if self._span_token is not None:
-            _reset_span_context(self._span_token)
         return False
 
     async def __aenter__(self):
