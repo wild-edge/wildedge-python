@@ -14,10 +14,13 @@ Demonstrates WildEdge tracing for a simple agent that:
   - Tracks LLM inference automatically via the OpenAI integration
 
 Run with: uv run agentic_example.py
-Requires: OPENAI_API_KEY environment variable. Set WILDEDGE_DSN to send events.
+Requires: OPENROUTER_API_KEY environment variable. Set WILDEDGE_DSN to send events.
 """
 
 import json
+import os
+import time
+import uuid
 
 from openai import OpenAI
 
@@ -28,7 +31,10 @@ we = wildedge.init(
     integrations="openai",
 )
 
-openai_client = OpenAI()
+openai_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+)
 
 # --- Tools -------------------------------------------------------------------
 
@@ -65,11 +71,14 @@ TOOLS = [
 
 
 def get_weather(city: str) -> str:
-    # Stub: replace with a real weather API call.
+    # ~150ms to simulate a real weather API call.
+    time.sleep(0.15)
     return json.dumps({"city": city, "temperature_c": 18, "condition": "partly cloudy"})
 
 
 def calculator(expression: str) -> str:
+    # ~60ms to simulate a remote computation call.
+    time.sleep(0.06)
     try:
         result = eval(expression, {"__builtins__": {}})  # noqa: S307
         return json.dumps({"expression": expression, "result": result})
@@ -97,8 +106,23 @@ def call_tool(name: str, arguments: dict) -> str:
     return result
 
 
+def retrieve_context(query: str) -> str:
+    """Fetch relevant context from the vector store (~120ms)."""
+    with we.span(
+        kind="retrieval",
+        name="vector_search",
+        input_summary=query[:200],
+    ) as span:
+        time.sleep(0.12)
+        result = f"[context: background knowledge relevant to '{query[:40]}']"
+        span.output_summary = result
+    return result
+
+
 def run_agent(task: str, step_index: int, messages: list) -> str:
-    messages.append({"role": "user", "content": task})
+    # Fetch context before the first reasoning step, include it in the user turn.
+    context = retrieve_context(task)
+    messages.append({"role": "user", "content": f"{task}\n\nContext: {context}"})
 
     while True:
         with we.span(
@@ -108,15 +132,16 @@ def run_agent(task: str, step_index: int, messages: list) -> str:
             input_summary=task[:200],
         ) as span:
             response = openai_client.chat.completions.create(
-                model="gpt-4o",
+                model="qwen/qwen3.5-flash-02-23",
                 messages=messages,
                 tools=TOOLS,
                 tool_choice="auto",
+                max_tokens=512,
             )
             choice = response.choices[0]
             span.output_summary = choice.finish_reason
 
-        messages.append(choice.message)
+        messages.append(choice.message.model_dump(exclude_none=True))
 
         if choice.finish_reason == "tool_calls":
             step_index += 1
@@ -130,8 +155,11 @@ def run_agent(task: str, step_index: int, messages: list) -> str:
                         "content": result,
                     }
                 )
+                # Not instrumented: context window update between tool calls (~80ms).
+                # Shows up as a gap stripe in the trace view.
+                time.sleep(0.08)
         else:
-            return choice.message.content
+            return choice.message.content or ""
 
 
 # --- Main --------------------------------------------------------------------
@@ -144,11 +172,10 @@ TASKS = [
 system_prompt = "You are a helpful assistant. Use tools when needed."
 messages = [{"role": "system", "content": system_prompt}]
 
-with we.trace(agent_id="demo-agent", run_id="example-run-001"):
+with we.trace(agent_id="demo-agent", run_id=str(uuid.uuid4())):
     for i, task in enumerate(TASKS, start=1):
         print(f"\nTask {i}: {task}")
         reply = run_agent(task, step_index=i, messages=messages)
         print(f"Reply: {reply}")
 
 we.flush()
-print("\nDone. Events flushed to WildEdge.")
