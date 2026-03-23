@@ -2,7 +2,7 @@ name: Compatibility
 
 on:
   push:
-    branches: [ main, devel ]
+    branches: [ main, 'release/**' ]
     paths:
       - 'wildedge/**'
       - 'tests/compat/**'
@@ -10,8 +10,8 @@ on:
       - 'pyproject.toml'
       - '.github/workflows/compat.yml'
   pull_request:
-    branches: [ main, devel ]
-    types: [opened, synchronize, reopened, labeled]
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
     paths:
       - 'wildedge/**'
       - 'tests/compat/**'
@@ -24,7 +24,7 @@ on:
 
 jobs:
   compat:
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'compat')
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -84,7 +84,7 @@ jobs:
         run: python -m pytest tests/compat/test_mlx_compat.py -q
 
   compat-canary-314:
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'compat')
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     continue-on-error: true
     strategy:

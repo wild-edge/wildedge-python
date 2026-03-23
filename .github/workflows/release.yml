@@ -38,12 +38,22 @@ jobs:
       - name: Check package metadata
         run: twine check dist/*
 
+      - name: Generate release notes
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.ref_name }}
+          OUTPUT: /tmp/release-notes.md
+        run: python3 scripts/build_changelog_comment.py
+
       - name: Create GitHub release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body_path: /tmp/release-notes.md
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

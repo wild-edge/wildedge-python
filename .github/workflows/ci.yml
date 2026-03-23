@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, devel ]
+    branches: [ main, devel, 'release/**' ]
     paths:
       - 'wildedge/**'
       - 'tests/**'
