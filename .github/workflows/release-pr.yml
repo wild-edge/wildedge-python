@@ -10,7 +10,7 @@ jobs:
     if: startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
