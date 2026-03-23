@@ -38,7 +38,16 @@
 1. Fork the repository and create a feature branch off `devel`.
 2. Make your changes and ensure tests pass.
 3. Update documentation if needed.
-4. Submit a pull request with a clear description of the changes.
+4. Submit a pull request targeting `devel` with a clear description of the changes.
+
+## Release process
+
+Releases follow a `release/<version>` branching flow:
+
+1. Cut a `release/<version>` branch from `devel`.
+2. Bump the version in `pyproject.toml`.
+3. Open a pull request targeting `main`. CI will automatically run the full compatibility matrix and post a changelog preview comment.
+4. Once merged, tag the commit as `v<version>`. The release workflow publishes to PyPI and creates a GitHub release.
 
 ## Reporting issues
 
