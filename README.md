@@ -105,6 +105,15 @@ For unsupported frameworks, see [Manual tracking](https://github.com/wild-edge/w
 
 For advanced options (batching, queue tuning, dead-letter storage), see [Configuration](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md).
 
+## Projects using this SDK
+
+| Name | Link |
+|---|---|
+| agntr | [github.com/pmaciolek/agntr](https://github.com/pmaciolek/agntr) |
+| *(your project here)* | - |
+
+Using WildEdge in your project? Open a PR to add it to the list.
+
 ## Privacy
 
 Report security & priact issues to: wildedge@googlegroups.com.
