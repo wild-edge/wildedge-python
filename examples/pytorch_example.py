@@ -13,7 +13,7 @@ import torch.nn as nn
 import wildedge
 
 client = wildedge.WildEdge(
-    app_version="1.0.0",  # set WILDEDGE_DSN env var
+    app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
 )
 
 

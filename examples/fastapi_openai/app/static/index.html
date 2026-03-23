@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WildEdge + OpenRouter</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; }
+    textarea { width: 100%; box-sizing: border-box; }
+    #response { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; margin-top: 1rem; min-height: 3rem; }
+    #model-label { font-size: 0.8rem; color: #666; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h2>WildEdge + OpenRouter</h2>
+  <textarea id="prompt" rows="4" placeholder="Enter a prompt..."></textarea>
+  <br>
+  <label>Model: <input id="model" value="openai/gpt-4o-mini" size="30"></label>
+  <br><br>
+  <button onclick="send()">Send</button>
+  <div id="model-label"></div>
+  <div id="response"></div>
+  <script>
+    async function send() {
+      const prompt = document.getElementById("prompt").value.trim();
+      if (!prompt) return;
+      document.getElementById("response").textContent = "...";
+      document.getElementById("model-label").textContent = "";
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, model: document.getElementById("model").value }),
+      });
+      const data = await res.json();
+      document.getElementById("response").textContent = data.response;
+      document.getElementById("model-label").textContent = "model: " + data.model;
+    }
+  </script>
+</body>
+</html>

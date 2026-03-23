@@ -28,7 +28,7 @@ REPO = "bartowski/gemma-2-2b-it-GGUF"
 FILE = "gemma-2-2b-it-Q4_K_M.gguf"
 
 client = wildedge.WildEdge(
-    app_version="1.0.0",  # set WILDEDGE_DSN env var
+    app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
 )
 
 # --- Download ---

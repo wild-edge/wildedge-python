@@ -1,0 +1,13 @@
+[project]
+name = "wildedge-fastapi-openrouter"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "wildedge-sdk",
+    "fastapi",
+    "uvicorn[standard]",
+    "openai",
+]
+
+[tool.uv.sources]
+wildedge-sdk = { path = "../..", editable = true }

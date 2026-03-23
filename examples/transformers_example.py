@@ -92,8 +92,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    client = wildedge.WildEdge(app_version="1.0.0")  # set WILDEDGE_DSN env var
-    client.instrument("transformers", hubs=["huggingface"])
+    client = wildedge.init(
+        app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
+        integrations="transformers",
+        hubs=["huggingface"],
+    )
 
     print()
     {"classify": run_classify, "generate": run_generate, "embed": run_embed}[

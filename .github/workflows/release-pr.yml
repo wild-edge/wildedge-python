@@ -1,0 +1,30 @@
+name: Release PR
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  changelog-preview:
+    if: startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate changelog preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+          REPO: ${{ github.repository }}
+          OUTPUT: /tmp/changelog-preview.md
+        run: python3 scripts/build_changelog_comment.py
+
+      - name: Post changelog preview comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: changelog-preview
+          path: /tmp/changelog-preview.md

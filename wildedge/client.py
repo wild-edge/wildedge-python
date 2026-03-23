@@ -68,6 +68,14 @@ LOG_INSTRUMENT_TORCH_KERAS = (
 )
 
 
+class _NoopConsumer:
+    def flush(self, timeout: float = 0) -> None:
+        return None
+
+    def close(self, timeout: float | None = None) -> None:
+        return None
+
+
 def parse_dsn(dsn: str) -> tuple[str, str, str]:
     """Parse DSN into (secret, host, project_key)."""
     parsed = urlparse(dsn)
@@ -153,10 +161,12 @@ class WildEdge:
     ):
         env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
         dsn = env.dsn
-        if not dsn:
-            raise ValueError(ERROR_DSN_REQUIRED)
-        api_key, host, project_key = parse_dsn(dsn)
         debug = env.debug
+        self.noop = False
+        if not dsn:
+            self._init_noop(debug=debug, device=device)
+            return
+        api_key, host, project_key = parse_dsn(dsn)
         app_identity = resolve_app_identity(
             explicit=env.app_identity,
             project_key=project_key,
@@ -258,8 +268,32 @@ class WildEdge:
         if debug:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)
 
+    def _init_noop(self, *, debug: bool, device: DeviceInfo | None) -> None:
+        self.noop = True
+        self.debug = debug
+        self.closed = True
+        logger.warning(
+            "wildedge: no DSN configured; client is disabled (events will be dropped)"
+        )
+        self.api_key = None
+        self.device = device
+        self.session_id = str(uuid.uuid4())
+        self.created_at = datetime.now(timezone.utc)
+        self.queue = EventQueue(
+            max_size=1,
+            policy=QueuePolicy.OPPORTUNISTIC,
+            persist_to_disk=False,
+        )
+        self.registry = ModelRegistry(persist_path=None)
+        self.transmitter = None
+        self.dead_letter_store = None
+        self.consumer = _NoopConsumer()
+        self.auto_loaded = set()
+        self._auto_load_finalizers = {}
+        self.hub_trackers = {}
+
     def publish(self, event_dict: dict) -> None:
-        if self.closed:
+        if self.closed or self.noop:
             return
 
         if self.debug:
@@ -472,6 +506,10 @@ class WildEdge:
         Each integration or hub tracker is installed at most once per process
         regardless of how many times ``instrument()`` is called.
         """
+        if self.noop:
+            if self.debug:
+                logger.debug("wildedge: instrument skipped (no DSN configured)")
+            return
         if integration is None:
             if not hubs:
                 raise ValueError(
@@ -658,7 +696,8 @@ class WildEdge:
     def close(self, timeout: float | None = None) -> None:
         """Best-effort shutdown; pass timeout to attempt bounded flush first."""
         self.closed = True
-        stop_sampler()
+        if not self.noop:
+            stop_sampler()
         if timeout is None:
             self.consumer.close()
         else:
