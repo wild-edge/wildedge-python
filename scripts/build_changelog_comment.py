@@ -39,7 +39,9 @@ def generate_notes(repo: str, tag_name: str, target: str, prev_tag: str | None) 
         args += ["-f", f"previous_tag_name={prev_tag}"]
     args += ["--jq", ".body"]
 
-    result = subprocess.run(args, capture_output=True, text=True, check=True)
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(f"gh api failed:\n{result.stderr.strip()}")
     return result.stdout
 
 
