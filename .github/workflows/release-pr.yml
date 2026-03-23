@@ -14,12 +14,11 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Generate changelog preview
         env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_REF: ${{ github.head_ref }}
-          REPO: ${{ github.repository }}
           OUTPUT: /tmp/changelog-preview.md
         run: python3 scripts/build_changelog_comment.py
 

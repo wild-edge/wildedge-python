@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -15,9 +16,12 @@ def get_version() -> str:
     return data["project"]["version"]
 
 
-def get_previous_tag(repo: str) -> str | None:
+RELEASE_COMMIT_RE = re.compile(r"^Release \d+\.\d+\.\d+$")
+
+
+def get_previous_tag() -> str | None:
     result = subprocess.run(
-        ["gh", "api", f"repos/{repo}/releases/latest", "--jq", ".tag_name"],
+        ["git", "describe", "--tags", "--abbrev=0", "--match", "v*", "HEAD^"],
         capture_output=True,
         text=True,
     )
@@ -25,41 +29,36 @@ def get_previous_tag(repo: str) -> str | None:
     return tag if result.returncode == 0 and tag else None
 
 
-def generate_notes(repo: str, tag_name: str, target: str, prev_tag: str | None) -> str:
-    args = [
-        "gh",
-        "api",
-        f"repos/{repo}/releases/generate-notes",
-        "-f",
-        f"tag_name={tag_name}",
-        "-f",
-        f"target_commitish={target}",
-    ]
-    if prev_tag:
-        args += ["-f", f"previous_tag_name={prev_tag}"]
-    args += ["--jq", ".body"]
-
-    result = subprocess.run(args, capture_output=True, text=True, check=True)
-    return result.stdout
+def get_commits_since(prev_tag: str | None) -> list[str]:
+    revision = f"{prev_tag}..HEAD" if prev_tag else "HEAD"
+    result = subprocess.run(
+        ["git", "log", revision, "--pretty=format:%s"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    return [line for line in lines if not RELEASE_COMMIT_RE.match(line)]
 
 
-def build_comment(tag_name: str, notes: str) -> str:
+def build_comment(tag_name: str, commits: list[str], prev_tag: str | None) -> str:
+    items = "\n".join(f"- {c}" for c in commits) if commits else "- No changes."
+    range_str = f"{prev_tag}...{tag_name}" if prev_tag else tag_name
     return (
         f"## Changelog preview for `{tag_name}`\n\n"
-        "> Preview of the GitHub release notes that will be generated when this is tagged.\n\n"
-        + notes
+        "> Preview of the release notes that will be generated when this is tagged.\n\n"
+        f"**What's Changed**\n\n{items}\n\n"
+        f"**Full Changelog**: {range_str}\n"
     )
 
 
 def main() -> None:
-    repo = os.environ["REPO"]
-    head_ref = os.environ["HEAD_REF"]
     output = os.environ.get("OUTPUT", "/tmp/changelog-preview.md")
     tag_name = os.environ.get("TAG_NAME") or f"v{get_version()}"
 
-    prev_tag = get_previous_tag(repo)
-    notes = generate_notes(repo, tag_name, head_ref, prev_tag)
-    Path(output).write_text(build_comment(tag_name, notes))
+    prev_tag = get_previous_tag()
+    commits = get_commits_since(prev_tag)
+    Path(output).write_text(build_comment(tag_name, commits, prev_tag))
 
 
 if __name__ == "__main__":
