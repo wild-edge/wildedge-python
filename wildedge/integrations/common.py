@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
+from wildedge import constants
 from wildedge.logging import logger
+from wildedge.timing import elapsed_ms
+
+if TYPE_CHECKING:
+    from wildedge.model import ModelHandle
 
 
 def debug_failure(framework: str, context: str, exc: BaseException) -> None:
@@ -110,3 +116,118 @@ def num_classes_from_output_shape(shape: tuple) -> int:
     if len(shape) >= 2 and isinstance(shape[-1], int) and shape[-1] > 1:
         return int(shape[-1])
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Generic streaming wrappers
+# ---------------------------------------------------------------------------
+# Each integration provides:
+#   on_chunk(chunk) -> None        : update mutable state from a single chunk
+#   on_done(duration_ms, ttft_ms)  : record inference once the stream is exhausted
+#
+# The wrappers handle TTFT capture, error tracking, context-manager delegation,
+# and attribute proxying so callers get a drop-in replacement for the raw stream.
+
+
+class SyncStreamWrapper:
+    """Wraps a sync iterable stream to capture TTFT and record inference on exhaustion."""
+
+    def __init__(
+        self,
+        original: object,
+        handle: ModelHandle,
+        t0: float,
+        on_chunk: Callable[[object], None] | None,
+        on_done: Callable[[int, int | None], None],
+    ) -> None:
+        self._original = original
+        self._handle = handle
+        self._t0 = t0
+        self._on_chunk = on_chunk
+        self._on_done = on_done
+
+    def __iter__(self):
+        return self._track()
+
+    def _track(self):
+        ttft_ms: int | None = None
+        try:
+            for chunk in self._original:  # type: ignore[union-attr]
+                if ttft_ms is None:
+                    ttft_ms = elapsed_ms(self._t0)
+                if self._on_chunk is not None:
+                    self._on_chunk(chunk)
+                yield chunk
+        except Exception as exc:
+            self._handle.track_error(
+                error_code="UNKNOWN",
+                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+            )
+            raise
+        else:
+            self._on_done(elapsed_ms(self._t0), ttft_ms)
+
+    def __enter__(self) -> SyncStreamWrapper:
+        if hasattr(self._original, "__enter__"):
+            self._original.__enter__()  # type: ignore[union-attr]
+        return self
+
+    def __exit__(self, *args: object) -> object:
+        if hasattr(self._original, "__exit__"):
+            return self._original.__exit__(*args)  # type: ignore[union-attr]
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._original, name)
+
+
+class AsyncStreamWrapper:
+    """Wraps an async iterable stream to capture TTFT and record inference on exhaustion."""
+
+    def __init__(
+        self,
+        original: object,
+        handle: ModelHandle,
+        t0: float,
+        on_chunk: Callable[[object], None] | None,
+        on_done: Callable[[int, int | None], None],
+    ) -> None:
+        self._original = original
+        self._handle = handle
+        self._t0 = t0
+        self._on_chunk = on_chunk
+        self._on_done = on_done
+
+    def __aiter__(self):
+        return self._track()
+
+    async def _track(self):
+        ttft_ms: int | None = None
+        try:
+            async for chunk in self._original:  # type: ignore[union-attr]
+                if ttft_ms is None:
+                    ttft_ms = elapsed_ms(self._t0)
+                if self._on_chunk is not None:
+                    self._on_chunk(chunk)
+                yield chunk
+        except Exception as exc:
+            self._handle.track_error(
+                error_code="UNKNOWN",
+                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+            )
+            raise
+        else:
+            self._on_done(elapsed_ms(self._t0), ttft_ms)
+
+    async def __aenter__(self) -> AsyncStreamWrapper:
+        if hasattr(self._original, "__aenter__"):
+            await self._original.__aenter__()  # type: ignore[union-attr]
+        return self
+
+    async def __aexit__(self, *args: object) -> object:
+        if hasattr(self._original, "__aexit__"):
+            return await self._original.__aexit__(*args)  # type: ignore[union-attr]
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._original, name)

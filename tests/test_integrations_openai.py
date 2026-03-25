@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import wildedge.integrations.openai as openai_mod
+from wildedge.integrations.common import AsyncStreamWrapper, SyncStreamWrapper
 from wildedge.integrations.openai import (
     OpenAIExtractor,
     build_api_meta,
@@ -81,6 +82,56 @@ class FakeAsyncCompletions:
 
     async def create(self, *args, **kwargs):
         return self._response
+
+
+def make_stream_chunk(content=None, finish_reason=None, usage=None):
+    chunk = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content=content),
+                finish_reason=finish_reason,
+            )
+        ],
+        usage=usage,
+        model="gpt-4o",
+        system_fingerprint=None,
+        service_tier=None,
+    )
+    return chunk
+
+
+class FakeStreamingCompletions:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def create(self, *args, **kwargs):
+        if kwargs.get("stream"):
+            return iter(self._chunks)
+        return FakeResponse()
+
+
+class FakeAsyncStreamingCompletions:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def create(self, *args, **kwargs):
+        if kwargs.get("stream"):
+            return FakeAsyncIterator(self._chunks)
+        return FakeResponse()
+
+
+class FakeAsyncIterator:
+    def __init__(self, items):
+        self._iter = iter(items)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
 
 
 # Named "OpenAI" / "AsyncOpenAI" so can_handle sees the right type name.
@@ -371,11 +422,65 @@ class TestWrapSyncCompletions:
         client.handles["gpt-4o"].track_error.assert_called_once()
         client.handles["gpt-4o"].track_inference.assert_not_called()
 
-    def test_streaming_skips_tracking(self):
-        completions, client = self.setup()
-        completions.create(model="gpt-4o", messages=[], stream=True)
-        if "gpt-4o" in client.handles:
-            client.handles["gpt-4o"].track_inference.assert_not_called()
+    def test_streaming_returns_sync_stream_wrapper(self):
+        chunks = [make_stream_chunk("hi", None), make_stream_chunk(None, "stop")]
+        completions = FakeStreamingCompletions(chunks)
+        client = make_fake_client()
+        wrap_sync_completions(completions, "openai", lambda: client)
+        result = completions.create(model="gpt-4o", messages=[], stream=True)
+        assert isinstance(result, SyncStreamWrapper)
+
+    def test_streaming_records_inference_on_exhaustion(self):
+        chunks = [
+            make_stream_chunk("Hello", None),
+            make_stream_chunk(" world", "stop"),
+        ]
+        completions = FakeStreamingCompletions(chunks)
+        client = make_fake_client()
+        wrap_sync_completions(completions, "openai", lambda: client)
+        stream = completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": "hi"}], stream=True
+        )
+        list(stream)
+        handle = client.handles["gpt-4o"]
+        handle.track_inference.assert_called_once()
+        kwargs = handle.track_inference.call_args.kwargs
+        assert kwargs["output_meta"].time_to_first_token_ms is not None
+        assert kwargs["output_meta"].stop_reason == "stop"
+        assert kwargs["input_modality"] == "text"
+        assert kwargs["success"] is True
+
+    def test_streaming_captures_usage_from_chunks(self):
+        usage_chunk = SimpleNamespace(prompt_tokens=8, completion_tokens=15)
+        chunks = [
+            make_stream_chunk("hi", None),
+            make_stream_chunk(None, "stop", usage=usage_chunk),
+        ]
+        completions = FakeStreamingCompletions(chunks)
+        client = make_fake_client()
+        wrap_sync_completions(completions, "openai", lambda: client)
+        list(completions.create(model="gpt-4o", messages=[], stream=True))
+        out = client.handles["gpt-4o"].track_inference.call_args.kwargs["output_meta"]
+        assert out.tokens_in == 8
+        assert out.tokens_out == 15
+
+    def test_streaming_error_during_iteration_tracks_error(self):
+        def bad_iter():
+            yield make_stream_chunk("hi", None)
+            raise RuntimeError("stream error")
+
+        class ErrorStreamCompletions:
+            def create(self, *args, **kwargs):
+                return bad_iter()
+
+        client = make_fake_client()
+        completions = ErrorStreamCompletions()
+        wrap_sync_completions(completions, "openai", lambda: client)
+        stream = completions.create(model="gpt-4o", messages=[], stream=True)
+        with pytest.raises(RuntimeError, match="stream error"):
+            list(stream)
+        client.handles["gpt-4o"].track_error.assert_called_once()
+        client.handles["gpt-4o"].track_inference.assert_not_called()
 
     def test_closed_client_passes_through(self):
         completions, client = self.setup(closed=True)
@@ -438,11 +543,37 @@ class TestWrapAsyncCompletions:
 
         client.handles["gpt-4o"].track_error.assert_called_once()
 
-    async def test_streaming_skips_tracking(self):
-        completions, client = self.setup()
-        await completions.create(model="qwen/qwen3-235b", messages=[], stream=True)
-        if "qwen/qwen3-235b" in client.handles:
-            client.handles["qwen/qwen3-235b"].track_inference.assert_not_called()
+    async def test_streaming_returns_async_stream_wrapper(self):
+        chunks = [make_stream_chunk("hi", None), make_stream_chunk(None, "stop")]
+        completions = FakeAsyncStreamingCompletions(chunks)
+        client = make_fake_client()
+        wrap_async_completions(completions, "openrouter", lambda: client)
+        result = await completions.create(
+            model="qwen/qwen3-235b", messages=[], stream=True
+        )
+        assert isinstance(result, AsyncStreamWrapper)
+
+    async def test_streaming_records_inference_on_exhaustion(self):
+        chunks = [
+            make_stream_chunk("Hello", None),
+            make_stream_chunk(" world", "stop"),
+        ]
+        completions = FakeAsyncStreamingCompletions(chunks)
+        client = make_fake_client()
+        wrap_async_completions(completions, "openrouter", lambda: client)
+        stream = await completions.create(
+            model="qwen/qwen3-235b",
+            messages=[{"role": "user", "content": "hi"}],
+            stream=True,
+        )
+        async for _ in stream:
+            pass
+        handle = client.handles["qwen/qwen3-235b"]
+        handle.track_inference.assert_called_once()
+        kwargs = handle.track_inference.call_args.kwargs
+        assert kwargs["output_meta"].time_to_first_token_ms is not None
+        assert kwargs["output_meta"].stop_reason == "stop"
+        assert kwargs["success"] is True
 
 
 # ---------------------------------------------------------------------------
