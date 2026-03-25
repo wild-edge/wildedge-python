@@ -11,7 +11,11 @@ from urllib.parse import urlparse
 from wildedge import constants
 from wildedge.events.inference import ApiMeta, GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor
-from wildedge.integrations.common import debug_failure
+from wildedge.integrations.common import (
+    AsyncStreamWrapper,
+    SyncStreamWrapper,
+    debug_failure,
+)
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -55,6 +59,28 @@ def build_input_meta(messages: list, tokens_in: int | None) -> TextInputMeta | N
         word_count=len(content.split()),
         token_count=tokens_in,
         prompt_type="chat",
+    )
+
+
+def build_streaming_output_meta(
+    ttft_ms: int | None,
+    tokens_in: int | None,
+    tokens_out: int | None,
+    stop_reason: str | None,
+    duration_ms: int,
+) -> GenerationOutputMeta:
+    tps = (
+        round(tokens_out / duration_ms * 1000, 1)
+        if duration_ms > 0 and tokens_out
+        else None
+    )
+    return GenerationOutputMeta(
+        task="generation",
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        time_to_first_token_ms=ttft_ms,
+        tokens_per_second=tps,
+        stop_reason=stop_reason,
     )
 
 
@@ -145,6 +171,50 @@ def record_inference(
     )
 
 
+def make_openai_stream_callbacks(
+    handle: ModelHandle,
+    messages: list,
+) -> tuple:
+    """Return (on_chunk, on_done) callbacks for an OpenAI streaming response.
+
+    on_chunk updates mutable state from each ChatCompletionChunk.
+    on_done is called with (duration_ms, ttft_ms) when the stream is exhausted.
+    """
+    tokens_in: list[int | None] = [None]
+    tokens_out: list[int | None] = [None]
+    stop_reason: list[str | None] = [None]
+    last_chunk: list[object] = [None]
+
+    def on_chunk(chunk: object) -> None:
+        last_chunk[0] = chunk
+        chunk_usage = getattr(chunk, "usage", None)
+        if chunk_usage is not None:
+            tokens_in[0] = getattr(chunk_usage, "prompt_tokens", None)
+            tokens_out[0] = getattr(chunk_usage, "completion_tokens", None)
+        choices = getattr(chunk, "choices", None) or []
+        if choices:
+            reason = getattr(choices[0], "finish_reason", None)
+            if reason:
+                stop_reason[0] = reason
+
+    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+        ti, to, sr = tokens_in[0], tokens_out[0], stop_reason[0]
+        output_meta = build_streaming_output_meta(ttft_ms, ti, to, sr, duration_ms)
+        handle.track_inference(
+            duration_ms=duration_ms,
+            input_modality="text",
+            output_modality="generation",
+            success=True,
+            input_meta=build_input_meta(messages, ti),
+            output_meta=output_meta,
+            api_meta=build_api_meta(last_chunk[0])
+            if last_chunk[0] is not None
+            else None,
+        )
+
+    return on_chunk, on_done
+
+
 def wrap_sync_completions(completions: object, source: str, client_ref: object) -> None:
     original_create = completions.create  # type: ignore[attr-defined]
     model_handles: dict[str, ModelHandle] = {}
@@ -160,8 +230,12 @@ def wrap_sync_completions(completions: object, source: str, client_ref: object) 
         t0 = time.perf_counter()
         try:
             result = original_create(*args, **kwargs)
-            if not is_streaming and handle is not None:
-                record_inference(handle, result, messages, elapsed_ms(t0))
+            if handle is not None:
+                if is_streaming:
+                    on_chunk, on_done = make_openai_stream_callbacks(handle, messages)
+                    return SyncStreamWrapper(result, handle, t0, on_chunk, on_done)
+                else:
+                    record_inference(handle, result, messages, elapsed_ms(t0))
             return result
         except Exception as exc:
             if handle is not None:
@@ -191,8 +265,12 @@ def wrap_async_completions(
         t0 = time.perf_counter()
         try:
             result = await original_create(*args, **kwargs)
-            if not is_streaming and handle is not None:
-                record_inference(handle, result, messages, elapsed_ms(t0))
+            if handle is not None:
+                if is_streaming:
+                    on_chunk, on_done = make_openai_stream_callbacks(handle, messages)
+                    return AsyncStreamWrapper(result, handle, t0, on_chunk, on_done)
+                else:
+                    record_inference(handle, result, messages, elapsed_ms(t0))
             return result
         except Exception as exc:
             if handle is not None:

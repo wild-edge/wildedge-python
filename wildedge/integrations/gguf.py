@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from wildedge import constants
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.integrations.common import debug_failure
+from wildedge.integrations.common import SyncStreamWrapper, debug_failure
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.platforms import CURRENT_PLATFORM
@@ -69,6 +69,76 @@ def parse_quantization(filename: str) -> str | None:
     return None
 
 
+def make_gguf_input_meta(prompt: object, tokens_in: int | None) -> TextInputMeta | None:
+    if not isinstance(prompt, str) or not prompt:
+        return None
+    return TextInputMeta(
+        char_count=len(prompt),
+        word_count=len(prompt.split()),
+        token_count=tokens_in,
+    )
+
+
+def make_gguf_output_meta(
+    tokens_in: int | None,
+    tokens_out: int | None,
+    stop_reason: str | None,
+    ttft_ms: int | None,
+    duration_ms: int,
+) -> GenerationOutputMeta | None:
+    if tokens_out is None and ttft_ms is None:
+        return None
+    tps = (
+        round(tokens_out / duration_ms * 1000, 1)
+        if duration_ms > 0 and tokens_out
+        else None
+    )
+    return GenerationOutputMeta(
+        task="generation",
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        time_to_first_token_ms=ttft_ms,
+        tokens_per_second=tps,
+        stop_reason=stop_reason,
+    )
+
+
+def make_gguf_stream_callbacks(handle: object, prompt: object) -> tuple:
+    """Return (on_chunk, on_done) callbacks for a llama-cpp-python streaming response.
+
+    Chunks are dicts; usage appears in the final chunk when available.
+    """
+    tokens_in: list[int | None] = [None]
+    tokens_out: list[int | None] = [None]
+    stop_reason: list[str | None] = [None]
+
+    def on_chunk(chunk: object) -> None:
+        if not isinstance(chunk, dict):
+            return
+        usage = chunk.get("usage")
+        if usage:
+            tokens_in[0] = usage.get("prompt_tokens")
+            tokens_out[0] = usage.get("completion_tokens")
+        choices = chunk.get("choices") or []
+        if choices:
+            reason = choices[0].get("finish_reason")
+            if reason:
+                stop_reason[0] = reason
+
+    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+        ti, to, sr = tokens_in[0], tokens_out[0], stop_reason[0]
+        handle.track_inference(  # type: ignore[union-attr]
+            duration_ms=duration_ms,
+            input_modality="text",
+            output_modality="generation",
+            input_meta=make_gguf_input_meta(prompt, ti),
+            success=True,
+            output_meta=make_gguf_output_meta(ti, to, sr, ttft_ms, duration_ms),
+        )
+
+    return on_chunk, on_done
+
+
 def build_patched_call(original_call):
     def patched_call(self_inner, *args, **kwargs):
         handle = getattr(self_inner, GGUF_HANDLE_ATTR, None)
@@ -76,9 +146,13 @@ def build_patched_call(original_call):
             return original_call(self_inner, *args, **kwargs)
 
         prompt = args[0] if args else kwargs.get("prompt", "")
+        is_streaming: bool = bool(kwargs.get("stream", False))
         t0 = time.perf_counter()
         try:
             result = original_call(self_inner, *args, **kwargs)
+            if is_streaming:
+                on_chunk, on_done = make_gguf_stream_callbacks(handle, prompt)
+                return SyncStreamWrapper(result, handle, t0, on_chunk, on_done)
             duration_ms = elapsed_ms(t0)
             tokens_in = None
             tokens_out = None
@@ -89,36 +163,15 @@ def build_patched_call(original_call):
                     tokens_out = usage.get("completion_tokens")
             except Exception as exc:
                 debug_gguf_failure("usage extraction", exc)
-
-            input_meta = None
-            if isinstance(prompt, str) and prompt:
-                input_meta = TextInputMeta(
-                    char_count=len(prompt),
-                    word_count=len(prompt.split()),
-                    token_count=tokens_in,
-                )
-
-            output_meta = None
-            if tokens_out is not None:
-                tps = (
-                    round(tokens_out / duration_ms * 1000, 1)
-                    if duration_ms > 0
-                    else None
-                )
-                output_meta = GenerationOutputMeta(
-                    task="generation",
-                    tokens_in=tokens_in,
-                    tokens_out=tokens_out,
-                    tokens_per_second=tps,
-                )
-
             handle.track_inference(
                 duration_ms=duration_ms,
                 input_modality="text",
                 output_modality="generation",
-                input_meta=input_meta,
+                input_meta=make_gguf_input_meta(prompt, tokens_in),
                 success=True,
-                output_meta=output_meta,
+                output_meta=make_gguf_output_meta(
+                    tokens_in, tokens_out, None, None, duration_ms
+                ),
             )
             return result
         except Exception as exc:
