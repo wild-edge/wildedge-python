@@ -31,6 +31,9 @@ prompts = [
 ]
 
 for prompt in prompts:
-    result = llm(prompt, max_tokens=128, temperature=0.7)
-    text = result["choices"][0]["text"].strip()
-    print(f"Q: {prompt}\nA: {text}\n")
+    stream = llm(prompt, max_tokens=128, temperature=0.7, stream=True)
+    print(f"Q: {prompt}\nA: ", end="", flush=True)
+    for chunk in stream:
+        token = chunk["choices"][0].get("text", "")
+        print(token, end="", flush=True)
+    print("\n")
