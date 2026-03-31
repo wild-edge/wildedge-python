@@ -59,7 +59,6 @@ client = wildedge.init(
 If no DSN is configured, the client becomes a no-op and logs a warning.
 
 `init(...)` is a convenience wrapper for `WildEdge(...)` + `instrument(...)`.
-
 ## Supported integrations
 
 **On-device**
