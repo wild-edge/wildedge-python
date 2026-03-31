@@ -32,13 +32,19 @@ prompts = [
 ]
 
 for prompt in prompts:
-    response = openai_client.chat.completions.create(
+    stream = openai_client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7,
         max_tokens=256,
+        stream=True,
+        stream_options={"include_usage": True},
     )
-    print(f"Q: {prompt}\nA: {response.choices[0].message.content}\n")
+    print(f"Q: {prompt}\nA: ", end="", flush=True)
+    for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta.content:
+            print(chunk.choices[0].delta.content, end="", flush=True)
+    print("\n")
 
 client.flush()
 print("Done. Events flushed to WildEdge.")

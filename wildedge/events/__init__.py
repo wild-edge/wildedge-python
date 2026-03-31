@@ -19,6 +19,7 @@ from wildedge.events.inference import (
 from wildedge.events.model_download import AdapterDownload, ModelDownloadEvent
 from wildedge.events.model_load import AdapterLoad, ModelLoadEvent
 from wildedge.events.model_unload import ModelUnloadEvent
+from wildedge.events.span import SpanEvent
 
 __all__ = [
     "ApiMeta",
@@ -40,6 +41,7 @@ __all__ = [
     "ModelDownloadEvent",
     "ModelLoadEvent",
     "ModelUnloadEvent",
+    "SpanEvent",
     "TextInputMeta",
     "TopKPrediction",
 ]

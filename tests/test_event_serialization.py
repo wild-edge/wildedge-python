@@ -4,6 +4,7 @@ from wildedge.events.feedback import FeedbackEvent, FeedbackType
 from wildedge.events.inference import InferenceEvent, TextInputMeta
 from wildedge.events.model_download import AdapterDownload, ModelDownloadEvent
 from wildedge.events.model_load import AdapterLoad, ModelLoadEvent
+from wildedge.events.span import SpanEvent
 
 
 def test_inference_event_to_dict_omits_none_fields():
@@ -72,3 +73,44 @@ def test_feedback_event_enum_and_string_forms():
     )
     assert enum_event.to_dict()["feedback"]["feedback_type"] == "accept"
     assert string_event.to_dict()["feedback"]["feedback_type"] == "reject"
+
+
+def test_span_event_to_dict_includes_required_fields():
+    event = SpanEvent(
+        kind="tool",
+        name="search",
+        duration_ms=250,
+        status="ok",
+        attributes={"provider": "custom"},
+    )
+    data = event.to_dict()
+    assert data["event_type"] == "span"
+    assert data["span"]["kind"] == "tool"
+    assert data["span"]["attributes"]["provider"] == "custom"
+
+
+def test_span_event_context_serializes_under_context_key():
+    event = SpanEvent(
+        kind="agent_step",
+        name="plan",
+        duration_ms=10,
+        status="ok",
+        context={"user_id": "u1"},
+    )
+    data = event.to_dict()
+    assert data["context"] == {"user_id": "u1"}
+    assert "attributes" not in data
+
+
+def test_span_event_attributes_and_context_are_independent():
+    event = SpanEvent(
+        kind="tool",
+        name="search",
+        duration_ms=50,
+        status="ok",
+        attributes={"provider": "custom"},
+        context={"user_id": "u1"},
+    )
+    data = event.to_dict()
+    assert data["span"]["attributes"] == {"provider": "custom"}
+    assert data["context"] == {"user_id": "u1"}
