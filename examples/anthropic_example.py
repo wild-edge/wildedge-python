@@ -35,7 +35,7 @@ prompts = [
 
 for prompt in prompts:
     stream = anthropic_client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-haiku-4-5",
         max_tokens=256,
         messages=[{"role": "user", "content": prompt}],
         stream=True,
