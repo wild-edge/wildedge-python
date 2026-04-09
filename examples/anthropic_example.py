@@ -23,9 +23,7 @@ client = wildedge.init(
     integrations="anthropic",
 )
 
-anthropic_client = (
-    anthropic.Anthropic()
-)  # set ANTHROPIC_API_KEY env var or pass api_key= explicitly
+anthropic_client = anthropic.Anthropic()  # set ANTHROPIC_API_KEY or pass api_key=
 
 prompts = [
     "Explain transformer attention in one sentence.",
