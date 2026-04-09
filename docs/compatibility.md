@@ -4,6 +4,8 @@ The table below is generated from `scripts/compat_matrix.py`.
 
 | Integration | Version set | Dependencies | Supported Python |
 |---|---|---|---|
+| `anthropic` | `min` | `anthropic==0.25.0` | 3.10, 3.11, 3.12, 3.13 |
+| `anthropic` | `current` | `anthropic==0.92.0` | 3.10, 3.11, 3.12, 3.13 |
 | `onnx` | `min` | `onnxruntime==1.18.1`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | `onnx` | `min` (`py3.13` override) | `onnxruntime==1.20.1`, `numpy==2.1.3` | 3.13 |
 | `onnx` | `current` | `onnxruntime==1.20.1`, `numpy==2.1.3` | 3.10, 3.11, 3.12, 3.13, 3.14 |
