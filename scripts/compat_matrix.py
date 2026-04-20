@@ -8,6 +8,10 @@ import json
 import sys
 
 MATRIX = {
+    "anthropic": {
+        "min": ["anthropic==0.25.0"],
+        "current": ["anthropic==0.92.0"],
+    },
     "onnx": {
         "min": ["onnxruntime==1.18.1", "numpy==1.26.4"],
         "current": ["onnxruntime==1.20.1", "numpy==2.1.3"],
@@ -56,6 +60,7 @@ MATRIX = {
 }
 
 SUPPORTED_PYTHON = {
+    "anthropic": ["3.10", "3.11", "3.12", "3.13"],
     "onnx": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "torch": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "timm": ["3.10", "3.11", "3.12", "3.13", "3.14"],

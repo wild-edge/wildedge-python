@@ -18,6 +18,7 @@ from wildedge.hubs.base import BaseHubTracker
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.registry import supported_hubs
 from wildedge.hubs.torchhub import TorchHubTracker
+from wildedge.integrations.anthropic import AnthropicExtractor
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.gguf import GgufExtractor
 from wildedge.integrations.keras import KerasExtractor
@@ -224,6 +225,7 @@ class WildEdge:
     SUPPORTED_INTEGRATIONS = supported_integrations()
     NOOP_INTEGRATIONS = noop_integrations()
     PATCH_INSTALLERS = {
+        "anthropic": AnthropicExtractor.install_auto_load_patch,
         "gguf": GgufExtractor.install_auto_load_patch,
         "mlx": MlxExtractor.install_auto_load_patch,
         "onnx": OnnxExtractor.install_auto_load_patch,

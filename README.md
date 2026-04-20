@@ -79,6 +79,7 @@ If no DSN is configured, the client becomes a no-op and logs a warning.
 
 | Integration | Example |
 |---|---|
+| `anthropic` | [anthropic_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/anthropic_example.py) |
 | `openai` | [openai_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/openai_example.py) |
 
 **Hub tracking**
