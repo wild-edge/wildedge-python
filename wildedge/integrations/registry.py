@@ -23,6 +23,7 @@ class IntegrationSpec:
 
 
 INTEGRATION_SPECS: tuple[IntegrationSpec, ...] = (
+    IntegrationSpec("anthropic", ("anthropic",), "client_patch"),
     IntegrationSpec("gguf", ("llama_cpp",), "client_patch"),
     IntegrationSpec("onnx", ("onnxruntime",), "client_patch"),
     IntegrationSpec("openai", ("openai",), "client_patch"),

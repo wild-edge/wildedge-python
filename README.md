@@ -79,6 +79,7 @@ If no DSN is configured, the client becomes a no-op and logs a warning.
 
 | Integration | Example |
 |---|---|
+| `anthropic` | [anthropic_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/anthropic_example.py) |
 | `openai` | [openai_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/openai_example.py) |
 
 **Hub tracking**
@@ -109,6 +110,7 @@ For advanced options (batching, queue tuning, dead-letter storage), see [Configu
 | Name | Link |
 |---|---|
 | agntr | [github.com/pmaciolek/agntr](https://github.com/pmaciolek/agntr) |
+| demo-app | [github.com/wild-edge/demo-app](https://github.com/wild-edge/demo-app) |
 | *(your project here)* | - |
 
 Using WildEdge in your project? Open a PR to add it to the list.
