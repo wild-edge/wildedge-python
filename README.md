@@ -1,4 +1,8 @@
-# WildEdge Python SDK
+<p align="center">
+  <img src="https://raw.githubusercontent.com/wild-edge/wildedge-python/main/docs/wildedge-logo-text.svg" alt="WildEdge" height="72"/>
+</p>
+
+<br/>
 
 [![CI](https://github.com/wild-edge/wildedge-python/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wild-edge/wildedge-python/actions/workflows/ci.yml)
 [![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org/project/wildedge-sdk/)
@@ -115,9 +119,9 @@ For advanced options (batching, queue tuning, dead-letter storage), see [Configu
 
 Using WildEdge in your project? Open a PR to add it to the list.
 
-## Privacy
+## Security & Privacy
 
-Report security & priact issues to: wildedge@googlegroups.com.
+Report security and privacy issues to: support@wildedge.dev
 
 ## Links
 
