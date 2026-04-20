@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/wild-edge/wildedge-python/main/docs/wildedge-logo-text.svg" alt="WildEdge" height="72"/>
+  <img src="https://raw.githubusercontent.com/wild-edge/wildedge-python/devel/docs/wildedge-logo-text.svg" alt="WildEdge" height="72"/>
 </p>
 
 <br/>
