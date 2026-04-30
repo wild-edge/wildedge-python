@@ -214,7 +214,7 @@ class ModelHandle:
         context: dict[str, Any] | None = None,
     ) -> str:
         if hardware is None and is_sampling():
-            hardware = capture_hardware()
+            hardware = capture_hardware(accelerator_actual=self.detected_accelerator)
         correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
