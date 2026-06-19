@@ -44,6 +44,7 @@ Useful flags:
 | `--hubs` | Hub trackers to activate: `huggingface`, `torchhub` |
 | `--print-startup-report` | Print per-integration status at startup |
 | `--strict-integrations` | Fail if a requested integration can't be loaded |
+| `--attachments` | Enable opt-in raw input/output attachment upload |
 | `--no-propagate` | Don't pass WildEdge env vars to child processes |
 
 ## SDK
@@ -106,8 +107,9 @@ For unsupported frameworks, see [Manual tracking](https://github.com/wild-edge/w
 | `app_identity` | `<project_key>` | Namespace for offline persistence. Set per-app in multi-process workloads (or `WILDEDGE_APP_IDENTITY`) |
 | `enable_offline_persistence` | `true` | Persist unsent events to disk and replay on restart |
 | `sampling_interval_s` | `30.0` | Seconds between background hardware snapshots. Set to `0` or `None` to disable (or `WILDEDGE_SAMPLING_INTERVAL_S`) |
+| `attachments_enabled` | `false` | Opt-in upload of raw inference inputs/outputs (or `WILDEDGE_ATTACHMENTS_ENABLED`). See [Attachments](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md#attachments) |
 
-For advanced options (batching, queue tuning, dead-letter storage), see [Configuration](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md).
+For advanced options (batching, queue tuning, dead-letter storage, attachments), see [Configuration](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md).
 
 ## Projects using this SDK
 
@@ -120,6 +122,10 @@ For advanced options (batching, queue tuning, dead-letter storage), see [Configu
 Using WildEdge in your project? Open a PR to add it to the list.
 
 ## Security & Privacy
+
+By default the SDK transmits only anonymized telemetry, never raw model inputs
+or outputs. The one exception is opt-in [attachments](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md#attachments)
+(`attachments_enabled`), which upload raw bytes you explicitly pass in.
 
 Report security and privacy issues to: support@wildedge.dev
 

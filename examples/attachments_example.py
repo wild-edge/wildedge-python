@@ -11,7 +11,7 @@ Attachment upload example. Run with: uv run attachments_example.py
 Opt-in raw input/output capture. When `attachments_enabled=True` (and the
 project has the paid feature turned on), the SDK buffers the raw bytes locally,
 writes a reference into the inference event, and uploads the bytes independently
-via a presigned URL — the batch flush never waits on the upload.
+via a presigned URL, so the batch flush never waits on the upload.
 
 Attachments are off by default and must be explicitly enabled. Set WILDEDGE_DSN
 to see real uploads; otherwise the client runs in no-op mode.
