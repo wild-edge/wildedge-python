@@ -106,7 +106,6 @@ class TextInputMeta:
     contains_code: bool | None = None
     prompt_type: str | None = None
     turn_index: int | None = None
-    has_attachments: bool | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -121,7 +120,6 @@ class TextInputMeta:
                 "contains_code": self.contains_code,
                 "prompt_type": self.prompt_type,
                 "turn_index": self.turn_index,
-                "has_attachments": self.has_attachments,
             }.items()
             if v is not None
         }
@@ -304,6 +302,7 @@ class InferenceEvent:
     generation_config: GenerationConfig | None = None
     hardware: HardwareContext | None = None
     api_meta: ApiMeta | None = None
+    attachments: list[dict[str, Any]] | None = None
     trace_id: str | None = None
     span_id: str | None = None
     parent_span_id: str | None = None
@@ -348,6 +347,8 @@ class InferenceEvent:
             "model_id": self.model_id,
             "inference": inference_data,
         }
+        if self.attachments:
+            event["attachments"] = self.attachments
         from wildedge.events.common import add_optional_fields
 
         add_optional_fields(

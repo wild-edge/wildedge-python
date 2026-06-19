@@ -32,3 +32,7 @@ def default_model_registry_path(namespace: str = "default") -> Path:
 
 def default_dead_letter_dir(namespace: str = "default") -> Path:
     return default_sdk_cache_dir() / normalize_namespace(namespace) / "dead_letters"
+
+
+def default_attachment_dir(namespace: str = "default") -> Path:
+    return default_sdk_state_dir() / normalize_namespace(namespace) / "attachments"

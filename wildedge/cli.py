@@ -59,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Flush timeout (seconds) for shutdown.",
     )
     run.add_argument(
+        "--attachments",
+        action="store_true",
+        help="Enable opt-in raw input/output attachment upload (paid feature).",
+    )
+    run.add_argument(
         "--debug",
         action="store_true",
         help="Enable WildEdge debug logging in child process.",
@@ -242,6 +247,8 @@ def run_command(parsed: argparse.Namespace) -> int:
     env[constants.ENV_HUBS] = parsed.hubs
     env[constants.ENV_SAMPLING_INTERVAL] = str(parsed.sampling_interval)
     env[constants.ENV_FLUSH_TIMEOUT] = str(parsed.flush_timeout)
+    if parsed.attachments:
+        env[constants.ENV_ATTACHMENTS_ENABLED] = "1"
     env[constants.ENV_PROPAGATE] = "1" if parsed.propagate else "0"
     env[constants.ENV_STRICT_INTEGRATIONS] = "1" if parsed.strict_integrations else "0"
     env[constants.ENV_PRINT_STARTUP_REPORT] = (

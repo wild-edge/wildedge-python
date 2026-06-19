@@ -1,5 +1,6 @@
 """WildEdge Python SDK."""
 
+from wildedge.attachments import Attachment
 from wildedge.client import SpanContextManager, WildEdge
 from wildedge.convenience import init
 from wildedge.decorators import track
@@ -35,6 +36,7 @@ from wildedge.tracing import (
 __all__ = [
     "WildEdge",
     "init",
+    "Attachment",
     "capture_hardware",
     "HardwareContext",
     "ThermalContext",
