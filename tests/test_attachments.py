@@ -441,8 +441,8 @@ def test_client_attachments_disabled_by_default(monkeypatch):
     monkeypatch.delenv(constants.ENV_ATTACHMENTS_ENABLED, raising=False)
     client = WildEdge(dsn="https://test@test.com/key")
     try:
-        assert client._attachment_manager is None
-        assert client._attachment_uploader is None
+        assert client.attachment_manager is None
+        assert client.attachment_uploader is None
     finally:
         client.close()
 
@@ -457,7 +457,7 @@ def test_client_attachments_enabled_wires_capture(monkeypatch, tmp_path):
         sampling_interval_s=0,
     )
     try:
-        assert client._attachment_manager is not None
+        assert client.attachment_manager is not None
         handle = client.register_model(object(), model_id="m1", source="local")
         assert handle.capture_attachments is not None
     finally:
@@ -475,6 +475,6 @@ def test_client_attachments_enabled_via_env(monkeypatch, tmp_path):
         sampling_interval_s=0,
     )
     try:
-        assert client._attachment_manager is not None
+        assert client.attachment_manager is not None
     finally:
         client.close()
