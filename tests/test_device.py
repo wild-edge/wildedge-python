@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from wildedge import constants
 from wildedge.platforms import detect_device, get_device_id_path
 from wildedge.platforms.base import Platform, hmac_device_id
 from wildedge.platforms.device_info import DeviceInfo
@@ -35,7 +36,7 @@ class TestDetectDevice:
         info = detect_device(api_key="test-key", app_version="1.0.0")
         assert isinstance(info, DeviceInfo)
         assert info.app_version == "1.0.0"
-        assert info.sdk_version == "wildedge-python-0.1.0"
+        assert info.sdk_version == constants.SDK_VERSION
 
     def test_device_type_is_normalised(self, monkeypatch):
         monkeypatch.setattr(

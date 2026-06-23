@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from wildedge.platforms.base import Platform, debug_detection_failure
+from wildedge.platforms.hardware import ThermalContext
 
 _libc: ctypes.CDLL | None = None
 
@@ -17,8 +18,16 @@ def _get_libc() -> ctypes.CDLL:
     return _libc
 
 
-_CF_STRING_ENCODING_UTF8 = 0x08000100
-_CF_NUMBER_SINT32_TYPE = 3
+CF_STRING_ENCODING_UTF8 = 0x08000100
+CF_NUMBER_SINT32_TYPE = 3
+
+# NSProcessInfoThermalState values (0–3)
+MACOS_THERMAL_STATES: dict[int, tuple[str, str]] = {
+    0: ("nominal", "nominal"),
+    1: ("fair", "fair"),
+    2: ("serious", "serious"),
+    3: ("critical", "critical"),
+}
 
 
 def _sysctl_uint32(name: bytes) -> int | None:
@@ -108,6 +117,52 @@ class MacOSPlatform(Platform):
     def gpu_accelerator_for_offload(self) -> str:
         return "mps" if platform.machine() == "arm64" else "cpu"
 
+    def cpu_freq(self) -> tuple[int | None, int | None]:
+        """Read CPU frequency via sysctl.
+
+        Current freq (hw.cpufrequency) is Intel-only — Apple Silicon does not expose
+        per-core clock speed through public sysctl, so cur_mhz is None on M-series.
+
+        Max freq falls back to hw.perflevel0.cpufrequency_max (P-core cluster) when
+        hw.cpufrequency_max is absent, so max_mhz is populated on both architectures.
+        """
+        cur = _sysctl_uint64(b"hw.cpufrequency")
+        cur_mhz = (cur // 1_000_000) if cur else None
+
+        max_f = _sysctl_uint64(b"hw.cpufrequency_max") or _sysctl_uint64(
+            b"hw.perflevel0.cpufrequency_max"
+        )
+        max_mhz = (max_f // 1_000_000) if max_f else None
+
+        return cur_mhz, max_mhz
+
+    def thermal(self) -> ThermalContext | None:
+        """Read thermal pressure via NSProcessInfo.thermalState (Objective-C runtime)."""
+        try:
+            objc = ctypes.cdll.LoadLibrary("/usr/lib/libobjc.A.dylib")
+            objc.objc_getClass.restype = ctypes.c_void_p
+            objc.sel_registerName.restype = ctypes.c_void_p
+            objc.objc_msgSend.restype = ctypes.c_void_p
+            objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+
+            ns_process_info_cls = objc.objc_getClass(b"NSProcessInfo")
+            info = objc.objc_msgSend(
+                ns_process_info_cls, objc.sel_registerName(b"processInfo")
+            )
+
+            # thermalState returns NSInteger — cast objc_msgSend to the right signature
+            addr = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
+            msg_int = ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p)(
+                addr
+            )
+            level = int(msg_int(info, objc.sel_registerName(b"thermalState")))
+
+            state, state_raw = MACOS_THERMAL_STATES.get(level, ("nominal", "nominal"))
+            return ThermalContext(state=state, state_raw=state_raw)
+        except Exception as exc:
+            debug_detection_failure("macos thermal", exc)
+            return None
+
     def battery(self) -> tuple[float | None, bool | None]:
         """Read battery level and charging state via IOKit AppleSmartBattery."""
         try:
@@ -163,7 +218,7 @@ class MacOSPlatform(Platform):
 
             def cfstr(s: bytes) -> ctypes.c_void_p:
                 return ctypes.c_void_p(
-                    cf.CFStringCreateWithCString(None, s, _CF_STRING_ENCODING_UTF8)
+                    cf.CFStringCreateWithCString(None, s, CF_STRING_ENCODING_UTF8)
                 )
 
             cap_key = cfstr(b"CurrentCapacity")
@@ -179,10 +234,10 @@ class MacOSPlatform(Platform):
                 cur = ctypes.c_int32(0)
                 mx = ctypes.c_int32(0)
                 cf.CFNumberGetValue(
-                    ctypes.c_void_p(cap_ref), _CF_NUMBER_SINT32_TYPE, ctypes.byref(cur)
+                    ctypes.c_void_p(cap_ref), CF_NUMBER_SINT32_TYPE, ctypes.byref(cur)
                 )
                 cf.CFNumberGetValue(
-                    ctypes.c_void_p(max_ref), _CF_NUMBER_SINT32_TYPE, ctypes.byref(mx)
+                    ctypes.c_void_p(max_ref), CF_NUMBER_SINT32_TYPE, ctypes.byref(mx)
                 )
                 if mx.value > 0:
                     level = cur.value / mx.value

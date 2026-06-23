@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from wildedge.attachments import Attachment
 from wildedge.events import (
     ApiMeta,
     AudioInputMeta,
@@ -54,10 +56,18 @@ class ModelInfo:
 class ModelHandle:
     """Handle returned by register_model(). All events for a model go through here."""
 
-    def __init__(self, model_id: str, info: ModelInfo, publish: Callable[[dict], None]):
+    def __init__(
+        self,
+        model_id: str,
+        info: ModelInfo,
+        publish: Callable[[dict], None],
+        capture_attachments: Callable[[list[Attachment], str, datetime], list[dict]]
+        | None = None,
+    ):
         self.model_id = model_id
         self.info = info
         self.publish = publish
+        self.capture_attachments = capture_attachments
         self.detected_accelerator: str = "cpu"
         self.last_inference_id: str | None = None
 
@@ -204,6 +214,7 @@ class ModelHandle:
         generation_config: GenerationConfig | None = None,
         hardware: HardwareContext | None = None,
         api_meta: ApiMeta | None = None,
+        attachments: list[Attachment] | None = None,
         trace_id: str | None = None,
         span_id: str | None = None,
         parent_span_id: str | None = None,
@@ -214,7 +225,7 @@ class ModelHandle:
         context: dict[str, Any] | None = None,
     ) -> str:
         if hardware is None and is_sampling():
-            hardware = capture_hardware()
+            hardware = capture_hardware(accelerator_actual=self.detected_accelerator)
         correlation = _merge_correlation_fields(
             trace_id=trace_id,
             span_id=span_id,
@@ -240,6 +251,12 @@ class ModelHandle:
             api_meta=api_meta,
             **correlation,
         )
+        if attachments and self.capture_attachments is not None:
+            refs = self.capture_attachments(
+                attachments, event.inference_id, event.timestamp
+            )
+            if refs:
+                event.attachments = refs
         self.last_inference_id = event.inference_id
         self.publish(event.to_dict())
         return event.inference_id
@@ -375,7 +392,12 @@ class ModelRegistry:
         )
 
     def register(
-        self, model_id: str, info: ModelInfo, publish: Callable[[dict], None]
+        self,
+        model_id: str,
+        info: ModelInfo,
+        publish: Callable[[dict], None],
+        capture_attachments: Callable[[list[Attachment], str, datetime], list[dict]]
+        | None = None,
     ) -> tuple[ModelHandle, bool]:
         """Return (handle, is_new). is_new=False means already registered; skip install_hooks."""
         if model_id in self.handles:
@@ -386,7 +408,10 @@ class ModelRegistry:
             self.save_to_disk()
 
         handle = ModelHandle(
-            model_id=model_id, info=self.models[model_id], publish=publish
+            model_id=model_id,
+            info=self.models[model_id],
+            publish=publish,
+            capture_attachments=capture_attachments,
         )
         self.handles[model_id] = handle
         return handle, True

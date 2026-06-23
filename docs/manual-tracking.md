@@ -216,6 +216,42 @@ handle.feedback(FeedbackType.THUMBS_DOWN)
 
 `FeedbackType` values: `THUMBS_UP`, `THUMBS_DOWN`.
 
+## Track attachments
+
+Opt-in upload of the raw bytes behind an inference, such as the source image,
+audio clip, or generated text, so you can inspect or curate them later. This is
+off by default and requires the attachment feature enabled on your project.
+Enable it at init, then pass `attachments=` to `track_inference`:
+
+```python
+import wildedge
+from wildedge import Attachment
+
+client = wildedge.init(attachments_enabled=True)
+handle = client.register_model(model, model_id="doc-classifier-v1")
+
+handle.track_inference(
+    duration_ms=120,
+    input_modality="image",
+    output_modality="text",
+    attachments=[
+        Attachment(content_type="image/jpeg", role="input", data=image_bytes),
+        Attachment(content_type="text/plain", role="output", data=answer.encode()),
+    ],
+)
+```
+
+An `Attachment` carries either in-memory `data` or a file `path`, plus a
+`role` (`"input"` or `"output"`) and `content_type`. The SDK writes a reference
+into the inference event immediately and uploads the bytes in the background via
+a presigned URL. A failed or disabled upload never blocks telemetry.
+
+Bytes are buffered to disk and survive restarts. Capture is gated by
+`max_attachments_per_inference`, `max_attachment_size_bytes`, and an optional
+`attachment_filter` hook. See [Configuration](configuration.md#attachments) and
+[`examples/attachments_example.py`](../examples/attachments_example.py) for the
+full reference.
+
 ## Track spans for agentic workflows
 
 Use span events to track non-inference steps like planning, tool calls, retrieval, or memory updates.

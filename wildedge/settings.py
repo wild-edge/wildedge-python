@@ -14,6 +14,7 @@ class ClientEnv:
     dsn: str | None
     debug: bool
     app_identity: str | None
+    attachments_enabled: bool | None
 
 
 @dataclass(frozen=True)
@@ -79,10 +80,13 @@ def read_client_env(
         debug if debug is not None else parse_bool(env.get(constants.ENV_DEBUG))
     )
     resolved_identity = app_identity or env.get(constants.ENV_APP_IDENTITY)
+    raw_attachments = env.get(constants.ENV_ATTACHMENTS_ENABLED)
+    attachments_enabled = parse_bool(raw_attachments) if raw_attachments else None
     return ClientEnv(
         dsn=resolved_dsn,
         debug=resolved_debug,
         app_identity=resolved_identity,
+        attachments_enabled=attachments_enabled,
     )
 
 
