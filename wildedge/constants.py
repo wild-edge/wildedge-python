@@ -1,5 +1,10 @@
 # SDK identity
-SDK_VERSION = "wildedge-python-0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    SDK_VERSION = f"wildedge-python-{version('wildedge-sdk')}"
+except PackageNotFoundError:  # running from a source tree without install metadata
+    SDK_VERSION = "wildedge-python-0.0.0+unknown"
 PROTOCOL_VERSION = "1.0"
 
 # Env vars
