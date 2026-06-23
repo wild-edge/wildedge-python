@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from wildedge.events.inference import InferenceEvent
+from wildedge.model import ModelHandle, ModelInfo
 from wildedge.platforms import capture_hardware
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
 from wildedge.platforms.linux import LinuxPlatform
@@ -81,3 +82,30 @@ def test_capture_preserves_existing_accelerator_when_not_passed(monkeypatch):
         lambda self: HardwareContext(accelerator_actual="mps"),
     )
     assert capture_hardware().accelerator_actual == "mps"
+
+
+def test_track_inference_passes_detected_accelerator_to_hardware(monkeypatch):
+    """detected_accelerator on the handle must appear as accelerator_actual in the event."""
+    monkeypatch.setattr("wildedge.model.is_sampling", lambda: True)
+    monkeypatch.setattr(
+        "wildedge.model.capture_hardware",
+        lambda accelerator_actual=None: HardwareContext(
+            accelerator_actual=accelerator_actual
+        ),
+    )
+
+    published = []
+    info = ModelInfo(
+        model_name="test",
+        model_format="pytorch",
+        model_version="1",
+        model_source="local",
+    )
+    handle = ModelHandle(model_id="m1", info=info, publish=published.append)
+    handle.detected_accelerator = "cuda"
+
+    handle.track_inference(duration_ms=50)
+
+    assert len(published) == 1
+    hardware = published[0]["inference"].get("hardware", {})
+    assert hardware.get("accelerator_actual") == "cuda"

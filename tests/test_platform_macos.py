@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from wildedge.platforms.hardware import ThermalContext
 from wildedge.platforms.macos import MacOSPlatform
 
 
@@ -42,12 +43,20 @@ def test_ram_bytes_delegates_to_meminfo(monkeypatch):
 def test_hardware_context_fields(monkeypatch):
     monkeypatch.setattr(MacOSPlatform, "meminfo", lambda self: (None, 3_000_000_000))
     monkeypatch.setattr(MacOSPlatform, "battery", lambda self: (0.8, False))
+    monkeypatch.setattr(MacOSPlatform, "cpu_freq", lambda self: (None, 4056))
+    monkeypatch.setattr(
+        MacOSPlatform,
+        "thermal",
+        lambda self: ThermalContext(state="fair", state_raw="fair"),
+    )
     ctx = MacOSPlatform().hardware_context()
     assert ctx.memory_available_bytes == 3_000_000_000
     assert ctx.battery_level == pytest.approx(0.8)
     assert ctx.battery_charging is False
     assert ctx.cpu_freq_mhz is None
-    assert ctx.thermal is None
+    assert ctx.cpu_freq_max_mhz == 4056
+    assert ctx.thermal is not None
+    assert ctx.thermal.state == "fair"
 
 
 @pytest.mark.requires_macos

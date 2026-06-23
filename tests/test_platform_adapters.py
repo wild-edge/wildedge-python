@@ -2,9 +2,27 @@ from __future__ import annotations
 
 from wildedge.platforms.base import cuda_device_count
 from wildedge.platforms.linux import LinuxPlatform
-from wildedge.platforms.macos import MacOSPlatform
+from wildedge.platforms.macos import MACOS_THERMAL_STATES, MacOSPlatform
 from wildedge.platforms.unknown import UnknownPlatform
 from wildedge.platforms.windows import WindowsPlatform
+
+
+class FakeObjc:
+    """Minimal stand-in for the libobjc CDLL used in MacOSPlatform.thermal().
+
+    Absorbs restype/argtypes assignments silently and returns a no-op callable
+    for any attribute not explicitly defined.
+    """
+
+    objc_getClass = staticmethod(lambda name: 1)  # noqa: N815
+    sel_registerName = staticmethod(lambda name: 2)  # noqa: N815
+    objc_msgSend = staticmethod(lambda *a: 3)  # noqa: N815
+
+    def __getattr__(self, name):
+        return lambda *a, **kw: 0
+
+    def __setattr__(self, name, val):
+        pass
 
 
 def test_linux_gpu_accelerators_cuda_and_rocm_counts(monkeypatch):
@@ -114,6 +132,93 @@ def test_unknown_os_version_returns_platform_version(monkeypatch):
         "wildedge.platforms.unknown.platform.version", lambda: "some-kernel-version"
     )
     assert UnknownPlatform().os_version() == "some-kernel-version"
+
+
+def test_macos_thermal_states_covers_all_levels():
+    assert set(MACOS_THERMAL_STATES) == {0, 1, 2, 3}
+    states = {v[0] for v in MACOS_THERMAL_STATES.values()}
+    assert states == {"nominal", "fair", "serious", "critical"}
+
+
+def test_macos_cpu_freq_intel(monkeypatch):
+    """On Intel, both hw.cpufrequency and hw.cpufrequency_max are available."""
+    import wildedge.platforms.macos as macos_mod
+
+    calls = []
+
+    def fake_sysctl(name):
+        calls.append(name)
+        return {
+            b"hw.cpufrequency": 2_400_000_000,
+            b"hw.cpufrequency_max": 3_200_000_000,
+        }.get(name)
+
+    monkeypatch.setattr(macos_mod, "_sysctl_uint64", fake_sysctl)
+    cur, max_f = MacOSPlatform().cpu_freq()
+    assert cur == 2400
+    assert max_f == 3200
+
+
+def test_macos_cpu_freq_apple_silicon(monkeypatch):
+    """On Apple Silicon, hw.cpufrequency is absent; max falls back to hw.perflevel0.cpufrequency_max."""
+    import wildedge.platforms.macos as macos_mod
+
+    def fake_sysctl(name):
+        return {b"hw.perflevel0.cpufrequency_max": 4_056_000_000}.get(name)
+
+    monkeypatch.setattr(macos_mod, "_sysctl_uint64", fake_sysctl)
+    cur, max_f = MacOSPlatform().cpu_freq()
+    assert cur is None
+    assert max_f == 4056
+
+
+def test_macos_thermal_nominal(monkeypatch):
+    import wildedge.platforms.macos as macos_mod
+
+    monkeypatch.setattr(macos_mod.ctypes.cdll, "LoadLibrary", lambda _: FakeObjc())
+    monkeypatch.setattr(
+        macos_mod.ctypes,
+        "CFUNCTYPE",
+        lambda *types: lambda fn: lambda *a: 0,  # always returns level 0 (nominal)
+    )
+    monkeypatch.setattr(
+        macos_mod.ctypes, "cast", lambda obj, t: type("V", (), {"value": 0})()
+    )
+
+    ctx = MacOSPlatform().thermal()
+    assert ctx is not None
+    assert ctx.state == "nominal"
+
+
+def test_macos_thermal_serious(monkeypatch):
+    import wildedge.platforms.macos as macos_mod
+
+    monkeypatch.setattr(macos_mod.ctypes.cdll, "LoadLibrary", lambda _: FakeObjc())
+    monkeypatch.setattr(
+        macos_mod.ctypes,
+        "CFUNCTYPE",
+        lambda *types: lambda fn: lambda *a: 2,  # level 2 = serious
+    )
+    monkeypatch.setattr(
+        macos_mod.ctypes, "cast", lambda obj, t: type("V", (), {"value": 0})()
+    )
+
+    ctx = MacOSPlatform().thermal()
+    assert ctx is not None
+    assert ctx.state == "serious"
+    assert ctx.state_raw == "serious"
+
+
+def test_macos_thermal_returns_none_on_error(monkeypatch):
+    import wildedge.platforms.macos as macos_mod
+
+    monkeypatch.setattr(
+        macos_mod.ctypes.cdll,
+        "LoadLibrary",
+        lambda _: (_ for _ in ()).throw(OSError("no objc")),
+    )
+
+    assert MacOSPlatform().thermal() is None
 
 
 def test_platform_adapters_expose_state_and_cache_paths():
