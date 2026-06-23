@@ -10,6 +10,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from wildedge import constants
+from wildedge.attachments import (
+    Attachment,
+    AttachmentManager,
+    AttachmentStore,
+    AttachmentTransmitter,
+    AttachmentUploader,
+)
 from wildedge.consumer import Consumer
 from wildedge.dead_letters import DeadLetterStore
 from wildedge.events import SpanEvent
@@ -33,6 +40,7 @@ from wildedge.integrations.ultralytics import UltralyticsExtractor
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
 from wildedge.paths import (
+    default_attachment_dir,
     default_dead_letter_dir,
     default_model_registry_path,
     default_pending_queue_dir,
@@ -265,6 +273,16 @@ class WildEdge:
         max_dead_letter_batches: int = constants.DEFAULT_MAX_DEAD_LETTER_BATCHES,
         on_delivery_failure: Callable[[str, int, int], None] | None = None,
         sampling_interval_s: float | None = constants.DEFAULT_SAMPLING_INTERVAL_S,
+        attachments_enabled: bool | None = None,
+        max_attachments_per_inference: int = (
+            constants.DEFAULT_MAX_ATTACHMENTS_PER_INFERENCE
+        ),
+        max_attachment_size_bytes: int = constants.DEFAULT_MAX_ATTACHMENT_SIZE_BYTES,
+        attachment_storage_strategy: str = (
+            constants.DEFAULT_ATTACHMENT_STORAGE_STRATEGY
+        ),
+        attachment_filter: Callable[[list[Attachment]], list[Attachment]] | None = None,
+        attachment_dir: str | None = None,
     ):
         env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
         dsn = env.dsn
@@ -356,6 +374,37 @@ class WildEdge:
         if sampling_interval_s:
             start_sampler(interval_s=sampling_interval_s)
 
+        if attachments_enabled is None:
+            attachments_enabled = (
+                env.attachments_enabled
+                if env.attachments_enabled is not None
+                else constants.DEFAULT_ATTACHMENTS_ENABLED
+            )
+        self.attachment_manager: AttachmentManager | None = None
+        self.attachment_uploader: AttachmentUploader | None = None
+        if attachments_enabled:
+            resolved_attachment_dir = attachment_dir or str(
+                default_attachment_dir(app_identity)
+            )
+            attachment_store = AttachmentStore(
+                directory=resolved_attachment_dir,
+                strategy=attachment_storage_strategy,
+            )
+            self.attachment_manager = AttachmentManager(
+                attachment_store,
+                max_per_inference=max_attachments_per_inference,
+                max_size_bytes=max_attachment_size_bytes,
+                attachment_filter=attachment_filter,
+                debug=debug,
+            )
+            self.attachment_uploader = AttachmentUploader(
+                attachment_store,
+                AttachmentTransmitter(api_key=api_key, host=host),
+                on_feature_disabled=self.attachment_manager.disable,
+                debug=debug,
+            )
+            self.attachment_uploader.start()
+
         self.auto_loaded: set[str] = set()
         # Stores the active weakref.finalize for each auto-loaded model so that
         # when a wrapping object (e.g. a Pipeline) supersedes the inner model, the
@@ -371,6 +420,12 @@ class WildEdge:
                 after_in_child=self.consumer._resume,
                 after_in_parent=self.consumer._resume,
             )
+            if self.attachment_uploader is not None:
+                os.register_at_fork(
+                    before=self.attachment_uploader._pause,
+                    after_in_child=self.attachment_uploader._resume,
+                    after_in_parent=self.attachment_uploader._resume,
+                )
 
         if debug:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)
@@ -398,6 +453,8 @@ class WildEdge:
         self.auto_loaded = set()
         self._auto_load_finalizers = {}
         self.hub_trackers = {}
+        self.attachment_manager = None
+        self.attachment_uploader = None
 
     def publish(self, event_dict: dict) -> None:
         if self.closed or self.noop:
@@ -467,7 +524,14 @@ class WildEdge:
                 "Pass id='your-model-id' to register_model()."
             )
 
-        handle, is_new = self.registry.register(model_id, info, self.publish)
+        capture_attachments = (
+            self.attachment_manager.capture
+            if self.attachment_manager is not None
+            else None
+        )
+        handle, is_new = self.registry.register(
+            model_id, info, self.publish, capture_attachments
+        )
 
         if not is_new:
             logger.debug(
@@ -909,6 +973,8 @@ class WildEdge:
         self.closed = True
         if not self.noop:
             stop_sampler()
+        if self.attachment_uploader is not None:
+            self.attachment_uploader.stop()
         if timeout is None:
             self.consumer.close()
         else:
