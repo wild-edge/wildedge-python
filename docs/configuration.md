@@ -25,10 +25,10 @@ Full reference for all `WildEdge` client parameters.
 
 ## Attachments
 
-Opt-in upload of raw inference inputs/outputs (e.g. the source image or the
-generated text) alongside telemetry. Off by default; requires the attachment
-feature enabled on your project. Bytes are buffered locally and uploaded in the
-background via presigned URLs, so the event flush never waits on the upload.
+Opt-in upload of raw inference inputs and outputs alongside telemetry. Off by
+default, and requires the attachments feature to be enabled on your project.
+Bytes are buffered to disk and uploaded in the background via presigned URLs;
+event flushes never block on an upload.
 
 | Parameter | Default | Env var | Description |
 |---|---|---|---|
