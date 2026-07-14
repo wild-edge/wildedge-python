@@ -264,6 +264,9 @@ def test_doctor_json_output_schema(monkeypatch, capsys):
     assert rc == 0
     assert sorted(payload.keys()) == [
         "checks",
+        "config_status",
+        "connectivity_status",
+        "environment",
         "hubs",
         "integrations",
         "platform",
@@ -284,7 +287,7 @@ def test_doctor_network_check_failure(monkeypatch, capsys):
 
     rc = cli.main(["doctor", "--network-check", "--integrations", "onnx"])
     out = capsys.readouterr().out
-    assert rc == 1
+    assert rc == 2
     assert "network: FAIL (unreachable)" in out
     assert "doctor: FAIL" in out
 
@@ -455,3 +458,130 @@ def test_install_runtime_registers_default_client(monkeypatch):
         assert peek_default_client() is context.client
     finally:
         context.shutdown()
+
+
+def _doctor_env(monkeypatch):
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda path: (True, str(path)))
+
+
+def _fake_device(api_key, app_version, overrides=None):
+    from wildedge.platforms.device_info import DeviceInfo
+
+    return DeviceInfo(device_id="d", device_type="linux")
+
+
+def test_doctor_send_test_event_accepted(monkeypatch, capsys):
+    from wildedge.transmitter import IngestResponse
+
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(cli, "detect_device", _fake_device)
+    sent_batches: list[dict] = []
+
+    class FakeTransmitter:
+        def __init__(self, api_key, host):
+            assert api_key == "secret"
+
+        def send(self, batch):
+            sent_batches.append(batch)
+            return IngestResponse(
+                status="accepted", batch_id="b1", events_accepted=1, events_rejected=0
+            )
+
+    monkeypatch.setattr(cli, "Transmitter", FakeTransmitter)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "ingest: OK" in out
+    assert "connectivity: PASS" in out
+    batch = sent_batches[0]
+    assert batch["events"][0]["event_type"] == "span"
+    assert batch["events"][0]["span"]["name"] == "doctor"
+    assert batch["protocol_version"] == constants.PROTOCOL_VERSION
+
+
+def test_doctor_send_test_event_unauthorized_exits_2(monkeypatch, capsys):
+    from wildedge.transmitter import IngestResponse
+
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(cli, "detect_device", _fake_device)
+
+    class FakeTransmitter:
+        def __init__(self, api_key, host):
+            pass
+
+        def send(self, batch):
+            return IngestResponse(
+                status="unauthorized", batch_id="", events_accepted=0, events_rejected=1
+            )
+
+    monkeypatch.setattr(cli, "Transmitter", FakeTransmitter)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "ingest: FAIL" in out
+    assert "connectivity: FAIL" in out
+    assert "config: PASS" in out
+
+
+def test_doctor_send_test_event_network_error_exits_2(monkeypatch, capsys):
+    from wildedge.transmitter import TransmitError
+
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(cli, "detect_device", _fake_device)
+
+    class FakeTransmitter:
+        def __init__(self, api_key, host):
+            pass
+
+        def send(self, batch):
+            raise TransmitError("Network error: boom")
+
+    monkeypatch.setattr(cli, "Transmitter", FakeTransmitter)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+
+    assert rc == 2
+    assert "ingest: FAIL" in capsys.readouterr().out
+
+
+def test_doctor_network_check_failure_exits_2(monkeypatch):
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(
+        cli, "network_reachability_check", lambda host: (False, "unreachable")
+    )
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--network-check"])
+
+    assert rc == 2
+
+
+def test_doctor_config_failure_wins_over_connectivity(monkeypatch):
+    monkeypatch.delenv(constants.ENV_DSN, raising=False)
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda path: (True, str(path)))
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+
+    assert rc == 1
+
+
+def test_doctor_json_includes_environment_and_statuses(monkeypatch, capsys):
+    _doctor_env(monkeypatch)
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "openai")
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--format", "json"])
+    data = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert data["environment"]["integrations"] == "openai"
+    assert data["environment"]["dsn_set"] is True
+    assert data["environment"]["autoload_on_pythonpath"] is False
+    assert data["config_status"] == "PASS"
+    assert data["connectivity_status"] == "SKIP"

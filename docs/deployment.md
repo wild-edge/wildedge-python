@@ -92,6 +92,27 @@ them unwrapped or unset `WILDEDGE_DSN` there.
   `wildedge.span(...)` blocks correlate into the same trace no matter which
   client emits them.
 
+## Verifying a deployment
+
+`wildedge doctor` answers "will events actually flow from this machine"
+before you rely on it:
+
+```bash
+wildedge doctor --integrations all --send-test-event --format json
+```
+
+- `--send-test-event` sends one real span event through the full pipeline
+  (DSN auth, ingest endpoint, batch protocol) and reports the server's
+  response, which a TCP-level `--network-check` cannot do.
+- The report includes an `environment` section with every `WILDEDGE_*`
+  variable the runtime reads, plus whether the autoload dir is on
+  `PYTHONPATH`.
+- Exit codes: 0 all pass, 1 configuration or dependency failure, 2 the
+  config is fine but the ingest endpoint is unreachable or rejecting.
+
+`--format json` makes the output machine-readable; pasting it into an issue
+or an AI assistant is the intended debugging flow.
+
 ## Environment propagation
 
 By default, `wildedge run` leaves its `WILDEDGE_*` variables in the
