@@ -4,6 +4,13 @@ Loaded automatically by the Python interpreter when wildedge/autoload/ is
 prepended to PYTHONPATH (by `wildedge run`). Calls install_runtime() before
 any user code runs, enabling framework instrumentation and fork-safe operation
 for gunicorn, celery, and other pre-fork servers.
+
+This is the only bootstrap path for `wildedge run`. Failure policy: by
+default a bootstrap failure (missing DSN, config error, internal error) warns
+on stderr and the wrapped program runs untracked. With WILDEDGE_STRICT set
+(`wildedge run --strict`) the process exits instead: 120 for config errors,
+122 for internal errors. A strict-integration failure exits 121 whenever
+`--strict-integrations` was requested, since that flag is itself the opt-in.
 """
 
 from __future__ import annotations
@@ -22,6 +29,14 @@ _DSN = "WILDEDGE_DSN"  # user-configured DSN
 # sys.modules is process-local and survives module re-execution.
 _INSTALLED_MARKER = "wildedge.__autoload_installed__"
 
+
+def _die(code: int) -> None:
+    # sys.exit cannot be used during sitecustomize import: site.py reports the
+    # SystemExit as a fatal startup error with a traceback and exit code 1.
+    sys.stderr.flush()
+    os._exit(code)
+
+
 if _INSTALLED_MARKER not in sys.modules:
     # Activate if the CLI launched this process, or if WILDEDGE_DSN is set
     # and the user has manually prepended wildedge/autoload/ to PYTHONPATH.
@@ -29,11 +44,53 @@ if _INSTALLED_MARKER not in sys.modules:
         # Set the guard before importing wildedge to prevent re-entry.
         sys.modules[_INSTALLED_MARKER] = True  # type: ignore[assignment]
         try:
-            from wildedge.runtime.bootstrap import install_runtime  # noqa: PLC0415
+            from wildedge.runtime.bootstrap import (  # noqa: PLC0415
+                EXIT_BOOTSTRAP_INTERNAL_ERROR,
+                EXIT_CONFIG_ERROR,
+                EXIT_STRICT_INTEGRATION_ERROR,
+                RuntimeConfigError,
+                RuntimeStrictIntegrationError,
+                clear_runtime_env,
+                format_startup_report,
+                install_runtime,
+            )
+            from wildedge.settings import read_runner_env  # noqa: PLC0415
 
-            # Don't install signal handlers: the host process (gunicorn, celery,
-            # etc.) manages SIGTERM/SIGINT itself.
-            install_runtime(install_signal_handlers=False)
+            _runner_env = read_runner_env()
+            _context = None
+            try:
+                # Don't install signal handlers: the host process (gunicorn,
+                # celery, etc.) manages SIGTERM/SIGINT itself.
+                _context = install_runtime(install_signal_handlers=False)
+            except RuntimeStrictIntegrationError as exc:
+                # Only raised when --strict-integrations was requested.
+                print(f"wildedge: {exc}", file=sys.stderr)
+                _die(EXIT_STRICT_INTEGRATION_ERROR)
+            except RuntimeConfigError as exc:
+                if _runner_env.strict:
+                    print(f"wildedge: {exc}", file=sys.stderr)
+                    _die(EXIT_CONFIG_ERROR)
+                print(
+                    f"wildedge: {exc}; running without telemetry",
+                    file=sys.stderr,
+                )
+            except Exception as exc:
+                if _runner_env.strict:
+                    print(
+                        f"wildedge: bootstrap internal error: {exc}",
+                        file=sys.stderr,
+                    )
+                    _die(EXIT_BOOTSTRAP_INTERNAL_ERROR)
+                print(f"wildedge: bootstrap failed: {exc}", file=sys.stderr)
+
+            if _context is not None and (
+                getattr(_context, "debug", False)
+                or getattr(_context, "print_startup_report", False)
+                or _runner_env.print_startup_report
+            ):
+                print(format_startup_report(_context), file=sys.stderr)
+            if not _runner_env.propagate:
+                clear_runtime_env()
         except Exception as exc:  # pragma: no cover
             print(f"wildedge: bootstrap failed: {exc}", file=sys.stderr)
 

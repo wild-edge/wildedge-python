@@ -28,6 +28,11 @@ STATUS_SKIP_MISSING_DEP = "SKIP_MISSING_DEP"
 STATUS_ERROR_PATCH_FAILED = "ERROR_PATCH_FAILED"
 STRICT_FAILURE_STATUSES = {STATUS_SKIP_MISSING_DEP, STATUS_ERROR_PATCH_FAILED}
 
+# Exit codes used when strict mode turns a bootstrap failure fatal.
+EXIT_CONFIG_ERROR = 120
+EXIT_STRICT_INTEGRATION_ERROR = 121
+EXIT_BOOTSTRAP_INTERNAL_ERROR = 122
+
 
 def clear_runtime_env() -> None:
     """Remove run-scoped env vars so nested processes do not inherit runtime config."""
@@ -39,6 +44,7 @@ def clear_runtime_env() -> None:
         constants.ENV_INTEGRATIONS,
         constants.ENV_HUBS,
         constants.ENV_STRICT_INTEGRATIONS,
+        constants.ENV_STRICT,
         constants.ENV_PROPAGATE,
         constants.ENV_PRINT_STARTUP_REPORT,
         constants.ENV_SAMPLING_INTERVAL,

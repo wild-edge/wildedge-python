@@ -32,15 +32,23 @@ def test_batch_size_too_low():
 
 
 def test_no_dsn_is_noop(monkeypatch, caplog):
+    import wildedge.client as client_module
     from wildedge.client import WildEdge
 
     monkeypatch.delenv(constants.ENV_DSN, raising=False)
-    with caplog.at_level("WARNING"):
+    monkeypatch.setattr(client_module, "_noop_notice_logged", False)
+    with caplog.at_level("INFO"):
         client = WildEdge()
 
     assert client.noop is True
     assert client.closed is True
-    assert "no DSN configured" in caplog.text
+    notices = [r for r in caplog.records if "no DSN configured" in r.message]
+    assert [r.levelname for r in notices] == ["INFO"]
+
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        WildEdge()
+    assert "no DSN configured" not in caplog.text
 
 
 def test_no_dsn_instrument_does_not_raise(monkeypatch):

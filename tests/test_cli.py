@@ -9,7 +9,6 @@ import pytest
 from wildedge import cli, constants
 from wildedge.integrations.registry import IntegrationSpec
 from wildedge.runtime import bootstrap
-from wildedge.runtime import runner as runtime_runner
 
 
 def _fake_execle(captured: dict):
@@ -347,26 +346,6 @@ def test_doctor_uses_app_identity_override_for_namespace(monkeypatch, capsys):
     assert str(Path("my-app") / "dead_letters") in out
 
 
-def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):
-    class FakeContext:
-        debug = False
-        print_startup_report = False
-
-        def shutdown(self):  # type: ignore[no-untyped-def]
-            return None
-
-    monkeypatch.setenv(constants.ENV_PROPAGATE, "0")
-    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
-    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "all")
-    monkeypatch.setattr(runtime_runner, "install_runtime", lambda: FakeContext())
-    monkeypatch.setattr(runtime_runner.runpy, "run_path", lambda *a, **k: None)
-
-    rc = runtime_runner.main(["--mode", "script", "--target", "app.py"])
-    assert rc == 0
-    assert constants.WILDEDGE_AUTOLOAD not in os.environ
-    assert constants.ENV_INTEGRATIONS not in os.environ
-
-
 def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
     class FakeWildEdge:
         def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
@@ -404,48 +383,23 @@ def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
         context.shutdown()
 
 
-def test_runner_returns_reserved_exit_codes(monkeypatch, capsys):
-    monkeypatch.setattr(
-        runtime_runner,
-        "install_runtime",
-        lambda: (_ for _ in ()).throw(bootstrap.RuntimeConfigError("bad config")),
-    )
-    assert runtime_runner.main(["--mode", "script", "--target", "app.py"]) == 120
+def test_run_exports_strict_env(monkeypatch):
+    captured: dict = {}
 
-    monkeypatch.setattr(
-        runtime_runner,
-        "install_runtime",
-        lambda: (_ for _ in ()).throw(
-            bootstrap.RuntimeStrictIntegrationError("strict fail")
-        ),
-    )
-    assert runtime_runner.main(["--mode", "script", "--target", "app.py"]) == 121
+    def fake_execle(path, *args):
+        captured["env"] = args[-1]
+        raise SystemExit(0)
 
-    monkeypatch.setattr(
-        runtime_runner,
-        "install_runtime",
-        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-    assert runtime_runner.main(["--mode", "script", "--target", "app.py"]) == 122
-    assert "wildedge:" in capsys.readouterr().err
+    monkeypatch.setattr(cli.os, "execle", fake_execle)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/true")
 
+    with pytest.raises(SystemExit):
+        cli.main(["run", "--strict", "--", "true"])
+    assert captured["env"][constants.ENV_STRICT] == "1"
 
-def test_runner_prints_startup_report_when_enabled(monkeypatch, capsys):
-    class FakeContext:
-        debug = False
-        print_startup_report = True
-        integration_statuses = []
-
-        def shutdown(self):  # type: ignore[no-untyped-def]
-            return None
-
-    monkeypatch.setattr(runtime_runner, "install_runtime", lambda: FakeContext())
-    monkeypatch.setattr(runtime_runner, "format_startup_report", lambda _: "report")
-    monkeypatch.setattr(runtime_runner.runpy, "run_path", lambda *a, **k: None)
-
-    rc = runtime_runner.main(["--mode", "script", "--target", "app.py"])
-    assert rc == 0
-    assert "report" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(["run", "--", "true"])
+    assert captured["env"][constants.ENV_STRICT] == "0"
 
 
 def test_parse_run_args_without_double_dash():

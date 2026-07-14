@@ -1,0 +1,34 @@
+# Changelog
+
+Notable changes to wildedge-sdk. Every behavior change lands here; entries go
+under Unreleased and move into a version section at release time.
+
+## Unreleased
+
+### Added
+
+- Process-wide default client: `wildedge.get_client()`, `wildedge.set_default_client()`, and module-level `trace`, `span`, `track_span`, `register_model`, `flush` delegating to it (#41)
+- `init()` reuses the default client installed by `wildedge run` unless `dsn` is passed, so CLI and in-process init share one client (#41)
+- `SpanContextManager.set_attributes()` and `fail()` for recording outcomes on an open span (#41)
+- `wildedge run --strict` (env `WILDEDGE_STRICT`): exit with a reserved code instead of running untracked when bootstrap fails (120 config error, 122 internal error)
+- Lazy default-client creation honors `WILDEDGE_INTEGRATIONS` and `WILDEDGE_HUBS` from the environment (#41)
+- `docs/deployment.md`: the deployment contract (no-DSN behavior, strict mode, fork/exec servers, one client per process)
+
+### Changed
+
+- `--strict-integrations` now takes effect: a failed required integration exits the process with code 121. Previously the enforcing code path was never invoked, so the flag was silently ignored.
+- `--print-startup-report` and `--no-propagate` now work under `wildedge run`; both were only wired to the unused runner path before.
+- Constructing a client without a DSN logs once per process at INFO. Previously every construction logged a WARNING.
+
+### Removed
+
+- `wildedge.runtime.runner`: an alternative bootstrap entry point that `wildedge run` never invoked. `sitecustomize` is the single bootstrap path; the runner's exit codes moved to `wildedge.runtime.bootstrap` and now apply under `--strict`.
+
+## 0.1.5 - 2026-06-23
+
+- Opt-in inference attachments (raw input/output upload)
+- Fixed accelerator detection wiring; macOS CPU frequency and thermal sampling
+
+## 0.1.4 and earlier
+
+Predate this changelog; see the git history.

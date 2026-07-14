@@ -78,6 +78,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail startup if any requested integration cannot be instrumented.",
     )
+    run.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Exit instead of running untracked when bootstrap fails "
+            "(120 config error, 122 internal error). Default: warn and run."
+        ),
+    )
     propagation = run.add_mutually_exclusive_group()
     propagation.add_argument(
         "--propagate",
@@ -251,6 +259,7 @@ def run_command(parsed: argparse.Namespace) -> int:
         env[constants.ENV_ATTACHMENTS_ENABLED] = "1"
     env[constants.ENV_PROPAGATE] = "1" if parsed.propagate else "0"
     env[constants.ENV_STRICT_INTEGRATIONS] = "1" if parsed.strict_integrations else "0"
+    env[constants.ENV_STRICT] = "1" if parsed.strict else "0"
     env[constants.ENV_PRINT_STARTUP_REPORT] = (
         "1" if parsed.print_startup_report else "0"
     )

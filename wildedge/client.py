@@ -109,6 +109,9 @@ def parse_dsn(dsn: str) -> tuple[str, str, str]:
     return parsed.username, host, project_key
 
 
+# One informative log line per process for the intentional no-DSN mode.
+_noop_notice_logged = False
+
 DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     OnnxExtractor(),
     GgufExtractor(),
@@ -443,12 +446,20 @@ class WildEdge:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)
 
     def _init_noop(self, *, debug: bool, device: DeviceInfo | None) -> None:
+        global _noop_notice_logged
         self.noop = True
         self.debug = debug
         self.closed = True
-        logger.warning(
+        # Running without a DSN is a supported mode (dev, CI), not a fault:
+        # say so once per process at info, then stay quiet.
+        message = (
             "wildedge: no DSN configured; client is disabled (events will be dropped)"
         )
+        if _noop_notice_logged:
+            logger.debug(message)
+        else:
+            logger.info(message)
+            _noop_notice_logged = True
         self.api_key = None
         self.device = device
         self.session_id = str(uuid.uuid4())

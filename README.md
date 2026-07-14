@@ -43,7 +43,8 @@ Useful flags:
 | `--integrations` | Comma-separated list of integrations to activate (or `all`) |
 | `--hubs` | Hub trackers to activate: `huggingface`, `torchhub` |
 | `--print-startup-report` | Print per-integration status at startup |
-| `--strict-integrations` | Fail if a requested integration can't be loaded |
+| `--strict-integrations` | Exit (code 121) if a requested integration can't be instrumented |
+| `--strict` | Exit (120 config, 122 internal) instead of running untracked when bootstrap fails |
 | `--attachments` | Enable opt-in raw input/output attachment upload |
 | `--no-propagate` | Don't pass WildEdge env vars to child processes |
 

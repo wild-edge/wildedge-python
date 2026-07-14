@@ -38,7 +38,8 @@
 1. Fork the repository and create a feature branch off `devel`.
 2. Make your changes and ensure tests pass.
 3. Update documentation if needed.
-4. Submit a pull request targeting `devel` with a clear description of the changes.
+4. Add a `CHANGELOG.md` entry under Unreleased for any user-visible or behavioral change.
+5. Submit a pull request targeting `devel` with a clear description of the changes.
 
 ## Release process
 

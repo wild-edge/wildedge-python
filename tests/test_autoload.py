@@ -176,3 +176,153 @@ def test_uvicorn_reload_worker_bootstraps(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "installed: True" in result.stdout
+
+
+def test_strict_missing_dsn_exits_120(monkeypatch):
+    from wildedge.runtime.bootstrap import RuntimeConfigError
+
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
+    monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
+    monkeypatch.setenv("WILDEDGE_STRICT", "1")
+    monkeypatch.delenv("WILDEDGE_DSN", raising=False)
+
+    with (
+        patch(
+            "wildedge.runtime.bootstrap.install_runtime",
+            side_effect=RuntimeConfigError("WILDEDGE_DSN must be set"),
+        ),
+        patch("os._exit") as fake_exit,
+    ):
+        _reload_sitecustomize()
+
+    fake_exit.assert_called_once_with(120)
+
+
+def test_strict_integration_error_exits_121_without_strict_env(monkeypatch):
+    """--strict-integrations is its own opt-in; it exits even without --strict."""
+    from wildedge.runtime.bootstrap import RuntimeStrictIntegrationError
+
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
+    monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
+    monkeypatch.delenv("WILDEDGE_STRICT", raising=False)
+
+    with (
+        patch(
+            "wildedge.runtime.bootstrap.install_runtime",
+            side_effect=RuntimeStrictIntegrationError("strict fail"),
+        ),
+        patch("os._exit") as fake_exit,
+    ):
+        _reload_sitecustomize()
+
+    fake_exit.assert_called_once_with(121)
+
+
+def test_strict_internal_error_exits_122(monkeypatch):
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
+    monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
+    monkeypatch.setenv("WILDEDGE_STRICT", "1")
+
+    with (
+        patch(
+            "wildedge.runtime.bootstrap.install_runtime",
+            side_effect=RuntimeError("boom"),
+        ),
+        patch("os._exit") as fake_exit,
+    ):
+        _reload_sitecustomize()
+
+    fake_exit.assert_called_once_with(122)
+
+
+def test_non_strict_config_error_warns_and_continues(monkeypatch, capsys):
+    from wildedge.runtime.bootstrap import RuntimeConfigError
+
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
+    monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
+    monkeypatch.delenv("WILDEDGE_STRICT", raising=False)
+
+    with patch(
+        "wildedge.runtime.bootstrap.install_runtime",
+        side_effect=RuntimeConfigError("no dsn"),
+    ):
+        _reload_sitecustomize()  # must not raise
+
+    assert "running without telemetry" in capsys.readouterr().err
+
+
+def test_startup_report_printed_from_env(monkeypatch, capsys):
+    class FakeContext:
+        debug = False
+        print_startup_report = False
+        integration_statuses: list = []
+
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
+    monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
+    monkeypatch.setenv("WILDEDGE_PRINT_STARTUP_REPORT", "1")
+
+    with (
+        patch(
+            "wildedge.runtime.bootstrap.install_runtime",
+            return_value=FakeContext(),
+        ),
+        patch(
+            "wildedge.runtime.bootstrap.format_startup_report",
+            return_value="report-text",
+        ),
+    ):
+        _reload_sitecustomize()
+
+    assert "report-text" in capsys.readouterr().err
+
+
+def test_no_propagate_clears_runtime_env(monkeypatch):
+    import os
+
+    class FakeContext:
+        debug = False
+        print_startup_report = False
+
+    monkeypatch.delitem(sys.modules, _MARKER, raising=False)
+    monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
+    monkeypatch.setenv("WILDEDGE_PROPAGATE", "0")
+    monkeypatch.setenv("WILDEDGE_INTEGRATIONS", "all")
+
+    with patch(
+        "wildedge.runtime.bootstrap.install_runtime",
+        return_value=FakeContext(),
+    ):
+        _reload_sitecustomize()
+
+    assert "WILDEDGE_AUTOLOAD" not in os.environ
+    assert "WILDEDGE_INTEGRATIONS" not in os.environ
+
+
+def test_strict_missing_dsn_exit_code_in_real_interpreter(tmp_path):
+    """sys.exit inside sitecustomize must terminate interpreter startup with our code."""
+    import os
+    import pathlib
+
+    autoload_dir = str(
+        pathlib.Path(
+            importlib.util.find_spec("wildedge.autoload.sitecustomize").origin
+        ).parent
+    )
+
+    env = os.environ.copy()
+    env["WILDEDGE_AUTOLOAD"] = "1"
+    env["WILDEDGE_STRICT"] = "1"
+    env.pop("WILDEDGE_DSN", None)
+    pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = autoload_dir + (os.pathsep + pythonpath if pythonpath else "")
+
+    result = subprocess.run(
+        [sys.executable, "-c", "print('should not run')"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 120, (result.returncode, result.stderr)
+    assert "should not run" not in result.stdout
+    assert "WILDEDGE_DSN must be set" in result.stderr

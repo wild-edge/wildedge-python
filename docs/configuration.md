@@ -1,6 +1,8 @@
 # Configuration
 
-Full reference for all `WildEdge` client parameters.
+Full reference for all `WildEdge` client parameters. For runtime behavior
+(no-DSN mode, strict mode and exit codes, forking servers), see
+[Deployment](deployment.md).
 
 ## Core
 
