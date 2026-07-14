@@ -30,10 +30,12 @@ WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
 wildedge run --integrations timm -- python app.py
 ```
 
-Validate your environment before deploying:
+Validate your environment before deploying. `--send-test-event` proves the
+whole pipeline end to end by sending one span event and reporting the ingest
+response (exit codes: 0 pass, 1 config failure, 2 connectivity failure):
 
 ```bash
-wildedge doctor --integrations all --network-check
+wildedge doctor --integrations all --send-test-event
 ```
 
 Useful flags:

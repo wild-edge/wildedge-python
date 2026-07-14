@@ -11,16 +11,21 @@ import shutil
 import socket
 import sys
 import tempfile
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 from wildedge import constants
+from wildedge.batch import build_batch
 from wildedge.client import parse_dsn
+from wildedge.events.span import SpanEvent
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
-from wildedge.platforms import get_device_id_path
+from wildedge.platforms import detect_device, get_device_id_path
 from wildedge.settings import read_client_env, resolve_app_identity
+from wildedge.transmitter import TransmitError, Transmitter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -130,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--network-check",
         action="store_true",
         help="Attempt TCP reachability check to DSN host:port.",
+    )
+    doctor.add_argument(
+        "--send-test-event",
+        action="store_true",
+        help="Send one test span event to the ingest endpoint and report the result.",
     )
     doctor.add_argument(
         "--sampling-interval",
@@ -327,6 +337,44 @@ def validate_runtime_config(parsed: argparse.Namespace) -> tuple[bool, str]:
     return True, "OK"
 
 
+def ingest_round_trip(dsn: str) -> tuple[bool, str]:
+    """Send one minimal span event through the real pipeline; (ok, detail)."""
+    api_key, host_url, _ = parse_dsn(dsn)
+    event = SpanEvent(kind="eval", name="doctor", duration_ms=0, status="ok")
+    batch = build_batch(
+        device=detect_device(api_key, None),
+        models={},
+        events=[event.to_dict()],
+        session_id=str(uuid.uuid4()),
+        created_at=datetime.now(timezone.utc),
+    )
+    try:
+        response = Transmitter(api_key=api_key, host=host_url).send(batch)
+    except TransmitError as exc:
+        return False, str(exc)
+    if response.status == "accepted" and response.events_accepted >= 1:
+        return True, f"accepted (batch {response.batch_id})"
+    return False, (
+        f"{response.status} (accepted={response.events_accepted}, "
+        f"rejected={response.events_rejected})"
+    )
+
+
+def environment_report() -> dict:
+    autoload_dir = str(Path(__file__).parent / "autoload")
+    pythonpath = os.environ.get("PYTHONPATH", "")
+    return {
+        "dsn_set": bool(os.environ.get(constants.ENV_DSN)),
+        "autoload_env": os.environ.get(constants.WILDEDGE_AUTOLOAD, ""),
+        "autoload_on_pythonpath": autoload_dir in pythonpath.split(os.pathsep),
+        "integrations": os.environ.get(constants.ENV_INTEGRATIONS, ""),
+        "hubs": os.environ.get(constants.ENV_HUBS, ""),
+        "strict": os.environ.get(constants.ENV_STRICT, ""),
+        "strict_integrations": os.environ.get(constants.ENV_STRICT_INTEGRATIONS, ""),
+        "propagate": os.environ.get(constants.ENV_PROPAGATE, ""),
+    }
+
+
 def network_reachability_check(host_url: str) -> tuple[bool, str]:
     parsed = urlparse(host_url)
     host = parsed.hostname
@@ -353,6 +401,8 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
     hubs: list[dict[str, str]] = report["hubs"]  # type: ignore[assignment]
 
     ok = True
+    connectivity_ok: bool | None = None
+    report["environment"] = environment_report()
     client_env = read_client_env(dsn=parsed.dsn)
     dsn = client_env.dsn
 
@@ -379,7 +429,19 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
                         "detail": detail,
                     }
                 )
-                ok = ok and reachable
+                connectivity_ok = reachable
+            if parsed.send_test_event:
+                sent, detail = ingest_round_trip(dsn)
+                checks.append(
+                    {
+                        "name": "ingest",
+                        "status": "OK" if sent else "FAIL",
+                        "detail": detail,
+                    }
+                )
+                connectivity_ok = (
+                    sent if connectivity_ok is None else (connectivity_ok and sent)
+                )
         except Exception as exc:
             ok = False
             checks.append({"name": "dsn", "status": "FAIL", "detail": str(exc)})
@@ -524,13 +586,19 @@ def doctor_report(parsed: argparse.Namespace) -> dict:
         else:
             hubs.append({"name": hub_name, "status": "OK", "detail": ""})
 
-    report["status"] = "PASS" if ok else "FAIL"
+    report["config_status"] = "PASS" if ok else "FAIL"
+    report["connectivity_status"] = (
+        "SKIP" if connectivity_ok is None else ("PASS" if connectivity_ok else "FAIL")
+    )
+    report["status"] = "PASS" if ok and connectivity_ok is not False else "FAIL"
     return report
 
 
 def print_doctor_text(report: dict) -> None:
     print(f"python: {report['python']}")
     print(f"platform: {report['platform']}")
+    for key, value in report["environment"].items():
+        print(f"environment[{key}]: {value}")
     for check in report["checks"]:
         name = check["name"]
         status = check["status"]
@@ -555,16 +623,23 @@ def print_doctor_text(report: dict) -> None:
             print(f"hub[{name}]: {status} ({detail})")
         else:
             print(f"hub[{name}]: {status}")
+    print(f"config: {report['config_status']}")
+    print(f"connectivity: {report['connectivity_status']}")
     print(f"doctor: {report['status']}")
 
 
 def doctor(parsed: argparse.Namespace) -> int:
+    """Exit codes: 0 all pass, 1 config/dependency failure, 2 connectivity failure."""
     report = doctor_report(parsed)
     if parsed.format == "json":
         print(json.dumps(report, sort_keys=True))
     else:
         print_doctor_text(report)
-    return 0 if report["status"] == "PASS" else 1
+    if report["config_status"] != "PASS":
+        return 1
+    if report["connectivity_status"] == "FAIL":
+        return 2
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
