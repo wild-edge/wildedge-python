@@ -201,3 +201,31 @@ def test_app_identity_env_override_used_for_paths(monkeypatch):
     p.assert_called_once_with("env-app")
     d.assert_called_once_with("env-app")
     r.assert_called_once_with("env-app")
+
+
+def test_register_model_defaults_name_to_model_id_and_accepts_format():
+    from wildedge.client import WildEdge
+
+    client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+    client.registry.register.return_value = (object(), True)
+
+    client.register_model(
+        None, model_id="org/model", source="openrouter", model_format="api"
+    )
+
+    info = client.registry.register.call_args[0][1]
+    assert info.model_name == "org/model"
+    assert info.model_source == "openrouter"
+    assert info.model_format == "api"
+
+
+def test_register_model_format_defaults_to_unknown():
+    from wildedge.client import WildEdge
+
+    client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+    client.registry.register.return_value = (object(), True)
+
+    client.register_model(None, model_id="org/model")
+
+    info = client.registry.register.call_args[0][1]
+    assert info.model_format == "unknown"

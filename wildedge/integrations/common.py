@@ -26,12 +26,39 @@ def debug_failure(framework: str, context: str, exc: BaseException) -> None:
 SOURCE_BY_HOSTNAME: dict[str, str] = {
     "api.openai.com": "openai",
     "openrouter.ai": "openrouter",
+    "api.anthropic.com": "anthropic",
+    "api.mistral.ai": "mistral",
+    "api.groq.com": "groq",
+    "api.together.xyz": "together",
+    "api.deepseek.com": "deepseek",
+    "api.x.ai": "xai",
+    "generativelanguage.googleapis.com": "google",
+    "api.fireworks.ai": "fireworks",
+    "api.cerebras.ai": "cerebras",
+    "api.perplexity.ai": "perplexity",
+    "integrate.api.nvidia.com": "nvidia",
+    "router.huggingface.co": "huggingface",
+    "inference.baseten.co": "baseten",
 }
+
+# Providers whose endpoints live on per-resource subdomains.
+SOURCE_BY_HOSTNAME_SUFFIX: list[tuple[str, str]] = [
+    (".openai.azure.com", "azure-openai"),
+    (".api.baseten.co", "baseten"),
+]
 
 
 def source_from_base_url(base_url: str | None) -> str:
     hostname = urlparse(base_url.lower()).hostname if base_url else ""
-    return SOURCE_BY_HOSTNAME.get(hostname or "", hostname or "openai")
+    if not hostname:
+        return "openai"
+    exact = SOURCE_BY_HOSTNAME.get(hostname)
+    if exact is not None:
+        return exact
+    for suffix, source in SOURCE_BY_HOSTNAME_SUFFIX:
+        if hostname.endswith(suffix):
+            return source
+    return hostname
 
 
 def _msg_role(m) -> str | None:

@@ -502,13 +502,15 @@ class WildEdge:
         family: str | None = None,
         version: str | None = None,
         quantization: str | None = None,
+        model_format: str | None = None,
         auto_instrument: bool = True,
     ) -> ModelHandle:
         """
         Register a model and return a handle for tracking events.
 
         Auto-extracts metadata from ONNX Runtime and GGUF/llama.cpp objects.
-        User-supplied kwargs override extracted values.
+        User-supplied kwargs override extracted values. ``model_format``
+        applies when no extractor matches (e.g. ``"api"`` for remote models).
         """
         overrides = {
             k: v
@@ -518,6 +520,7 @@ class WildEdge:
                 "family": family,
                 "version": version,
                 "quantization": quantization,
+                "format": model_format,
             }.items()
             if v is not None
         }
