@@ -10,10 +10,9 @@ in OUTPUT_DIR (default: llms-dist).
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-
-import tomllib
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -29,8 +28,13 @@ SOURCES: list[tuple[str, str, str]] = [
 
 
 def project_version() -> str:
-    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
-    return data["project"]["version"]
+    # Regex instead of tomllib: the script must run on 3.10, where tomllib
+    # does not exist, and this is the only field it needs.
+    text = (REPO_ROOT / "pyproject.toml").read_text()
+    match = re.search(r'^version = "([^"]+)"', text, re.MULTILINE)
+    if match is None:
+        raise SystemExit("could not find project version in pyproject.toml")
+    return match.group(1)
 
 
 def clean_markdown(text: str) -> str:
