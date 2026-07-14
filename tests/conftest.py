@@ -19,6 +19,15 @@ def reset_hardware_sampler():
     stop_sampler()
 
 
+@pytest.fixture(autouse=True)
+def reset_default_client():
+    from wildedge.defaults import set_default_client
+
+    set_default_client(None)
+    yield
+    set_default_client(None)
+
+
 PLATFORM_MARKS = {
     "requires_linux": "linux",
     "requires_macos": "darwin",

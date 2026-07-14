@@ -472,3 +472,32 @@ def test_parse_run_args_only_double_dash_raises():
     """['--'] with nothing after raises ValueError."""
     with pytest.raises(ValueError, match="missing command"):
         cli.parse_run_args(["--"])
+
+
+def test_install_runtime_registers_default_client(monkeypatch):
+    from wildedge.defaults import peek_default_client
+
+    class FakeWildEdge:
+        SUPPORTED_INTEGRATIONS = {"onnx"}
+
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
+            pass
+
+        def instrument(self, name):  # type: ignore[no-untyped-def]
+            pass
+
+        def flush(self, timeout):  # type: ignore[no-untyped-def]
+            pass
+
+        def close(self):  # type: ignore[no-untyped-def]
+            pass
+
+    monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: object())
+
+    context = bootstrap.install_runtime()
+    try:
+        assert peek_default_client() is context.client
+    finally:
+        context.shutdown()
