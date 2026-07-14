@@ -216,6 +216,18 @@ class SpanContextManager:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return self.__exit__(exc_type, exc_val, exc_tb)
 
+    def set_attributes(self, **attributes: Any) -> None:
+        """Merge ``attributes`` into the span's attribute dict."""
+        if self.attributes is None:
+            self.attributes = {}
+        self.attributes.update(attributes)
+
+    def fail(self, detail: str | None = None) -> None:
+        """Mark the span as failed; ``detail`` becomes the output summary."""
+        self.status = "error"
+        if detail is not None:
+            self.output_summary = detail
+
 
 class WildEdge:
     """

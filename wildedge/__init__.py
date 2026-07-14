@@ -4,6 +4,15 @@ from wildedge.attachments import Attachment
 from wildedge.client import SpanContextManager, WildEdge
 from wildedge.convenience import init
 from wildedge.decorators import track
+from wildedge.defaults import (
+    flush,
+    get_client,
+    register_model,
+    set_default_client,
+    span,
+    trace,
+    track_span,
+)
 from wildedge.events import (
     AdapterDownload,
     AdapterLoad,
@@ -36,6 +45,13 @@ from wildedge.tracing import (
 __all__ = [
     "WildEdge",
     "init",
+    "get_client",
+    "set_default_client",
+    "trace",
+    "span",
+    "track_span",
+    "register_model",
+    "flush",
     "Attachment",
     "capture_hardware",
     "HardwareContext",
