@@ -1,6 +1,6 @@
 [project]
 name = "wildedge-sdk"
-version = "0.1.5"
+version = "0.2.0"
 description = "ML inference monitoring for Python: on-device and remote models"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -5,6 +5,8 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+## 0.2.0 - 2026-07-14
+
 ### Added
 
 - `register_model()` accepts a `model_format` override for models without a matching extractor; `llm_api()` registers its models as format `"api"`, matching the openai/anthropic integrations instead of `"unknown"`.
