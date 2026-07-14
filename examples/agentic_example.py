@@ -26,7 +26,7 @@ from openai import OpenAI
 
 import wildedge
 
-we = wildedge.init(
+wildedge.init(
     app_version="1.0.0",
     integrations="openai",
 )
@@ -96,7 +96,7 @@ TOOL_HANDLERS = {
 
 
 def call_tool(name: str, arguments: dict) -> str:
-    with we.span(
+    with wildedge.span(
         kind="tool",
         name=name,
         input_summary=json.dumps(arguments)[:200],
@@ -108,7 +108,7 @@ def call_tool(name: str, arguments: dict) -> str:
 
 def retrieve_context(query: str) -> str:
     """Fetch relevant context from the vector store (~120ms)."""
-    with we.span(
+    with wildedge.span(
         kind="retrieval",
         name="vector_search",
         input_summary=query[:200],
@@ -125,7 +125,7 @@ def run_agent(task: str, step_index: int, messages: list) -> str:
     messages.append({"role": "user", "content": f"{task}\n\nContext: {context}"})
 
     while True:
-        with we.span(
+        with wildedge.span(
             kind="agent_step",
             name="reason",
             step_index=step_index,
@@ -172,10 +172,10 @@ TASKS = [
 system_prompt = "You are a helpful assistant. Use tools when needed."
 messages = [{"role": "system", "content": system_prompt}]
 
-with we.trace(agent_id="demo-agent", run_id=str(uuid.uuid4())):
+with wildedge.trace(agent_id="demo-agent", run_id=str(uuid.uuid4())):
     for i, task in enumerate(TASKS, start=1):
         print(f"\nTask {i}: {task}")
         reply = run_agent(task, step_index=i, messages=messages)
         print(f"Reply: {reply}")
 
-we.flush()
+wildedge.flush()

@@ -92,7 +92,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    client = wildedge.init(
+    wildedge.init(
         app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
         integrations="transformers",
         hubs=["huggingface"],
@@ -103,7 +103,7 @@ def main() -> None:
         args.task
     ]()
 
-    client.flush()
+    wildedge.flush()
     print("\nDone. Events flushed to WildEdge.")
 
 
