@@ -35,6 +35,7 @@ class RuntimeEnv:
 class RunnerEnv:
     print_startup_report: bool
     propagate: bool
+    strict: bool
 
 
 def parse_bool(value: str | None) -> bool:
@@ -134,4 +135,5 @@ def read_runner_env(
     return RunnerEnv(
         print_startup_report=parse_bool(env.get(constants.ENV_PRINT_STARTUP_REPORT)),
         propagate=parse_bool(env.get(constants.ENV_PROPAGATE, "1")),
+        strict=parse_bool(env.get(constants.ENV_STRICT)),
     )
