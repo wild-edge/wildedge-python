@@ -26,7 +26,7 @@ def redact(attachments: list[Attachment]) -> list[Attachment]:
     return [a for a in attachments if a.content_type != "application/secret"]
 
 
-client = wildedge.init(
+wildedge.init(
     app_version="1.0.0",
     attachments_enabled=True,
     max_attachments_per_inference=5,
@@ -35,7 +35,7 @@ client = wildedge.init(
     attachment_filter=redact,
 )
 
-handle = client.register_model(
+handle = wildedge.register_model(
     object(),
     model_id="doc-classifier-v1",
     source="local",
@@ -59,4 +59,4 @@ inference_id = handle.track_inference(
 print(f"tracked inference {inference_id[:8]}… with 2 attachments")
 
 # Bytes upload in the background; flush/close lets buffered events drain.
-client.close()
+wildedge.flush()

@@ -17,7 +17,7 @@ import tensorflow as tf
 
 import wildedge
 
-client = wildedge.init(
+wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
     integrations="tensorflow",
 )
@@ -48,4 +48,4 @@ with TemporaryDirectory() as temp_dir:
     print("output shape:", tuple(output.shape))
 
 
-client.close()
+wildedge.flush()

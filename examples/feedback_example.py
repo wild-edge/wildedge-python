@@ -21,14 +21,14 @@ from wildedge import FeedbackType
 
 CONFIDENCE_THRESHOLD = 0.6
 
-client = wildedge.init(
+wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
     integrations="timm",
 )
 
 model = timm.create_model("resnet18", pretrained=True)
 model.eval()
-handle = client.register_model(
+handle = wildedge.register_model(
     model
 )  # auto-instrumented already; returns existing handle
 

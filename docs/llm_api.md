@@ -41,6 +41,9 @@ full response payload, dict or SDK object, OpenAI shape
 (`usage.prompt_tokens`, `choices[0].finish_reason`) or Anthropic shape
 (`usage.input_tokens`, top-level `stop_reason`).
 
+Runnable version: [examples/llm_api_example.py](../examples/llm_api_example.py),
+stdlib urllib against OpenRouter, no client library at all.
+
 ## Recording pieces individually
 
 When you do not have a full response payload, set what you know:
