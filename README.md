@@ -116,6 +116,7 @@ For advanced options (batching, queue tuning, dead-letter storage, attachments),
 
 | Name | Link |
 |---|---|
+| outfitstudio.app | https://outfitstudio.app/ |
 | agntr | [github.com/pmaciolek/agntr](https://github.com/pmaciolek/agntr) |
 | demo-app | [github.com/wild-edge/demo-app](https://github.com/wild-edge/demo-app) |
 | *(your project here)* | - |
