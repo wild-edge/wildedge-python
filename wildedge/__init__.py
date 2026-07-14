@@ -29,6 +29,7 @@ from wildedge.events import (
     TextInputMeta,
 )
 from wildedge.events.span import SpanKind, SpanStatus
+from wildedge.llm_api import LLMCall, llm_api
 from wildedge.platforms import capture_hardware
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
@@ -52,6 +53,8 @@ __all__ = [
     "track_span",
     "register_model",
     "flush",
+    "llm_api",
+    "LLMCall",
     "Attachment",
     "capture_hardware",
     "HardwareContext",

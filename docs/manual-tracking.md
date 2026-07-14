@@ -5,7 +5,8 @@ Use manual tracking when your framework is not covered by a WildEdge integration
 ## When to use it
 
 - Your model class is custom (e.g. a `torch.nn.Module` subclass not loaded via `timm` or `transformers`)
-- You are calling a remote API not yet covered by an integration
+- You are calling a remote API not yet covered by an integration (for LLM
+  APIs called over raw HTTP, [`wildedge.llm_api()`](llm_api.md) is the shortcut)
 - You want to attach input/output metadata (token counts, image dimensions, confidence scores, etc.)
 - You want to record user feedback tied to a specific inference
 
