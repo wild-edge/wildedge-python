@@ -179,7 +179,7 @@ class LLMCall:
 
         try:
             return get_client().register_model(
-                None, model_id=self.model, source=self.source
+                None, model_id=self.model, source=self.source, model_format="api"
             )
         except Exception as exc:
             logger.debug("wildedge: llm model registration failed: %s", exc)

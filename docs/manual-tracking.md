@@ -81,11 +81,12 @@ For remote APIs with no local object to inspect, pass a placeholder:
 
 ```python
 handle = client.register_model(
-    object(),
+    None,
     model_id="openai/gpt-4o",
-    source="https://api.openai.com",
+    source="openai",
     family="gpt-4o",
     version="2024-08-06",
+    model_format="api",
 )
 ```
 

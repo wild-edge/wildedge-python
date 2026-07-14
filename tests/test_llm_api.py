@@ -221,3 +221,10 @@ def test_noop_without_dsn_end_to_end(monkeypatch):
         call.usage(tokens_in=1, tokens_out=2)
 
     assert wildedge.get_client().noop is True
+
+
+def test_registers_model_as_api_format(client):
+    with wildedge.llm_api(model="m", provider="p"):
+        pass
+
+    assert client.registered[0]["model_format"] == "api"

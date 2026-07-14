@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
-
-import tomllib
 
 
 def main() -> None:
@@ -15,8 +14,13 @@ def main() -> None:
         raise SystemExit(f"Expected tag to start with 'v', got: {tag}")
     tag_version = tag[1:]
 
-    data = tomllib.loads(Path("pyproject.toml").read_text())
-    project_version = data["project"]["version"]
+    # Regex instead of tomllib so the script also runs on Python 3.10.
+    match = re.search(
+        r'^version = "([^"]+)"', Path("pyproject.toml").read_text(), re.MULTILINE
+    )
+    if match is None:
+        raise SystemExit("could not find project version in pyproject.toml")
+    project_version = match.group(1)
 
     if tag_version != project_version:
         raise SystemExit(
