@@ -7,6 +7,8 @@ under Unreleased and move into a version section at release time.
 
 ### Added
 
+- `wildedge.llm_api()`: provider-agnostic tracking for LLM calls made with any HTTP client (OpenRouter, vLLM, Ollama, OpenAI/Anthropic-compatible endpoints). Times the block, normalizes usage payloads from either provider shape via `call.usage()` / `call.response()`, supports TTFT marks and async use, and records exceptions as error events. See `docs/llm_api.md`.
+- `register_model()` without a matching extractor defaults the model name to the explicit `model_id` instead of the placeholder object's type name.
 - Process-wide default client: `wildedge.get_client()`, `wildedge.set_default_client()`, and module-level `trace`, `span`, `track_span`, `register_model`, `flush` delegating to it (#41)
 - `init()` reuses the default client installed by `wildedge run` unless `dsn` is passed, so CLI and in-process init share one client (#41)
 - `SpanContextManager.set_attributes()` and `fail()` for recording outcomes on an open span (#41)

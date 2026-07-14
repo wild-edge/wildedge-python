@@ -37,6 +37,12 @@ def test_offline_replay_restores_model_registry_for_pending_events(tmp_path):
         ),
         patch("wildedge.client.Transmitter"),
         patch("wildedge.client.Consumer", _DummyConsumer),
+        # The registry path has no constructor override; without this patch the
+        # test reads and writes machine-global state across runs.
+        patch(
+            "wildedge.client.default_model_registry_path",
+            return_value=tmp_path / "model_registry.json",
+        ),
     ):
         client_a = WildEdge(
             dsn="https://secret@ingest.wildedge.dev/proj",
@@ -69,4 +75,5 @@ def test_offline_replay_restores_model_registry_for_pending_events(tmp_path):
     assert client_b.queue.length() == 1
     models = client_b.registry.snapshot()
     assert "ResNet" in models
-    assert models["ResNet"]["model_name"] == "_Model"
+    # register_model with no matching extractor names the model after model_id
+    assert models["ResNet"]["model_name"] == "ResNet"
