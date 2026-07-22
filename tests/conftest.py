@@ -19,6 +19,30 @@ def reset_hardware_sampler():
     stop_sampler()
 
 
+@pytest.fixture(autouse=True)
+def reset_default_client():
+    from wildedge.defaults import set_default_client
+
+    set_default_client(None)
+    yield
+    set_default_client(None)
+
+
+@pytest.fixture(autouse=True)
+def isolate_sdk_state(tmp_path, monkeypatch):
+    """Keep every default persistence path under tmp.
+
+    Without this, tests that construct real clients write queues, registries
+    and dead letters to the machine-global SDK state dir, leaking state
+    between runs and machines (and once masking a real regression locally
+    while CI failed).
+    """
+    import wildedge.paths as paths
+
+    monkeypatch.setattr(paths, "default_sdk_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr(paths, "default_sdk_cache_dir", lambda: tmp_path / "cache")
+
+
 PLATFORM_MARKS = {
     "requires_linux": "linux",
     "requires_macos": "darwin",

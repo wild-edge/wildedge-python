@@ -32,15 +32,23 @@ def test_batch_size_too_low():
 
 
 def test_no_dsn_is_noop(monkeypatch, caplog):
+    import wildedge.client as client_module
     from wildedge.client import WildEdge
 
     monkeypatch.delenv(constants.ENV_DSN, raising=False)
-    with caplog.at_level("WARNING"):
+    monkeypatch.setattr(client_module, "_noop_notice_logged", False)
+    with caplog.at_level("INFO"):
         client = WildEdge()
 
     assert client.noop is True
     assert client.closed is True
-    assert "no DSN configured" in caplog.text
+    notices = [r for r in caplog.records if "no DSN configured" in r.message]
+    assert [r.levelname for r in notices] == ["INFO"]
+
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        WildEdge()
+    assert "no DSN configured" not in caplog.text
 
 
 def test_no_dsn_instrument_does_not_raise(monkeypatch):
@@ -193,3 +201,31 @@ def test_app_identity_env_override_used_for_paths(monkeypatch):
     p.assert_called_once_with("env-app")
     d.assert_called_once_with("env-app")
     r.assert_called_once_with("env-app")
+
+
+def test_register_model_defaults_name_to_model_id_and_accepts_format():
+    from wildedge.client import WildEdge
+
+    client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+    client.registry.register.return_value = (object(), True)
+
+    client.register_model(
+        None, model_id="org/model", source="openrouter", model_format="api"
+    )
+
+    info = client.registry.register.call_args[0][1]
+    assert info.model_name == "org/model"
+    assert info.model_source == "openrouter"
+    assert info.model_format == "api"
+
+
+def test_register_model_format_defaults_to_unknown():
+    from wildedge.client import WildEdge
+
+    client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+    client.registry.register.return_value = (object(), True)
+
+    client.register_model(None, model_id="org/model")
+
+    info = client.registry.register.call_args[0][1]
+    assert info.model_format == "unknown"

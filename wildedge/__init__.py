@@ -4,6 +4,15 @@ from wildedge.attachments import Attachment
 from wildedge.client import SpanContextManager, WildEdge
 from wildedge.convenience import init
 from wildedge.decorators import track
+from wildedge.defaults import (
+    flush,
+    get_client,
+    register_model,
+    set_default_client,
+    span,
+    trace,
+    track_span,
+)
 from wildedge.events import (
     AdapterDownload,
     AdapterLoad,
@@ -20,6 +29,7 @@ from wildedge.events import (
     TextInputMeta,
 )
 from wildedge.events.span import SpanKind, SpanStatus
+from wildedge.llm_api import LLMCall, llm_api
 from wildedge.platforms import capture_hardware
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
@@ -36,6 +46,15 @@ from wildedge.tracing import (
 __all__ = [
     "WildEdge",
     "init",
+    "get_client",
+    "set_default_client",
+    "trace",
+    "span",
+    "track_span",
+    "register_model",
+    "flush",
+    "llm_api",
+    "LLMCall",
     "Attachment",
     "capture_hardware",
     "HardwareContext",

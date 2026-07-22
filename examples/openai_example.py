@@ -18,7 +18,7 @@ from openai import OpenAI
 
 import wildedge
 
-client = wildedge.init(
+wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
     integrations="openai",
 )
@@ -46,5 +46,5 @@ for prompt in prompts:
             print(chunk.choices[0].delta.content, end="", flush=True)
     print("\n")
 
-client.flush()
+wildedge.flush()
 print("Done. Events flushed to WildEdge.")

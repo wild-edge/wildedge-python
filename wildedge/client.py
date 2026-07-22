@@ -109,6 +109,9 @@ def parse_dsn(dsn: str) -> tuple[str, str, str]:
     return parsed.username, host, project_key
 
 
+# One informative log line per process for the intentional no-DSN mode.
+_noop_notice_logged = False
+
 DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     OnnxExtractor(),
     GgufExtractor(),
@@ -215,6 +218,18 @@ class SpanContextManager:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return self.__exit__(exc_type, exc_val, exc_tb)
+
+    def set_attributes(self, **attributes: Any) -> None:
+        """Merge ``attributes`` into the span's attribute dict."""
+        if self.attributes is None:
+            self.attributes = {}
+        self.attributes.update(attributes)
+
+    def fail(self, detail: str | None = None) -> None:
+        """Mark the span as failed; ``detail`` becomes the output summary."""
+        self.status = "error"
+        if detail is not None:
+            self.output_summary = detail
 
 
 class WildEdge:
@@ -431,12 +446,20 @@ class WildEdge:
             logger.debug("wildedge: client initialized (session=%s)", self.session_id)
 
     def _init_noop(self, *, debug: bool, device: DeviceInfo | None) -> None:
+        global _noop_notice_logged
         self.noop = True
         self.debug = debug
         self.closed = True
-        logger.warning(
+        # Running without a DSN is a supported mode (dev, CI), not a fault:
+        # say so once per process at info, then stay quiet.
+        message = (
             "wildedge: no DSN configured; client is disabled (events will be dropped)"
         )
+        if _noop_notice_logged:
+            logger.debug(message)
+        else:
+            logger.info(message)
+            _noop_notice_logged = True
         self.api_key = None
         self.device = device
         self.session_id = str(uuid.uuid4())
@@ -479,13 +502,15 @@ class WildEdge:
         family: str | None = None,
         version: str | None = None,
         quantization: str | None = None,
+        model_format: str | None = None,
         auto_instrument: bool = True,
     ) -> ModelHandle:
         """
         Register a model and return a handle for tracking events.
 
         Auto-extracts metadata from ONNX Runtime and GGUF/llama.cpp objects.
-        User-supplied kwargs override extracted values.
+        User-supplied kwargs override extracted values. ``model_format``
+        applies when no extractor matches (e.g. ``"api"`` for remote models).
         """
         overrides = {
             k: v
@@ -495,6 +520,7 @@ class WildEdge:
                 "family": family,
                 "version": version,
                 "quantization": quantization,
+                "format": model_format,
             }.items()
             if v is not None
         }
@@ -506,8 +532,10 @@ class WildEdge:
         else:
             # No extractor matched - require explicit id
             model_id = overrides.pop("id", None)
-            model_name = overrides.pop("model_name", None) or (
-                str(type(model_obj).__name__)
+            model_name = (
+                overrides.pop("model_name", None)
+                or model_id
+                or str(type(model_obj).__name__)
             )
             info = ModelInfo(
                 model_name=model_name,

@@ -91,3 +91,50 @@ def test_nested_spans_correct_parent_chain():
     assert inner_ev["parent_span_id"] == outer.span_id
     assert outer_ev["span_id"] == outer.span_id
     assert outer_ev["parent_span_id"] is None
+
+
+def test_span_set_attributes_merges():
+    events: list[dict] = []
+    client = _FakeClient(events)
+
+    with SpanContextManager(
+        client, kind="eval", name="lint", attributes={"a": 1}
+    ) as span:
+        span.set_attributes(b=2)
+        span.set_attributes(a=3)
+
+    assert events[0]["attributes"] == {"a": 3, "b": 2}
+
+
+def test_span_set_attributes_from_none():
+    events: list[dict] = []
+    client = _FakeClient(events)
+
+    with SpanContextManager(client, kind="eval", name="lint") as span:
+        span.set_attributes(lint_errors=4)
+
+    assert events[0]["attributes"] == {"lint_errors": 4}
+
+
+def test_span_fail_sets_status_and_summary():
+    events: list[dict] = []
+    client = _FakeClient(events)
+
+    with SpanContextManager(client, kind="eval", name="lint") as span:
+        span.fail("4 lint errors")
+
+    assert events[0]["status"] == "error"
+    assert events[0]["output_summary"] == "4 lint errors"
+
+
+def test_span_fail_without_detail_keeps_summary():
+    events: list[dict] = []
+    client = _FakeClient(events)
+
+    with SpanContextManager(
+        client, kind="eval", name="lint", output_summary="kept"
+    ) as span:
+        span.fail()
+
+    assert events[0]["status"] == "error"
+    assert events[0]["output_summary"] == "kept"

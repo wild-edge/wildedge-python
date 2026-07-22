@@ -30,10 +30,12 @@ WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
 wildedge run --integrations timm -- python app.py
 ```
 
-Validate your environment before deploying:
+Validate your environment before deploying. `--send-test-event` proves the
+whole pipeline end to end by sending one span event and reporting the ingest
+response (exit codes: 0 pass, 1 config failure, 2 connectivity failure):
 
 ```bash
-wildedge doctor --integrations all --network-check
+wildedge doctor --integrations all --send-test-event
 ```
 
 Useful flags:
@@ -43,7 +45,8 @@ Useful flags:
 | `--integrations` | Comma-separated list of integrations to activate (or `all`) |
 | `--hubs` | Hub trackers to activate: `huggingface`, `torchhub` |
 | `--print-startup-report` | Print per-integration status at startup |
-| `--strict-integrations` | Fail if a requested integration can't be loaded |
+| `--strict-integrations` | Exit (code 121) if a requested integration can't be instrumented |
+| `--strict` | Exit (120 config, 122 internal) instead of running untracked when bootstrap fails |
 | `--attachments` | Enable opt-in raw input/output attachment upload |
 | `--no-propagate` | Don't pass WildEdge env vars to child processes |
 
@@ -52,18 +55,23 @@ Useful flags:
 ```python
 import wildedge
 
-client = wildedge.init(
-    dsn="...",  # or WILDEDGE_DSN env var
-    integrations=["transformers"],
-    hubs=["huggingface"],
-)
+wildedge.init(integrations=["transformers"])  # optional under `wildedge run`
 
-# models loaded after this point are tracked automatically
+# models loaded after this point are tracked automatically; add traces,
+# spans and LLM API calls anywhere, no client instance to pass around:
+with wildedge.trace(run_id="run-1"):
+    with wildedge.span(kind="agent_step", name="plan"):
+        ...
+
+with wildedge.llm_api(model="openai/gpt-4o-mini", provider="openrouter") as call:
+    call.response(data)  # LLM calls made with plain HTTP clients
 ```
 
-If no DSN is configured, the client becomes a no-op and logs a warning.
-
-`init(...)` is a convenience wrapper for `WildEdge(...)` + `instrument(...)`.
+One client per process: `wildedge run`, `init()`, and the module-level calls
+all share it, and `init()` without `dsn` reuses whatever already exists.
+Without a DSN everything is a silent no-op, so dev and CI need no
+configuration. See [Deployment](https://github.com/wild-edge/wildedge-python/blob/main/docs/deployment.md)
+for the full contract.
 ## Supported integrations
 
 **On-device**
@@ -86,6 +94,10 @@ If no DSN is configured, the client becomes a no-op and logs a warning.
 |---|---|
 | `anthropic` | [anthropic_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/anthropic_example.py) |
 | `openai` | [openai_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/openai_example.py) |
+
+Calling an LLM API with a plain HTTP client instead of these libraries? Use
+[`wildedge.llm_api()`](https://github.com/wild-edge/wildedge-python/blob/main/docs/llm_api.md):
+[llm_api_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/llm_api_example.py).
 
 **Hub tracking**
 
@@ -115,6 +127,7 @@ For advanced options (batching, queue tuning, dead-letter storage, attachments),
 
 | Name | Link |
 |---|---|
+| outfitstudio.app | https://outfitstudio.app/ |
 | agntr | [github.com/pmaciolek/agntr](https://github.com/pmaciolek/agntr) |
 | demo-app | [github.com/wild-edge/demo-app](https://github.com/wild-edge/demo-app) |
 | *(your project here)* | - |
@@ -131,6 +144,12 @@ Report security and privacy issues to: support@wildedge.dev
 
 ## Links
 
+- [Deployment guide](https://github.com/wild-edge/wildedge-python/blob/main/docs/deployment.md)
+- [Manual tracking](https://github.com/wild-edge/wildedge-python/blob/main/docs/manual-tracking.md)
+- [LLM API tracking](https://github.com/wild-edge/wildedge-python/blob/main/docs/llm_api.md)
 - [Compatibility Matrix](https://github.com/wild-edge/wildedge-python/blob/main/docs/compatibility.md)
-- [Changelog](https://github.com/wild-edge/wildedge-python/releases)
+- [Changelog](https://github.com/wild-edge/wildedge-python/blob/main/CHANGELOG.md)
 - [License](https://github.com/wild-edge/wildedge-python/blob/main/LICENSE)
+
+Each GitHub release ships `llms.txt` and `llms-full.txt`: the full
+documentation for that exact version in one file, built for AI assistants.

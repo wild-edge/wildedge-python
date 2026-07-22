@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from wildedge import constants
+from wildedge.events.inference import TextInputMeta
 from wildedge.logging import logger
 from wildedge.timing import elapsed_ms
 
@@ -15,6 +17,73 @@ if TYPE_CHECKING:
 
 def debug_failure(framework: str, context: str, exc: BaseException) -> None:
     logger.debug("wildedge: %s %s failed: %s", framework, context, exc)
+
+
+# ---------------------------------------------------------------------------
+# Chat API helpers, shared by the openai integration and wildedge.llm_api
+# ---------------------------------------------------------------------------
+
+SOURCE_BY_HOSTNAME: dict[str, str] = {
+    "api.openai.com": "openai",
+    "openrouter.ai": "openrouter",
+    "api.anthropic.com": "anthropic",
+    "api.mistral.ai": "mistral",
+    "api.groq.com": "groq",
+    "api.together.xyz": "together",
+    "api.deepseek.com": "deepseek",
+    "api.x.ai": "xai",
+    "generativelanguage.googleapis.com": "google",
+    "api.fireworks.ai": "fireworks",
+    "api.cerebras.ai": "cerebras",
+    "api.perplexity.ai": "perplexity",
+    "integrate.api.nvidia.com": "nvidia",
+    "router.huggingface.co": "huggingface",
+    "inference.baseten.co": "baseten",
+}
+
+# Providers whose endpoints live on per-resource subdomains.
+SOURCE_BY_HOSTNAME_SUFFIX: list[tuple[str, str]] = [
+    (".openai.azure.com", "azure-openai"),
+    (".api.baseten.co", "baseten"),
+]
+
+
+def source_from_base_url(base_url: str | None) -> str:
+    hostname = urlparse(base_url.lower()).hostname if base_url else ""
+    if not hostname:
+        return "openai"
+    exact = SOURCE_BY_HOSTNAME.get(hostname)
+    if exact is not None:
+        return exact
+    for suffix, source in SOURCE_BY_HOSTNAME_SUFFIX:
+        if hostname.endswith(suffix):
+            return source
+    return hostname
+
+
+def _msg_role(m) -> str | None:
+    return m.get("role") if isinstance(m, dict) else getattr(m, "role", None)
+
+
+def _msg_content(m) -> str | None:
+    return m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+
+
+def build_input_meta(messages: list, tokens_in: int | None) -> TextInputMeta | None:
+    if not messages:
+        return None
+    last_user = next((m for m in reversed(messages) if _msg_role(m) == "user"), None)
+    if not last_user:
+        return None
+    content = _msg_content(last_user) or ""
+    if not isinstance(content, str) or not content:
+        return None
+    return TextInputMeta(
+        char_count=len(content),
+        word_count=len(content.split()),
+        token_count=tokens_in,
+        prompt_type="chat",
+    )
 
 
 DTYPE_QUANTIZATION_MAP: dict[str, str] = {

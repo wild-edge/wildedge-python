@@ -9,7 +9,6 @@ import pytest
 from wildedge import cli, constants
 from wildedge.integrations.registry import IntegrationSpec
 from wildedge.runtime import bootstrap
-from wildedge.runtime import runner as runtime_runner
 
 
 def _fake_execle(captured: dict):
@@ -265,6 +264,9 @@ def test_doctor_json_output_schema(monkeypatch, capsys):
     assert rc == 0
     assert sorted(payload.keys()) == [
         "checks",
+        "config_status",
+        "connectivity_status",
+        "environment",
         "hubs",
         "integrations",
         "platform",
@@ -285,7 +287,7 @@ def test_doctor_network_check_failure(monkeypatch, capsys):
 
     rc = cli.main(["doctor", "--network-check", "--integrations", "onnx"])
     out = capsys.readouterr().out
-    assert rc == 1
+    assert rc == 2
     assert "network: FAIL (unreachable)" in out
     assert "doctor: FAIL" in out
 
@@ -347,26 +349,6 @@ def test_doctor_uses_app_identity_override_for_namespace(monkeypatch, capsys):
     assert str(Path("my-app") / "dead_letters") in out
 
 
-def test_runner_clears_runtime_env_when_no_propagate(monkeypatch):
-    class FakeContext:
-        debug = False
-        print_startup_report = False
-
-        def shutdown(self):  # type: ignore[no-untyped-def]
-            return None
-
-    monkeypatch.setenv(constants.ENV_PROPAGATE, "0")
-    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
-    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "all")
-    monkeypatch.setattr(runtime_runner, "install_runtime", lambda: FakeContext())
-    monkeypatch.setattr(runtime_runner.runpy, "run_path", lambda *a, **k: None)
-
-    rc = runtime_runner.main(["--mode", "script", "--target", "app.py"])
-    assert rc == 0
-    assert constants.WILDEDGE_AUTOLOAD not in os.environ
-    assert constants.ENV_INTEGRATIONS not in os.environ
-
-
 def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
     class FakeWildEdge:
         def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
@@ -404,48 +386,23 @@ def test_install_runtime_tracks_missing_dependency_status(monkeypatch):
         context.shutdown()
 
 
-def test_runner_returns_reserved_exit_codes(monkeypatch, capsys):
-    monkeypatch.setattr(
-        runtime_runner,
-        "install_runtime",
-        lambda: (_ for _ in ()).throw(bootstrap.RuntimeConfigError("bad config")),
-    )
-    assert runtime_runner.main(["--mode", "script", "--target", "app.py"]) == 120
+def test_run_exports_strict_env(monkeypatch):
+    captured: dict = {}
 
-    monkeypatch.setattr(
-        runtime_runner,
-        "install_runtime",
-        lambda: (_ for _ in ()).throw(
-            bootstrap.RuntimeStrictIntegrationError("strict fail")
-        ),
-    )
-    assert runtime_runner.main(["--mode", "script", "--target", "app.py"]) == 121
+    def fake_execle(path, *args):
+        captured["env"] = args[-1]
+        raise SystemExit(0)
 
-    monkeypatch.setattr(
-        runtime_runner,
-        "install_runtime",
-        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-    assert runtime_runner.main(["--mode", "script", "--target", "app.py"]) == 122
-    assert "wildedge:" in capsys.readouterr().err
+    monkeypatch.setattr(cli.os, "execle", fake_execle)
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/true")
 
+    with pytest.raises(SystemExit):
+        cli.main(["run", "--strict", "--", "true"])
+    assert captured["env"][constants.ENV_STRICT] == "1"
 
-def test_runner_prints_startup_report_when_enabled(monkeypatch, capsys):
-    class FakeContext:
-        debug = False
-        print_startup_report = True
-        integration_statuses = []
-
-        def shutdown(self):  # type: ignore[no-untyped-def]
-            return None
-
-    monkeypatch.setattr(runtime_runner, "install_runtime", lambda: FakeContext())
-    monkeypatch.setattr(runtime_runner, "format_startup_report", lambda _: "report")
-    monkeypatch.setattr(runtime_runner.runpy, "run_path", lambda *a, **k: None)
-
-    rc = runtime_runner.main(["--mode", "script", "--target", "app.py"])
-    assert rc == 0
-    assert "report" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(["run", "--", "true"])
+    assert captured["env"][constants.ENV_STRICT] == "0"
 
 
 def test_parse_run_args_without_double_dash():
@@ -472,3 +429,159 @@ def test_parse_run_args_only_double_dash_raises():
     """['--'] with nothing after raises ValueError."""
     with pytest.raises(ValueError, match="missing command"):
         cli.parse_run_args(["--"])
+
+
+def test_install_runtime_registers_default_client(monkeypatch):
+    from wildedge.defaults import peek_default_client
+
+    class FakeWildEdge:
+        SUPPORTED_INTEGRATIONS = {"onnx"}
+
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
+            pass
+
+        def instrument(self, name):  # type: ignore[no-untyped-def]
+            pass
+
+        def flush(self, timeout):  # type: ignore[no-untyped-def]
+            pass
+
+        def close(self):  # type: ignore[no-untyped-def]
+            pass
+
+    monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: object())
+
+    context = bootstrap.install_runtime()
+    try:
+        assert peek_default_client() is context.client
+    finally:
+        context.shutdown()
+
+
+def _doctor_env(monkeypatch):
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda path: (True, str(path)))
+
+
+def _fake_device(api_key, app_version, overrides=None):
+    from wildedge.platforms.device_info import DeviceInfo
+
+    return DeviceInfo(device_id="d", device_type="linux")
+
+
+def test_doctor_send_test_event_accepted(monkeypatch, capsys):
+    from wildedge.transmitter import IngestResponse
+
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(cli, "detect_device", _fake_device)
+    sent_batches: list[dict] = []
+
+    class FakeTransmitter:
+        def __init__(self, api_key, host):
+            assert api_key == "secret"
+
+        def send(self, batch):
+            sent_batches.append(batch)
+            return IngestResponse(
+                status="accepted", batch_id="b1", events_accepted=1, events_rejected=0
+            )
+
+    monkeypatch.setattr(cli, "Transmitter", FakeTransmitter)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "ingest: OK" in out
+    assert "connectivity: PASS" in out
+    batch = sent_batches[0]
+    assert batch["events"][0]["event_type"] == "span"
+    assert batch["events"][0]["span"]["name"] == "doctor"
+    assert batch["protocol_version"] == constants.PROTOCOL_VERSION
+
+
+def test_doctor_send_test_event_unauthorized_exits_2(monkeypatch, capsys):
+    from wildedge.transmitter import IngestResponse
+
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(cli, "detect_device", _fake_device)
+
+    class FakeTransmitter:
+        def __init__(self, api_key, host):
+            pass
+
+        def send(self, batch):
+            return IngestResponse(
+                status="unauthorized", batch_id="", events_accepted=0, events_rejected=1
+            )
+
+    monkeypatch.setattr(cli, "Transmitter", FakeTransmitter)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "ingest: FAIL" in out
+    assert "connectivity: FAIL" in out
+    assert "config: PASS" in out
+
+
+def test_doctor_send_test_event_network_error_exits_2(monkeypatch, capsys):
+    from wildedge.transmitter import TransmitError
+
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(cli, "detect_device", _fake_device)
+
+    class FakeTransmitter:
+        def __init__(self, api_key, host):
+            pass
+
+        def send(self, batch):
+            raise TransmitError("Network error: boom")
+
+    monkeypatch.setattr(cli, "Transmitter", FakeTransmitter)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+
+    assert rc == 2
+    assert "ingest: FAIL" in capsys.readouterr().out
+
+
+def test_doctor_network_check_failure_exits_2(monkeypatch):
+    _doctor_env(monkeypatch)
+    monkeypatch.setattr(
+        cli, "network_reachability_check", lambda host: (False, "unreachable")
+    )
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--network-check"])
+
+    assert rc == 2
+
+
+def test_doctor_config_failure_wins_over_connectivity(monkeypatch):
+    monkeypatch.delenv(constants.ENV_DSN, raising=False)
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(cli, "check_writable_dir", lambda path: (True, str(path)))
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--send-test-event"])
+
+    assert rc == 1
+
+
+def test_doctor_json_includes_environment_and_statuses(monkeypatch, capsys):
+    _doctor_env(monkeypatch)
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "openai")
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+
+    rc = cli.main(["doctor", "--integrations", "onnx", "--format", "json"])
+    data = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert data["environment"]["integrations"] == "openai"
+    assert data["environment"]["dsn_set"] is True
+    assert data["environment"]["autoload_on_pythonpath"] is False
+    assert data["config_status"] == "PASS"
+    assert data["connectivity_status"] == "SKIP"

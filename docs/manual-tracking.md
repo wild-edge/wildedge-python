@@ -5,9 +5,46 @@ Use manual tracking when your framework is not covered by a WildEdge integration
 ## When to use it
 
 - Your model class is custom (e.g. a `torch.nn.Module` subclass not loaded via `timm` or `transformers`)
-- You are calling a remote API not yet covered by an integration
+- You are calling a remote API not yet covered by an integration (for LLM
+  APIs called over raw HTTP, [`wildedge.llm_api()`](llm_api.md) is the shortcut)
 - You want to attach input/output metadata (token counts, image dimensions, confidence scores, etc.)
 - You want to record user feedback tied to a specific inference
+
+## The default client
+
+Every process has at most one default client, and the module-level API
+delegates to it. You rarely need to hold a client instance yourself:
+
+```python
+import wildedge
+
+with wildedge.trace(run_id="run-123"):
+    with wildedge.span(kind="agent_step", name="plan", step_index=1):
+        ...
+```
+
+The default client comes from wherever initialization happened first:
+
+- `wildedge run` installs one before your code loads. A later
+  `wildedge.init()` without `dsn` reuses it, so the same code works with or
+  without the CLI wrapper.
+- `wildedge.init(...)` creates one (or reuses the existing default) and
+  registers it.
+- Any module-level call (`wildedge.span`, `wildedge.register_model`, ...)
+  creates one lazily from the environment: `WILDEDGE_DSN` for the endpoint
+  (without it the client is a no-op), plus `WILDEDGE_INTEGRATIONS` and
+  `WILDEDGE_HUBS` for auto-instrumentation. Unset means nothing is patched.
+
+`wildedge.get_client()` returns the default client when you need direct
+access; `wildedge.set_default_client()` overrides it (useful in tests).
+`wildedge.trace` is the exception to the delegation rule: a trace only sets
+correlation contextvars and emits nothing, so it never touches or creates a
+client.
+
+Auto-instrumentation patches at creation time, so ordering matters: the CLI
+patches before any user code runs, an early `init()` covers everything created
+after it, and a lazily created client only covers what is created after the
+first module-level call. When in doubt, call `init()` at application startup.
 
 ## torch and keras
 
@@ -44,11 +81,12 @@ For remote APIs with no local object to inspect, pass a placeholder:
 
 ```python
 handle = client.register_model(
-    object(),
+    None,
     model_id="openai/gpt-4o",
-    source="https://api.openai.com",
+    source="openai",
     family="gpt-4o",
     version="2024-08-06",
+    model_format="api",
 )
 ```
 
@@ -294,6 +332,30 @@ with client.trace(run_id="run-123", agent_id="agent-1"):
         with Timer() as t:
             result = my_model(prompt)
         handle.track_inference(duration_ms=t.elapsed_ms, input_modality="text", output_modality="generation")
+```
+
+Both are also available module-level on the default client, so this is
+equivalent without holding a client:
+
+```python
+with wildedge.trace(run_id="run-123", agent_id="agent-1"):
+    with wildedge.span(kind="agent_step", name="plan", step_index=1):
+        ...
+```
+
+### Recording results on an open span
+
+The span object is mutable until the block exits; set outcomes you only know
+mid-block directly on it. `set_attributes()` merges into the span's
+attributes, `fail()` marks it failed with an optional summary, and an
+exception escaping the block sets `status="error"` automatically:
+
+```python
+with wildedge.span(kind="eval", name="lint") as span:
+    errors = lint(result)
+    span.set_attributes(lint_errors=len(errors))
+    if errors:
+        span.fail(f"{len(errors)} lint errors")
 ```
 
 If you need to set correlation fields without emitting a span event, use the

@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from wildedge.client import WildEdge
+from wildedge.defaults import peek_default_client, set_default_client
 from wildedge.logging import logger
 
 
@@ -22,11 +23,26 @@ def init(
     **kwargs: Any,
 ) -> WildEdge:
     """
-    Convenience initializer: construct a WildEdge client and instrument integrations.
+    Initialize the process default client and instrument integrations.
 
-    Additional keyword arguments are forwarded to WildEdge(...).
+    When a default client already exists (typically installed by ``wildedge
+    run`` before user code loaded) and no ``dsn`` is passed, that client is
+    reused: the requested integrations are applied to it (instrumenting is
+    idempotent per process) and it is returned. Passing ``dsn`` always
+    constructs a fresh client and makes it the new default.
+
+    Additional keyword arguments are forwarded to WildEdge(...) when a new
+    client is constructed.
     """
-    client = WildEdge(**kwargs)
+    client = None if "dsn" in kwargs else peek_default_client()
+    if client is not None and kwargs:
+        logger.warning(
+            "wildedge: init() reusing the existing default client; ignoring %s",
+            ", ".join(sorted(kwargs)),
+        )
+    if client is None:
+        client = WildEdge(**kwargs)
+
     normalized_integrations = _normalize_list(integrations)
     normalized_hubs = _normalize_list(hubs)
 
@@ -38,4 +54,5 @@ def init(
     elif getattr(client, "debug", False):
         logger.debug("wildedge: init called without integrations or hubs")
 
+    set_default_client(client)
     return client

@@ -47,11 +47,19 @@ jobs:
           OUTPUT: /tmp/release-notes.md
         run: python3 scripts/build_changelog_comment.py
 
+      - name: Build llms.txt artifacts
+        if: github.ref_type == 'tag'
+        env:
+          OUTPUT_DIR: llms-dist
+        run: python3 scripts/build_llms_txt.py
+
       - name: Create GitHub release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*
+            llms-dist/*
           body_path: /tmp/release-notes.md
 
       - name: Publish package to PyPI

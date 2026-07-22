@@ -14,6 +14,7 @@ from importlib import metadata
 from wildedge import constants
 from wildedge.client import WildEdge
 from wildedge.constants import ENV_DSN, WILDEDGE_AUTOLOAD
+from wildedge.defaults import set_default_client
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.settings import read_runtime_env
@@ -27,6 +28,11 @@ STATUS_SKIP_MISSING_DEP = "SKIP_MISSING_DEP"
 STATUS_ERROR_PATCH_FAILED = "ERROR_PATCH_FAILED"
 STRICT_FAILURE_STATUSES = {STATUS_SKIP_MISSING_DEP, STATUS_ERROR_PATCH_FAILED}
 
+# Exit codes used when strict mode turns a bootstrap failure fatal.
+EXIT_CONFIG_ERROR = 120
+EXIT_STRICT_INTEGRATION_ERROR = 121
+EXIT_BOOTSTRAP_INTERNAL_ERROR = 122
+
 
 def clear_runtime_env() -> None:
     """Remove run-scoped env vars so nested processes do not inherit runtime config."""
@@ -38,6 +44,7 @@ def clear_runtime_env() -> None:
         constants.ENV_INTEGRATIONS,
         constants.ENV_HUBS,
         constants.ENV_STRICT_INTEGRATIONS,
+        constants.ENV_STRICT,
         constants.ENV_PROPAGATE,
         constants.ENV_PRINT_STARTUP_REPORT,
         constants.ENV_SAMPLING_INTERVAL,
@@ -115,6 +122,7 @@ def install_runtime(*, install_signal_handlers: bool = True) -> RuntimeContext:
         debug=env.debug,
         sampling_interval_s=env.sampling_interval_s,
     )
+    set_default_client(client)
     statuses: list[dict[str, str]] = []
 
     for integration in env.integrations:

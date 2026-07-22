@@ -18,7 +18,7 @@ import anthropic
 
 import wildedge
 
-client = wildedge.init(
+wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
     integrations="anthropic",
 )
@@ -44,5 +44,5 @@ for prompt in prompts:
             print(event.delta.text, end="", flush=True)
     print("\n")
 
-client.flush()
+wildedge.flush()
 print("Done. Events flushed to WildEdge.")
