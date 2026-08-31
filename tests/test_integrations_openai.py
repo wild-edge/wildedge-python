@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import types
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 import wildedge.integrations.openai as openai_mod
-from wildedge.integrations.common import AsyncStreamWrapper, SyncStreamWrapper
+from wildedge.integrations.common import (
+    SOURCE_BY_HOSTNAME,
+    SOURCE_BY_HOSTNAME_SUFFIX,
+    AsyncStreamWrapper,
+    SyncStreamWrapper,
+)
 from wildedge.integrations.openai import (
     OpenAIExtractor,
     build_api_meta,
@@ -201,6 +207,45 @@ def make_fake_client(closed=False):
 )
 def test_source_from_base_url(url, expected):
     assert source_from_base_url(url) == expected
+
+
+# ---------------------------------------------------------------------------
+# docs/providers.md must not drift from the mapping in common.py
+# ---------------------------------------------------------------------------
+
+PROVIDERS_DOC = Path(__file__).parent.parent / "docs" / "providers.md"
+
+
+def _documented_providers() -> list[tuple[str, str]]:
+    """(base_url, model_source) pairs from the doc's provider table."""
+    rows: list[tuple[str, str]] = []
+    in_table = False
+    for line in PROVIDERS_DOC.read_text().splitlines():
+        if line.startswith("## "):
+            in_table = line.startswith("## Recognized providers")
+            continue
+        if not in_table or not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) != 3 or cells[0] in ("Provider", "---"):
+            continue
+        rows.append((cells[1].strip("`"), cells[2].strip("`")))
+    return rows
+
+
+def test_providers_doc_urls_resolve_as_documented():
+    rows = _documented_providers()
+    assert rows, f"no provider rows parsed from {PROVIDERS_DOC}"
+    for base_url, expected in rows:
+        assert source_from_base_url(base_url) == expected, base_url
+
+
+def test_providers_doc_covers_every_known_source():
+    documented = {source for _, source in _documented_providers()}
+    known = set(SOURCE_BY_HOSTNAME.values()) | {
+        source for _, source in SOURCE_BY_HOSTNAME_SUFFIX
+    }
+    assert documented == known
 
 
 # ---------------------------------------------------------------------------
