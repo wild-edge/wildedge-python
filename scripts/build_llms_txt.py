@@ -23,6 +23,7 @@ SOURCES: list[tuple[str, str, str]] = [
     ("docs/deployment.md", "deployment", "Deployment"),
     ("docs/manual-tracking.md", "manual-tracking", "Manual tracking"),
     ("docs/llm_api.md", "llm_api", "LLM API tracking"),
+    ("docs/providers.md", "providers", "Providers"),
     ("docs/compatibility.md", "compatibility", "Compatibility matrix"),
 ]
 
