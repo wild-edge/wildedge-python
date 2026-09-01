@@ -5,6 +5,23 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+## 0.2.1 - 2026-09-01
+
+### Added
+
+- `docs/providers.md`: the full table of recognized LLM API providers, the
+  `model_source` each base URL resolves to, and how unrecognized/self-hosted
+  hosts are named. Shipped in the release `llms.txt` / `llms-full.txt` assets.
+- A test that keeps `docs/providers.md` in sync with the provider mapping in
+  `wildedge.integrations.common`: every documented base URL must resolve to the
+  documented source, and every known source must be documented.
+
+### Changed
+
+- README quickstart shows a mixed local + remote pipeline and points at the new
+  provider docs; OpenAI-compatible hosts are documented as working through the
+  `openai` integration via `base_url`. Dropped the stale pre-release notice.
+
 ## 0.2.0 - 2026-07-14
 
 ### Added
