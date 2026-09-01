@@ -11,15 +11,15 @@
 [![Tested on Windows](https://img.shields.io/badge/tested%20on-windows-blue)](https://github.com/wild-edge/wildedge-python/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/wild-edge/wildedge-python/branch/main/graph/badge.svg)](https://codecov.io/gh/wild-edge/wildedge-python)
 
-On-device ML inference monitoring for Python. Tracks latency, errors, and model metadata without any code modifications.
-
-> **Pre-release:** The API is unstable and may change between versions. Semantic versioning will apply from the first stable release.
+ML inference monitoring for Python: on-device and remote models. Tracks latency, tokens, errors, and model metadata with no code changes, plus traces for agent pipelines.
 
 ## Install
 
 ```bash
 uv add wildedge-sdk
 ```
+
+Without a DSN everything is a silent no-op, so dev and CI need no configuration.
 
 ## CLI
 
@@ -52,26 +52,32 @@ Useful flags:
 
 ## SDK
 
+Use the SDK when you can't wrap the process, or when you want traces and spans
+around your own code. `wildedge run` covers everything else.
+
 ```python
 import wildedge
+from openai import OpenAI
+from transformers import pipeline
 
-wildedge.init(integrations=["transformers"])  # optional under `wildedge run`
+wildedge.init(integrations=["transformers", "openai"])  # optional under `wildedge run`
 
-# models loaded after this point are tracked automatically; add traces,
-# spans and LLM API calls anywhere, no client instance to pass around:
+local = pipeline("text-generation", model="HuggingFaceTB/SmolLM2-360M-Instruct")
+remote = OpenAI()
+
 with wildedge.trace(run_id="run-1"):
-    with wildedge.span(kind="agent_step", name="plan"):
-        ...
-
-with wildedge.llm_api(model="openai/gpt-4o-mini", provider="openrouter") as call:
-    call.response(data)  # LLM calls made with plain HTTP clients
+    with wildedge.span(kind="agent_step", name="draft"):
+        draft = local(prompt)[0]["generated_text"]
+    with wildedge.span(kind="agent_step", name="refine"):
+        remote.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": draft}],
+        )
 ```
 
-One client per process: `wildedge run`, `init()`, and the module-level calls
-all share it, and `init()` without `dsn` reuses whatever already exists.
-Without a DSN everything is a silent no-op, so dev and CI need no
-configuration. See [Deployment](https://github.com/wild-edge/wildedge-python/blob/main/docs/deployment.md)
-for the full contract.
+See [Deployment](https://github.com/wild-edge/wildedge-python/blob/main/docs/deployment.md)
+for client lifecycle and the full contract.
+
 ## Supported integrations
 
 **On-device**
@@ -95,8 +101,15 @@ for the full contract.
 | `anthropic` | [anthropic_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/anthropic_example.py) |
 | `openai` | [openai_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/openai_example.py) |
 
-Calling an LLM API with a plain HTTP client instead of these libraries? Use
-[`wildedge.llm_api()`](https://github.com/wild-edge/wildedge-python/blob/main/docs/llm_api.md):
+Fireworks, Together, Baseten, xAI, Mistral, Groq and other OpenAI-compatible hosts
+work through the `openai` integration — pass their `base_url`. See
+[Providers](https://github.com/wild-edge/wildedge-python/blob/main/docs/providers.md)
+for every recognized endpoint.
+
+Using httpx, requests or urllib directly instead of the `openai` / `anthropic`
+client libraries? Wrap the call in
+[`wildedge.llm_api()`](https://github.com/wild-edge/wildedge-python/blob/main/docs/llm_api.md)
+to get the same events:
 [llm_api_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/llm_api_example.py).
 
 **Hub tracking**
