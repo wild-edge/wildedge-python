@@ -82,7 +82,7 @@ def build(output_dir: Path, base_url: str) -> None:
         "",
         f"> {stamp}",
         "",
-        "On-device ML inference monitoring for Python.",
+        "ML inference monitoring for Python: on-device and remote models.",
         "",
         "## Docs",
         "",

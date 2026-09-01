@@ -8,12 +8,15 @@ import re
 import subprocess
 from pathlib import Path
 
-import tomllib
-
 
 def get_version() -> str:
-    data = tomllib.loads(Path("pyproject.toml").read_text())
-    return data["project"]["version"]
+    # Regex instead of tomllib so the script also runs on Python 3.10.
+    match = re.search(
+        r'^version = "([^"]+)"', Path("pyproject.toml").read_text(), re.MULTILINE
+    )
+    if match is None:
+        raise SystemExit("could not find project version in pyproject.toml")
+    return match.group(1)
 
 
 RELEASE_COMMIT_RE = re.compile(r"^Release \d+\.\d+\.\d+$")
