@@ -31,6 +31,12 @@ under Unreleased and move into a version section at release time.
   failures that are neither a provider response, a timeout nor a connection
   failure.
 
+### Fixed
+
+- Models tracked by the anthropic integration register with `model_format`
+  `"api"`, like the openai integration. The Anthropic extractor was never in
+  the client's extractor list, so they were registered as `"unknown"`.
+
 ## 0.2.1 - 2026-09-01
 
 ### Added
