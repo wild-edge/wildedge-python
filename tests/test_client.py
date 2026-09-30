@@ -229,3 +229,23 @@ def test_register_model_format_defaults_to_unknown():
 
     info = client.registry.register.call_args[0][1]
     assert info.model_format == "unknown"
+
+
+@pytest.mark.parametrize(
+    "class_name, source",
+    [("Messages", "anthropic"), ("Completions", "openrouter")],
+)
+def test_register_model_api_integrations_use_their_extractor(class_name, source):
+    """The anthropic and openai integrations register the patched resource object."""
+    from wildedge.client import WildEdge
+
+    client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
+    client.registry.register.return_value = (object(), True)
+    resource = type(class_name, (), {})()
+
+    client.register_model(resource, model_id="provider/model", source=source)
+
+    info = client.registry.register.call_args[0][1]
+    assert info.model_name == "provider/model"
+    assert info.model_source == source
+    assert info.model_format == "api"
