@@ -318,6 +318,9 @@ class ModelHandle:
         error_message: str | None = None,
         stack_trace_hash: str | None = None,
         related_event_id: str | None = None,
+        http_status: int | None = None,
+        provider_error_code: str | None = None,
+        duration_ms: int | None = None,
         trace_id: str | None = None,
         span_id: str | None = None,
         parent_span_id: str | None = None,
@@ -343,6 +346,9 @@ class ModelHandle:
             error_message=error_message,
             stack_trace_hash=stack_trace_hash,
             related_event_id=related_event_id,
+            http_status=http_status,
+            provider_error_code=provider_error_code,
+            duration_ms=duration_ms,
             **correlation,
         )
         self.publish(event.to_dict())

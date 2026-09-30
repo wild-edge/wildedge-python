@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from wildedge import constants
+from wildedge.events.error import ErrorCode
 from wildedge.events.inference import TextInputMeta
 from wildedge.logging import logger
 from wildedge.timing import elapsed_ms
@@ -59,6 +60,80 @@ def source_from_base_url(base_url: str | None) -> str:
         if hostname.endswith(suffix):
             return source
     return hostname
+
+
+def http_status_of(exc: BaseException) -> int | None:
+    """HTTP error status carried by an API client exception, if any.
+
+    openai and anthropic set ``status_code`` on the exception; httpx and
+    requests put it on ``exc.response``. A status below 400 is ignored: an
+    error sent mid-stream arrives on a 200 response, which says nothing
+    about the failure.
+    """
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status if isinstance(status, int) and status >= 400 else None
+
+
+def provider_error_code_of(exc: BaseException) -> str | None:
+    """Error code or type from the provider's error body, such as ``insufficient_quota``.
+
+    openai sets ``exc.code`` and keeps the error object as ``exc.body``;
+    anthropic has no ``code`` and wraps it, as in
+    ``{"type": "error", "error": {"type": "overloaded_error"}}``.
+    OpenRouter sends an HTTP-like int as the code.
+    """
+    body = getattr(exc, "body", None)
+    error = body.get("error", body) if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        error = {}
+    code = getattr(exc, "code", None) or error.get("code") or error.get("type")
+    if code is None:
+        return None
+    return str(code)[: constants.PROVIDER_ERROR_CODE_MAX_LEN]
+
+
+def no_response_error_code(exc: BaseException) -> ErrorCode | None:
+    """Timeout or connection failure, recognised by exception class name.
+
+    Covers the openai, anthropic, httpx and requests clients without
+    importing them.
+    """
+    names = [cls.__name__ for cls in type(exc).__mro__]
+    # Timeout first: openai's APITimeoutError subclasses APIConnectionError.
+    if any("Timeout" in name for name in names):
+        return ErrorCode.INFERENCE_TIMEOUT
+    if any("Connect" in name for name in names):
+        return ErrorCode.CONNECTION_ERROR
+    return None
+
+
+def track_api_error(
+    handle: ModelHandle,
+    exc: BaseException,
+    duration_ms: int,
+    fallback_code: str | ErrorCode = ErrorCode.UNKNOWN,
+) -> None:
+    """Record a failed model API call, which took ``duration_ms``, as an error event.
+
+    When the provider responded, the event carries its HTTP status and error
+    code with ``UNKNOWN``, and the server derives the error code from them.
+    Otherwise the SDK classifies the failure, or sends ``fallback_code``.
+    """
+    http_status = http_status_of(exc)
+    provider_error_code = provider_error_code_of(exc)
+    if http_status is not None or provider_error_code is not None:
+        error_code = ErrorCode.UNKNOWN
+    else:
+        error_code = no_response_error_code(exc) or fallback_code
+    handle.track_error(
+        error_code=error_code,
+        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+        http_status=http_status,
+        provider_error_code=provider_error_code,
+        duration_ms=duration_ms,
+    )
 
 
 def _msg_role(m) -> str | None:
@@ -228,10 +303,7 @@ class SyncStreamWrapper:
                     self._on_chunk(chunk)
                 yield chunk
         except Exception as exc:
-            self._handle.track_error(
-                error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-            )
+            track_api_error(self._handle, exc, elapsed_ms(self._t0))
             raise
         else:
             self._on_done(elapsed_ms(self._t0), ttft_ms)
@@ -280,10 +352,7 @@ class AsyncStreamWrapper:
                     self._on_chunk(chunk)
                 yield chunk
         except Exception as exc:
-            self._handle.track_error(
-                error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-            )
+            track_api_error(self._handle, exc, elapsed_ms(self._t0))
             raise
         else:
             self._on_done(elapsed_ms(self._t0), ttft_ms)

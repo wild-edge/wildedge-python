@@ -116,6 +116,7 @@ DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     OnnxExtractor(),
     GgufExtractor(),
     OpenAIExtractor(),
+    AnthropicExtractor(),
     UltralyticsExtractor(),
     TransformersExtractor(),
     MlxExtractor(),

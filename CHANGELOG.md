@@ -5,6 +5,42 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+## 0.2.2 - 2026-09-30
+
+### Added
+
+- Error events carry `http_status` and `provider_error_code` for failed remote
+  model API calls, and `track_error()` accepts both. The provider code comes
+  from the provider's error body: OpenAI's code or type, Anthropic's error type
+  (`overloaded_error`), or OpenRouter's numeric code. Wild Edge derives the
+  error code (`AUTH_FAILED`, `QUOTA_EXCEEDED`, `RATE_LIMITED`, `BAD_REQUEST`,
+  `PROVIDER_ERROR`) from them; this needs a server with that support.
+- Error events from failed API calls carry `duration_ms`, the time until the
+  call failed, so a rejected key and a 30 s timeout can be told apart;
+  `track_error()` accepts it.
+- `ErrorCode.CONNECTION_ERROR`.
+
+### Changed
+
+- The openai and anthropic integrations no longer record every failed call as
+  `UNKNOWN`. When the provider responded, the event is `UNKNOWN` with
+  `http_status` and `provider_error_code` for the server to classify, including
+  errors raised mid-stream. Timeouts are `INFERENCE_TIMEOUT` and connection
+  failures `CONNECTION_ERROR`.
+- `wildedge.llm_api()` follows the same rules. It previously used the exception
+  class name as the error code for every failure (for example
+  `HTTPStatusError` or `ReadTimeout`); the class name is now used only for
+  failures that are neither a provider response, a timeout nor a connection
+  failure.
+
+### Fixed
+
+- Models tracked by the anthropic integration register with `model_format`
+  `"api"`, like the openai integration. The Anthropic extractor was never in
+  the client's extractor list, so they were registered as `"unknown"`.
+  Machines that already tracked these models keep the saved `"unknown"` until
+  the SDK's model registry file is deleted.
+
 ## 0.2.1 - 2026-09-01
 
 ### Added

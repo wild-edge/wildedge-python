@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from wildedge.events.common import add_optional_fields
+
 
 class ErrorCode(str, Enum):
     OOM = "OOM"
@@ -13,6 +15,7 @@ class ErrorCode(str, Enum):
     INFERENCE_TIMEOUT = "INFERENCE_TIMEOUT"
     UNSUPPORTED_OP = "UNSUPPORTED_OP"
     THERMAL_SHUTDOWN = "THERMAL_SHUTDOWN"
+    CONNECTION_ERROR = "CONNECTION_ERROR"
     UNKNOWN = "UNKNOWN"
 
 
@@ -23,6 +26,9 @@ class ErrorEvent:
     error_message: str | None = None
     stack_trace_hash: str | None = None
     related_event_id: str | None = None
+    http_status: int | None = None
+    provider_error_code: str | None = None
+    duration_ms: int | None = None
     trace_id: str | None = None
     span_id: str | None = None
     parent_span_id: str | None = None
@@ -40,14 +46,17 @@ class ErrorEvent:
             if isinstance(self.error_code, ErrorCode)
             else self.error_code
         )
-        error_data: dict[str, Any] = {"error_code": code}
-        if self.error_message is not None:
-            error_data["error_message"] = self.error_message
-        if self.stack_trace_hash is not None:
-            error_data["stack_trace_hash"] = self.stack_trace_hash
-        if self.related_event_id is not None:
-            error_data["related_event_id"] = self.related_event_id
-
+        error_data = add_optional_fields(
+            {"error_code": code},
+            {
+                "error_message": self.error_message,
+                "stack_trace_hash": self.stack_trace_hash,
+                "related_event_id": self.related_event_id,
+                "http_status": self.http_status,
+                "provider_error_code": self.provider_error_code,
+                "duration_ms": self.duration_ms,
+            },
+        )
         event = {
             "event_id": self.event_id,
             "event_type": "error",
@@ -55,8 +64,6 @@ class ErrorEvent:
             "model_id": self.model_id,
             "error": error_data,
         }
-        from wildedge.events.common import add_optional_fields
-
         add_optional_fields(
             event,
             {

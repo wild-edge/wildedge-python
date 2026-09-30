@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import wildedge.integrations.openai as openai_mod
+from wildedge.events.error import ErrorCode
 from wildedge.integrations.common import (
     SOURCE_BY_HOSTNAME,
     SOURCE_BY_HOSTNAME_SUFFIX,
@@ -478,6 +479,28 @@ class TestWrapSyncCompletions:
 
         client.handles["gpt-4o"].track_error.assert_called_once()
         client.handles["gpt-4o"].track_inference.assert_not_called()
+
+    def test_sends_http_status_for_server_to_classify(self):
+        class AuthenticationError(Exception):
+            status_code = 401
+            code = 401
+
+        class ErrorCompletions:
+            def create(self, *args, **kwargs):
+                raise AuthenticationError("Error code: 401 - User not found.")
+
+        client = make_fake_client()
+        completions = ErrorCompletions()
+        wrap_sync_completions(completions, "openrouter", lambda: client)
+
+        with pytest.raises(AuthenticationError):
+            completions.create(model="gpt-4o", messages=[])
+
+        kwargs = client.handles["gpt-4o"].track_error.call_args.kwargs
+        assert kwargs["error_code"] == ErrorCode.UNKNOWN
+        assert kwargs["http_status"] == 401
+        assert kwargs["provider_error_code"] == "401"
+        assert isinstance(kwargs["duration_ms"], int)
 
     def test_streaming_returns_sync_stream_wrapper(self):
         chunks = [make_stream_chunk("hi", None), make_stream_chunk(None, "stop")]

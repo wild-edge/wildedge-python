@@ -6,14 +6,18 @@ import logging
 
 import pytest
 
+from wildedge.events.error import ErrorCode
 from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
+    http_status_of,
     image_brightness_histogram,
     infer_input_modality_from_layer_types,
     infer_input_modality_from_names,
     infer_input_modality_from_shape,
+    no_response_error_code,
     num_classes_from_output_shape,
+    provider_error_code_of,
 )
 
 # ---------------------------------------------------------------------------
@@ -217,3 +221,112 @@ def test_infer_input_modality_from_layer_types(layer_types, expected):
 )
 def test_num_classes_from_output_shape(shape, expected):
     assert num_classes_from_output_shape(shape) == expected
+
+
+# ---------------------------------------------------------------------------
+# no_response_error_code / http_status_of
+# ---------------------------------------------------------------------------
+
+
+class APIStatusError(Exception):
+    """Shaped like openai.APIStatusError and anthropic.APIStatusError."""
+
+    def __init__(
+        self,
+        status_code: int,
+        code: str | int | None = None,
+        body: object | None = None,
+    ) -> None:
+        super().__init__(f"Error code: {status_code}")
+        self.status_code = status_code
+        self.code = code
+        self.body = body
+
+
+class OpenAIStreamError(Exception):
+    """Shaped like the openai.APIError raised for an error event mid-stream."""
+
+    def __init__(self, body: dict) -> None:
+        super().__init__(body.get("message"))
+        self.body = body
+        self.code = str(body["code"]) if body.get("code") is not None else None
+
+
+class FakeResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
+class HTTPStatusError(Exception):
+    """Shaped like httpx.HTTPStatusError and requests.HTTPError."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__("HTTP error")
+        self.response = FakeResponse(status_code)
+
+
+class APIConnectionError(Exception):
+    pass
+
+
+class APITimeoutError(APIConnectionError):
+    pass
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (APITimeoutError(), ErrorCode.INFERENCE_TIMEOUT),
+        (TimeoutError(), ErrorCode.INFERENCE_TIMEOUT),
+        (APIConnectionError(), ErrorCode.CONNECTION_ERROR),
+        (ConnectionRefusedError(), ErrorCode.CONNECTION_ERROR),
+        (ValueError("bad payload"), None),
+    ],
+)
+def test_no_response_error_code(exc, expected):
+    assert no_response_error_code(exc) == expected
+
+
+def test_http_status_of():
+    assert http_status_of(APIStatusError(401)) == 401
+    assert http_status_of(HTTPStatusError(502)) == 502
+    assert http_status_of(APIConnectionError()) is None
+    # anthropic raises mid-stream errors with the stream's 200 response.
+    assert http_status_of(APIStatusError(200)) is None
+
+
+def test_provider_error_code_of():
+    assert provider_error_code_of(APIStatusError(429, "insufficient_quota")) == (
+        "insufficient_quota"
+    )
+    # OpenRouter puts the HTTP status in the body's code.
+    assert provider_error_code_of(APIStatusError(401, code=401)) == "401"
+    assert provider_error_code_of(APIStatusError(500)) is None
+    assert provider_error_code_of(APIStatusError(400, code="x" * 100)) == "x" * 64
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        # anthropic, at request time and mid-stream: type in the wrapped body.
+        (
+            APIStatusError(
+                529, body={"type": "error", "error": {"type": "overloaded_error"}}
+            ),
+            "overloaded_error",
+        ),
+        (
+            APIStatusError(
+                200, body={"type": "error", "error": {"type": "overloaded_error"}}
+            ),
+            "overloaded_error",
+        ),
+        # openai mid-stream: code when set, otherwise type.
+        (OpenAIStreamError({"code": None, "type": "server_error"}), "server_error"),
+        # OpenRouter mid-stream: HTTP-like code.
+        (OpenAIStreamError({"code": 502, "message": "Provider error"}), "502"),
+    ],
+)
+def test_provider_error_code_of_body(exc, expected):
+    assert provider_error_code_of(exc) == expected
+    assert http_status_of(exc) is None or http_status_of(exc) >= 400
