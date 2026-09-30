@@ -405,17 +405,22 @@ class ModelRegistry:
         capture_attachments: Callable[[list[Attachment], str, datetime], list[dict]]
         | None = None,
     ) -> tuple[ModelHandle, bool]:
-        """Return (handle, is_new). is_new=False means already registered; skip install_hooks."""
+        """Return (handle, is_new). is_new=False means already registered; skip install_hooks.
+
+        The first registration in a process sets the model's info, replacing any
+        info persisted by an earlier process; the file only covers models that
+        queued events still reference but that are not registered again.
+        """
         if model_id in self.handles:
             return self.handles[model_id], False
 
-        if model_id not in self.models:
+        if self.models.get(model_id) != info:
             self.models[model_id] = info
             self.save_to_disk()
 
         handle = ModelHandle(
             model_id=model_id,
-            info=self.models[model_id],
+            info=info,
             publish=publish,
             capture_attachments=capture_attachments,
         )
