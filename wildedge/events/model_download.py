@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from wildedge.events.common import add_optional_fields
+
 
 @dataclass
 class AdapterDownload:
@@ -98,8 +100,6 @@ class ModelDownloadEvent:
             "model_id": self.model_id,
             "download": download_data,
         }
-        from wildedge.events.common import add_optional_fields
-
         add_optional_fields(
             event,
             {
