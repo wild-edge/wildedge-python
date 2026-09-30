@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from wildedge.events.common import add_optional_fields
+
 
 class FeedbackType(str, Enum):
     ACCEPT = "accept"
@@ -57,8 +59,6 @@ class FeedbackEvent:
             "model_id": self.model_id,
             "feedback": feedback_data,
         }
-        from wildedge.events.common import add_optional_fields
-
         add_optional_fields(
             event,
             {
