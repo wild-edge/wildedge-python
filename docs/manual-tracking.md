@@ -233,6 +233,8 @@ except Exception as exc:
 
 `wildedge.track` (decorator and context manager) captures errors automatically when `capture_errors=True` (the default).
 
+For failed calls to a remote model API, pass `http_status` and, if the provider returned one, `provider_error_code` with `error_code="UNKNOWN"`; Wild Edge derives the error code from them. The openai and anthropic integrations do this automatically, and report timeouts and connection failures as `INFERENCE_TIMEOUT` and `CONNECTION_ERROR`.
+
 ## Track feedback
 
 Link user or automated feedback to a specific inference via the `inference_id` returned by `track_inference`:

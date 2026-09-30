@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import wildedge.integrations.anthropic as anthropic_mod
+from wildedge.events.error import ErrorCode
 from wildedge.integrations.anthropic import (
     AnthropicExtractor,
     build_api_meta,
@@ -390,6 +391,33 @@ class TestWrapSyncMessages:
         wrap_sync_messages(messages, lambda: client)
         result = messages.create(model="claude-opus-4-6", messages=[], stream=True)
         assert isinstance(result, SyncStreamWrapper)
+
+    def test_streaming_mid_stream_error_sends_provider_code(self):
+        class APIStatusError(Exception):
+            status_code = 200
+            body = {"type": "error", "error": {"type": "overloaded_error"}}
+
+        def failing_stream():
+            yield make_content_block_delta_event("hi")
+            raise APIStatusError("Overloaded")
+
+        class Messages:
+            def create(self, *args, **kwargs):
+                return failing_stream()
+
+        client = make_fake_client()
+        messages = Messages()
+        wrap_sync_messages(messages, lambda: client)
+        stream = messages.create(model="claude-opus-4-6", messages=[], stream=True)
+
+        with pytest.raises(APIStatusError):
+            list(stream)
+
+        kwargs = client.handles["claude-opus-4-6"].track_error.call_args.kwargs
+        assert kwargs["error_code"] == ErrorCode.UNKNOWN
+        assert kwargs["http_status"] is None
+        assert kwargs["provider_error_code"] == "overloaded_error"
+        assert isinstance(kwargs["duration_ms"], int)
 
     def test_streaming_records_inference_on_exhaustion(self):
         events = [

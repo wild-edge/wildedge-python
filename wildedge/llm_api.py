@@ -22,9 +22,12 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from wildedge import constants
 from wildedge.events.inference import ApiMeta, GenerationOutputMeta, TextInputMeta
-from wildedge.integrations.common import build_input_meta, source_from_base_url
+from wildedge.integrations.common import (
+    build_input_meta,
+    source_from_base_url,
+    track_api_error,
+)
 from wildedge.logging import logger
 from wildedge.timing import elapsed_ms
 
@@ -53,8 +56,10 @@ class LLMCall:
 
     Fields may be set directly (``call.stop_reason = ...``, ``call.success =
     False``) or through :meth:`usage` / :meth:`response` before the block
-    exits. An exception escaping the block records an error event instead,
-    with the exception class as the error code.
+    exits. An exception escaping the block records an error event instead.
+    When the provider responded, its HTTP status and error code are sent for
+    the server to classify; a timeout or connection failure is classified
+    here; anything else uses the exception class as the error code.
     """
 
     def __init__(
@@ -152,9 +157,8 @@ class LLMCall:
         if handle is None:
             return False
         if exc_type is not None:
-            handle.track_error(
-                error_code=exc_type.__name__,
-                error_message=str(exc_val)[: constants.ERROR_MSG_MAX_LEN],
+            track_api_error(
+                handle, exc_val, duration_ms, fallback_code=exc_type.__name__
             )
             return False
         handle.track_inference(

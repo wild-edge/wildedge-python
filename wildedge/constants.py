@@ -54,6 +54,7 @@ IDLE_POLL_INTERVAL = 5.0
 
 # Error message truncation
 ERROR_MSG_MAX_LEN = 200
+PROVIDER_ERROR_CODE_MAX_LEN = 64
 
 # Device ID persistence
 DEVICE_ID_DIR = "wildedge"
