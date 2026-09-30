@@ -63,26 +63,37 @@ def source_from_base_url(base_url: str | None) -> str:
 
 
 def http_status_of(exc: BaseException) -> int | None:
-    """HTTP status carried by an API client exception, if any.
+    """HTTP error status carried by an API client exception, if any.
 
     openai and anthropic set ``status_code`` on the exception; httpx and
-    requests put it on ``exc.response``.
+    requests put it on ``exc.response``. A status below 400 is ignored: an
+    error sent mid-stream arrives on a 200 response, which says nothing
+    about the failure.
     """
     status = getattr(exc, "status_code", None)
     if status is None:
         status = getattr(getattr(exc, "response", None), "status_code", None)
-    return status if isinstance(status, int) else None
+    return status if isinstance(status, int) and status >= 400 else None
 
 
 def provider_error_code_of(exc: BaseException) -> str | None:
-    """Error code from the provider's response body, such as ``insufficient_quota``.
+    """Error code or type from the provider's error body, such as ``insufficient_quota``.
 
-    openai and anthropic expose it as ``exc.code``; OpenRouter sends an int.
+    openai sets ``exc.code`` and keeps the error object as ``exc.body``;
+    anthropic has no ``code`` and wraps it, as in
+    ``{"type": "error", "error": {"type": "overloaded_error"}}``.
+    OpenRouter sends an HTTP-like int as the code.
     """
-    code = getattr(exc, "code", None)
-    if code is None or isinstance(code, bool):
-        return None
-    return str(code)[: constants.PROVIDER_ERROR_CODE_MAX_LEN]
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        body = body["error"]
+    candidates = [getattr(exc, "code", None)]
+    if isinstance(body, dict):
+        candidates += [body.get("code"), body.get("type")]
+    for code in candidates:
+        if code is not None and not isinstance(code, bool):
+            return str(code)[: constants.PROVIDER_ERROR_CODE_MAX_LEN]
+    return None
 
 
 def api_error_code(exc: BaseException) -> ErrorCode | None:
