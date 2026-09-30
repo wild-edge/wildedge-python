@@ -85,27 +85,21 @@ def provider_error_code_of(exc: BaseException) -> str | None:
     OpenRouter sends an HTTP-like int as the code.
     """
     body = getattr(exc, "body", None)
-    if isinstance(body, dict) and isinstance(body.get("error"), dict):
-        body = body["error"]
-    candidates = [getattr(exc, "code", None)]
-    if isinstance(body, dict):
-        candidates += [body.get("code"), body.get("type")]
-    for code in candidates:
-        if code is not None and not isinstance(code, bool):
+    error = body.get("error", body) if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        error = {}
+    for code in (getattr(exc, "code", None), error.get("code"), error.get("type")):
+        if code is not None:
             return str(code)[: constants.PROVIDER_ERROR_CODE_MAX_LEN]
     return None
 
 
-def api_error_code(exc: BaseException) -> ErrorCode | None:
-    """Timeout or connection failure of a model API call, else None.
+def no_response_error_code(exc: BaseException) -> ErrorCode | None:
+    """Timeout or connection failure, recognised by exception class name.
 
-    Only failures that never got an HTTP response are classified here, by
-    exception class name, so the openai, anthropic, httpx and requests clients
-    are covered without importing them. When a response came back, the server
-    derives the error code from ``http_status`` and ``provider_error_code``.
+    Covers the openai, anthropic, httpx and requests clients without
+    importing them.
     """
-    if http_status_of(exc) is not None:
-        return None
     names = [cls.__name__ for cls in type(exc).__mro__]
     # Timeout first: openai's APITimeoutError subclasses APIConnectionError.
     if any("Timeout" in name for name in names):
@@ -122,16 +116,21 @@ def track_api_error(
 ) -> None:
     """Record a failed model API call as an error event.
 
-    ``fallback_code`` is used only when the failure carries no HTTP status;
-    with one, the code is ``UNKNOWN`` so the server can classify it.
+    When the provider responded, the event carries its HTTP status and error
+    code with ``UNKNOWN``, and the server derives the error code from them.
+    Otherwise the SDK classifies the failure, or sends ``fallback_code``.
     """
-    status = http_status_of(exc)
+    http_status = http_status_of(exc)
+    provider_error_code = provider_error_code_of(exc)
+    if http_status is not None or provider_error_code is not None:
+        error_code = ErrorCode.UNKNOWN
+    else:
+        error_code = no_response_error_code(exc) or fallback_code
     handle.track_error(
-        error_code=api_error_code(exc)
-        or (ErrorCode.UNKNOWN if status is not None else fallback_code),
+        error_code=error_code,
         error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-        http_status=status,
-        provider_error_code=provider_error_code_of(exc),
+        http_status=http_status,
+        provider_error_code=provider_error_code,
     )
 
 

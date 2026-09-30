@@ -43,18 +43,18 @@ class ErrorEvent:
             if isinstance(self.error_code, ErrorCode)
             else self.error_code
         )
-        error_data: dict[str, Any] = {"error_code": code}
-        if self.error_message is not None:
-            error_data["error_message"] = self.error_message
-        if self.stack_trace_hash is not None:
-            error_data["stack_trace_hash"] = self.stack_trace_hash
-        if self.related_event_id is not None:
-            error_data["related_event_id"] = self.related_event_id
-        if self.http_status is not None:
-            error_data["http_status"] = self.http_status
-        if self.provider_error_code is not None:
-            error_data["provider_error_code"] = self.provider_error_code
+        from wildedge.events.common import add_optional_fields
 
+        error_data = add_optional_fields(
+            {"error_code": code},
+            {
+                "error_message": self.error_message,
+                "stack_trace_hash": self.stack_trace_hash,
+                "related_event_id": self.related_event_id,
+                "http_status": self.http_status,
+                "provider_error_code": self.provider_error_code,
+            },
+        )
         event = {
             "event_id": self.event_id,
             "event_type": "error",
@@ -62,8 +62,6 @@ class ErrorEvent:
             "model_id": self.model_id,
             "error": error_data,
         }
-        from wildedge.events.common import add_optional_fields
-
         add_optional_fields(
             event,
             {

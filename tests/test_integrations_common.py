@@ -8,7 +8,6 @@ import pytest
 
 from wildedge.events.error import ErrorCode
 from wildedge.integrations.common import (
-    api_error_code,
     debug_failure,
     dtype_to_quantization,
     http_status_of,
@@ -16,6 +15,7 @@ from wildedge.integrations.common import (
     infer_input_modality_from_layer_types,
     infer_input_modality_from_names,
     infer_input_modality_from_shape,
+    no_response_error_code,
     num_classes_from_output_shape,
     provider_error_code_of,
 )
@@ -224,7 +224,7 @@ def test_num_classes_from_output_shape(shape, expected):
 
 
 # ---------------------------------------------------------------------------
-# api_error_code / http_status_of
+# no_response_error_code / http_status_of
 # ---------------------------------------------------------------------------
 
 
@@ -280,14 +280,11 @@ class APITimeoutError(APIConnectionError):
         (TimeoutError(), ErrorCode.INFERENCE_TIMEOUT),
         (APIConnectionError(), ErrorCode.CONNECTION_ERROR),
         (ConnectionRefusedError(), ErrorCode.CONNECTION_ERROR),
-        # A response came back: the server classifies it from http_status.
-        (APIStatusError(401), None),
-        (HTTPStatusError(503), None),
         (ValueError("bad payload"), None),
     ],
 )
-def test_api_error_code(exc, expected):
-    assert api_error_code(exc) == expected
+def test_no_response_error_code(exc, expected):
+    assert no_response_error_code(exc) == expected
 
 
 def test_http_status_of():

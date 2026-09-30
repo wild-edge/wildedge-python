@@ -157,6 +157,17 @@ def test_http_error_leaves_code_to_server(client):
     assert client.handle.errors[0]["error_code"] == "UNKNOWN"
 
 
+def test_provider_error_without_status_leaves_code_to_server(client):
+    class APIError(Exception):
+        code = "server_error"
+
+    with pytest.raises(APIError):
+        with wildedge.llm_api(model="m", provider="p"):
+            raise APIError("An error occurred during streaming")
+
+    assert client.handle.errors[0]["error_code"] == "UNKNOWN"
+
+
 def test_prompt_input_meta(client):
     with wildedge.llm_api(
         model="m", provider="p", prompt="a knight with two swords"

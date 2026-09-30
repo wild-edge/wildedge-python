@@ -57,9 +57,9 @@ class LLMCall:
     Fields may be set directly (``call.stop_reason = ...``, ``call.success =
     False``) or through :meth:`usage` / :meth:`response` before the block
     exits. An exception escaping the block records an error event instead.
-    An HTTP error sends its status for the server to classify; a timeout or
-    connection failure is classified here; anything else uses the exception
-    class as the error code.
+    When the provider responded, its HTTP status and error code are sent for
+    the server to classify; a timeout or connection failure is classified
+    here; anything else uses the exception class as the error code.
     """
 
     def __init__(
