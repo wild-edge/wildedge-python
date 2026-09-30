@@ -63,4 +63,5 @@ jobs:
           body_path: /tmp/release-notes.md
 
       - name: Publish package to PyPI
+        if: github.ref_type == 'tag'
         uses: pypa/gh-action-pypi-publish@release/v1
