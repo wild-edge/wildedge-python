@@ -13,6 +13,9 @@ under Unreleased and move into a version section at release time.
   (`overloaded_error`), or OpenRouter's numeric code. Wild Edge derives the
   error code (`AUTH_FAILED`, `QUOTA_EXCEEDED`, `RATE_LIMITED`, `BAD_REQUEST`,
   `PROVIDER_ERROR`) from them; this needs a server with that support.
+- Error events from failed API calls carry `duration_ms`, the time until the
+  call failed, so a rejected key and a 30 s timeout can be told apart;
+  `track_error()` accepts it.
 - `ErrorCode.CONNECTION_ERROR`.
 
 ### Changed

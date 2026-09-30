@@ -500,6 +500,7 @@ class TestWrapSyncCompletions:
         assert kwargs["error_code"] == ErrorCode.UNKNOWN
         assert kwargs["http_status"] == 401
         assert kwargs["provider_error_code"] == "401"
+        assert isinstance(kwargs["duration_ms"], int)
 
     def test_streaming_returns_sync_stream_wrapper(self):
         chunks = [make_stream_chunk("hi", None), make_stream_chunk(None, "stop")]

@@ -157,7 +157,9 @@ class LLMCall:
         if handle is None:
             return False
         if exc_type is not None:
-            track_api_error(handle, exc_val, fallback_code=exc_type.__name__)
+            track_api_error(
+                handle, exc_val, duration_ms, fallback_code=exc_type.__name__
+            )
             return False
         handle.track_inference(
             duration_ms=duration_ms,

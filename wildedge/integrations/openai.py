@@ -213,7 +213,7 @@ def wrap_sync_completions(completions: object, source: str, client_ref: object) 
             return result
         except Exception as exc:
             if handle is not None:
-                track_api_error(handle, exc)
+                track_api_error(handle, exc, elapsed_ms(t0))
             raise
 
     completions.create = patched_create  # type: ignore[attr-defined]
@@ -245,7 +245,7 @@ def wrap_async_completions(
             return result
         except Exception as exc:
             if handle is not None:
-                track_api_error(handle, exc)
+                track_api_error(handle, exc, elapsed_ms(t0))
             raise
 
     completions.create = patched_create  # type: ignore[attr-defined]

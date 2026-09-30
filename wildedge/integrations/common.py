@@ -112,9 +112,10 @@ def no_response_error_code(exc: BaseException) -> ErrorCode | None:
 def track_api_error(
     handle: ModelHandle,
     exc: BaseException,
+    duration_ms: int,
     fallback_code: str | ErrorCode = ErrorCode.UNKNOWN,
 ) -> None:
-    """Record a failed model API call as an error event.
+    """Record a failed model API call, which took ``duration_ms``, as an error event.
 
     When the provider responded, the event carries its HTTP status and error
     code with ``UNKNOWN``, and the server derives the error code from them.
@@ -131,6 +132,7 @@ def track_api_error(
         error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
         http_status=http_status,
         provider_error_code=provider_error_code,
+        duration_ms=duration_ms,
     )
 
 
@@ -301,7 +303,7 @@ class SyncStreamWrapper:
                     self._on_chunk(chunk)
                 yield chunk
         except Exception as exc:
-            track_api_error(self._handle, exc)
+            track_api_error(self._handle, exc, elapsed_ms(self._t0))
             raise
         else:
             self._on_done(elapsed_ms(self._t0), ttft_ms)
@@ -350,7 +352,7 @@ class AsyncStreamWrapper:
                     self._on_chunk(chunk)
                 yield chunk
         except Exception as exc:
-            track_api_error(self._handle, exc)
+            track_api_error(self._handle, exc, elapsed_ms(self._t0))
             raise
         else:
             self._on_done(elapsed_ms(self._t0), ttft_ms)

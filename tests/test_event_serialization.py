@@ -123,10 +123,12 @@ def test_error_event_to_dict_http_status():
         error_code=ErrorCode.UNKNOWN,
         http_status=429,
         provider_error_code="insufficient_quota",
+        duration_ms=30_000,
     )
     assert event.to_dict()["error"] == {
         "error_code": "UNKNOWN",
         "http_status": 429,
         "provider_error_code": "insufficient_quota",
+        "duration_ms": 30_000,
     }
     assert "http_status" not in ErrorEvent("m1", "OOM").to_dict()["error"]

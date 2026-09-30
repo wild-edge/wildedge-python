@@ -417,6 +417,7 @@ class TestWrapSyncMessages:
         assert kwargs["error_code"] == ErrorCode.UNKNOWN
         assert kwargs["http_status"] is None
         assert kwargs["provider_error_code"] == "overloaded_error"
+        assert isinstance(kwargs["duration_ms"], int)
 
     def test_streaming_records_inference_on_exhaustion(self):
         events = [

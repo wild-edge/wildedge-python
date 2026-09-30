@@ -28,6 +28,7 @@ class ErrorEvent:
     related_event_id: str | None = None
     http_status: int | None = None
     provider_error_code: str | None = None
+    duration_ms: int | None = None
     trace_id: str | None = None
     span_id: str | None = None
     parent_span_id: str | None = None
@@ -53,6 +54,7 @@ class ErrorEvent:
                 "related_event_id": self.related_event_id,
                 "http_status": self.http_status,
                 "provider_error_code": self.provider_error_code,
+                "duration_ms": self.duration_ms,
             },
         )
         event = {
