@@ -5,6 +5,8 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+## 0.2.2 - 2026-09-30
+
 ### Added
 
 - Error events carry `http_status` and `provider_error_code` for failed remote
@@ -36,6 +38,8 @@ under Unreleased and move into a version section at release time.
 - Models tracked by the anthropic integration register with `model_format`
   `"api"`, like the openai integration. The Anthropic extractor was never in
   the client's extractor list, so they were registered as `"unknown"`.
+  Machines that already tracked these models keep the saved `"unknown"` until
+  the SDK's model registry file is deleted.
 
 ## 0.2.1 - 2026-09-01
 
