@@ -58,8 +58,12 @@ with wildedge.llm_api(model="gemma-7b", base_url="http://localhost:11434") as ca
     call.success = False                   # delivered but unusable output
 ```
 
-An exception escaping the block records an error event with the exception
-class as the error code, and no inference event.
+An exception escaping the block records an error event and no inference
+event. An HTTP error from httpx, requests or a provider client is sent as
+`UNKNOWN` with `http_status` (and `provider_error_code` when the client
+exposes one), and Wild Edge classifies it from those. Timeouts become
+`INFERENCE_TIMEOUT` and connection failures `CONNECTION_ERROR`. Any other
+exception uses its class name as the error code.
 
 ## Model identity
 

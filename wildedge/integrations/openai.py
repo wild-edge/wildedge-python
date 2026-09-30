@@ -7,7 +7,6 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from wildedge import constants
 from wildedge.events.inference import ApiMeta, GenerationOutputMeta
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import (
@@ -17,6 +16,7 @@ from wildedge.integrations.common import (
     build_input_meta,
     debug_failure,
     source_from_base_url,
+    track_api_error,
 )
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
@@ -213,10 +213,7 @@ def wrap_sync_completions(completions: object, source: str, client_ref: object) 
             return result
         except Exception as exc:
             if handle is not None:
-                handle.track_error(
-                    error_code="UNKNOWN",
-                    error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-                )
+                track_api_error(handle, exc)
             raise
 
     completions.create = patched_create  # type: ignore[attr-defined]
@@ -248,10 +245,7 @@ def wrap_async_completions(
             return result
         except Exception as exc:
             if handle is not None:
-                handle.track_error(
-                    error_code="UNKNOWN",
-                    error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-                )
+                track_api_error(handle, exc)
             raise
 
     completions.create = patched_create  # type: ignore[attr-defined]

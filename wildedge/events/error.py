@@ -13,6 +13,7 @@ class ErrorCode(str, Enum):
     INFERENCE_TIMEOUT = "INFERENCE_TIMEOUT"
     UNSUPPORTED_OP = "UNSUPPORTED_OP"
     THERMAL_SHUTDOWN = "THERMAL_SHUTDOWN"
+    CONNECTION_ERROR = "CONNECTION_ERROR"
     UNKNOWN = "UNKNOWN"
 
 
@@ -23,6 +24,8 @@ class ErrorEvent:
     error_message: str | None = None
     stack_trace_hash: str | None = None
     related_event_id: str | None = None
+    http_status: int | None = None
+    provider_error_code: str | None = None
     trace_id: str | None = None
     span_id: str | None = None
     parent_span_id: str | None = None
@@ -47,6 +50,10 @@ class ErrorEvent:
             error_data["stack_trace_hash"] = self.stack_trace_hash
         if self.related_event_id is not None:
             error_data["related_event_id"] = self.related_event_id
+        if self.http_status is not None:
+            error_data["http_status"] = self.http_status
+        if self.provider_error_code is not None:
+            error_data["provider_error_code"] = self.provider_error_code
 
         event = {
             "event_id": self.event_id,

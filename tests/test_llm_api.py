@@ -146,6 +146,17 @@ def test_exception_records_error_not_inference(client):
     ]
 
 
+def test_http_error_leaves_code_to_server(client):
+    class HTTPStatusError(Exception):
+        response = SimpleNamespace(status_code=401)
+
+    with pytest.raises(HTTPStatusError):
+        with wildedge.llm_api(model="m", provider="p"):
+            raise HTTPStatusError("Client error '401 Unauthorized'")
+
+    assert client.handle.errors[0]["error_code"] == "UNKNOWN"
+
+
 def test_prompt_input_meta(client):
     with wildedge.llm_api(
         model="m", provider="p", prompt="a knight with two swords"

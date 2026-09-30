@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from wildedge.events.error import ErrorCode, ErrorEvent
 from wildedge.events.feedback import FeedbackEvent, FeedbackType
 from wildedge.events.inference import InferenceEvent, TextInputMeta
 from wildedge.events.model_download import AdapterDownload, ModelDownloadEvent
@@ -114,3 +115,18 @@ def test_span_event_attributes_and_context_are_independent():
     data = event.to_dict()
     assert data["span"]["attributes"] == {"provider": "custom"}
     assert data["context"] == {"user_id": "u1"}
+
+
+def test_error_event_to_dict_http_status():
+    event = ErrorEvent(
+        model_id="m1",
+        error_code=ErrorCode.UNKNOWN,
+        http_status=429,
+        provider_error_code="insufficient_quota",
+    )
+    assert event.to_dict()["error"] == {
+        "error_code": "UNKNOWN",
+        "http_status": 429,
+        "provider_error_code": "insufficient_quota",
+    }
+    assert "http_status" not in ErrorEvent("m1", "OOM").to_dict()["error"]

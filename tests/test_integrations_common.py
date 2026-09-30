@@ -6,14 +6,18 @@ import logging
 
 import pytest
 
+from wildedge.events.error import ErrorCode
 from wildedge.integrations.common import (
+    api_error_code,
     debug_failure,
     dtype_to_quantization,
+    http_status_of,
     image_brightness_histogram,
     infer_input_modality_from_layer_types,
     infer_input_modality_from_names,
     infer_input_modality_from_shape,
     num_classes_from_output_shape,
+    provider_error_code_of,
 )
 
 # ---------------------------------------------------------------------------
@@ -217,3 +221,71 @@ def test_infer_input_modality_from_layer_types(layer_types, expected):
 )
 def test_num_classes_from_output_shape(shape, expected):
     assert num_classes_from_output_shape(shape) == expected
+
+
+# ---------------------------------------------------------------------------
+# api_error_code / http_status_of
+# ---------------------------------------------------------------------------
+
+
+class APIStatusError(Exception):
+    """Shaped like openai.APIStatusError and anthropic.APIStatusError."""
+
+    def __init__(self, status_code: int, code: str | int | None = None) -> None:
+        super().__init__(f"Error code: {status_code}")
+        self.status_code = status_code
+        self.code = code
+
+
+class FakeResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
+class HTTPStatusError(Exception):
+    """Shaped like httpx.HTTPStatusError and requests.HTTPError."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__("HTTP error")
+        self.response = FakeResponse(status_code)
+
+
+class APIConnectionError(Exception):
+    pass
+
+
+class APITimeoutError(APIConnectionError):
+    pass
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (APITimeoutError(), ErrorCode.INFERENCE_TIMEOUT),
+        (TimeoutError(), ErrorCode.INFERENCE_TIMEOUT),
+        (APIConnectionError(), ErrorCode.CONNECTION_ERROR),
+        (ConnectionRefusedError(), ErrorCode.CONNECTION_ERROR),
+        # A response came back: the server classifies it from http_status.
+        (APIStatusError(401), None),
+        (HTTPStatusError(503), None),
+        (ValueError("bad payload"), None),
+    ],
+)
+def test_api_error_code(exc, expected):
+    assert api_error_code(exc) == expected
+
+
+def test_http_status_of():
+    assert http_status_of(APIStatusError(401)) == 401
+    assert http_status_of(HTTPStatusError(502)) == 502
+    assert http_status_of(APIConnectionError()) is None
+
+
+def test_provider_error_code_of():
+    assert provider_error_code_of(APIStatusError(429, "insufficient_quota")) == (
+        "insufficient_quota"
+    )
+    # OpenRouter puts the HTTP status in the body's code.
+    assert provider_error_code_of(APIStatusError(401, code=401)) == "401"
+    assert provider_error_code_of(APIStatusError(500)) is None
+    assert provider_error_code_of(APIStatusError(400, code="x" * 100)) == "x" * 64

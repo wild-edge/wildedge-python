@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from wildedge import constants
+from wildedge.events.error import ErrorCode
 from wildedge.events.inference import TextInputMeta
 from wildedge.logging import logger
 from wildedge.timing import elapsed_ms
@@ -59,6 +60,68 @@ def source_from_base_url(base_url: str | None) -> str:
         if hostname.endswith(suffix):
             return source
     return hostname
+
+
+def http_status_of(exc: BaseException) -> int | None:
+    """HTTP status carried by an API client exception, if any.
+
+    openai and anthropic set ``status_code`` on the exception; httpx and
+    requests put it on ``exc.response``.
+    """
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status if isinstance(status, int) else None
+
+
+def provider_error_code_of(exc: BaseException) -> str | None:
+    """Error code from the provider's response body, such as ``insufficient_quota``.
+
+    openai and anthropic expose it as ``exc.code``; OpenRouter sends an int.
+    """
+    code = getattr(exc, "code", None)
+    if code is None or isinstance(code, bool):
+        return None
+    return str(code)[: constants.PROVIDER_ERROR_CODE_MAX_LEN]
+
+
+def api_error_code(exc: BaseException) -> ErrorCode | None:
+    """Timeout or connection failure of a model API call, else None.
+
+    Only failures that never got an HTTP response are classified here, by
+    exception class name, so the openai, anthropic, httpx and requests clients
+    are covered without importing them. When a response came back, the server
+    derives the error code from ``http_status`` and ``provider_error_code``.
+    """
+    if http_status_of(exc) is not None:
+        return None
+    names = [cls.__name__ for cls in type(exc).__mro__]
+    # Timeout first: openai's APITimeoutError subclasses APIConnectionError.
+    if any("Timeout" in name for name in names):
+        return ErrorCode.INFERENCE_TIMEOUT
+    if any("Connect" in name for name in names):
+        return ErrorCode.CONNECTION_ERROR
+    return None
+
+
+def track_api_error(
+    handle: ModelHandle,
+    exc: BaseException,
+    fallback_code: str | ErrorCode = ErrorCode.UNKNOWN,
+) -> None:
+    """Record a failed model API call as an error event.
+
+    ``fallback_code`` is used only when the failure carries no HTTP status;
+    with one, the code is ``UNKNOWN`` so the server can classify it.
+    """
+    status = http_status_of(exc)
+    handle.track_error(
+        error_code=api_error_code(exc)
+        or (ErrorCode.UNKNOWN if status is not None else fallback_code),
+        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+        http_status=status,
+        provider_error_code=provider_error_code_of(exc),
+    )
 
 
 def _msg_role(m) -> str | None:
@@ -228,10 +291,7 @@ class SyncStreamWrapper:
                     self._on_chunk(chunk)
                 yield chunk
         except Exception as exc:
-            self._handle.track_error(
-                error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-            )
+            track_api_error(self._handle, exc)
             raise
         else:
             self._on_done(elapsed_ms(self._t0), ttft_ms)
@@ -280,10 +340,7 @@ class AsyncStreamWrapper:
                     self._on_chunk(chunk)
                 yield chunk
         except Exception as exc:
-            self._handle.track_error(
-                error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
-            )
+            track_api_error(self._handle, exc)
             raise
         else:
             self._on_done(elapsed_ms(self._t0), ttft_ms)
