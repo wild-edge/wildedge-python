@@ -88,10 +88,10 @@ def provider_error_code_of(exc: BaseException) -> str | None:
     error = body.get("error", body) if isinstance(body, dict) else None
     if not isinstance(error, dict):
         error = {}
-    for code in (getattr(exc, "code", None), error.get("code"), error.get("type")):
-        if code is not None:
-            return str(code)[: constants.PROVIDER_ERROR_CODE_MAX_LEN]
-    return None
+    code = getattr(exc, "code", None) or error.get("code") or error.get("type")
+    if code is None:
+        return None
+    return str(code)[: constants.PROVIDER_ERROR_CODE_MAX_LEN]
 
 
 def no_response_error_code(exc: BaseException) -> ErrorCode | None:

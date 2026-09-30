@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from wildedge.events.common import add_optional_fields
+
 
 class ErrorCode(str, Enum):
     OOM = "OOM"
@@ -43,8 +45,6 @@ class ErrorEvent:
             if isinstance(self.error_code, ErrorCode)
             else self.error_code
         )
-        from wildedge.events.common import add_optional_fields
-
         error_data = add_optional_fields(
             {"error_code": code},
             {
