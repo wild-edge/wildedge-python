@@ -9,9 +9,12 @@
 [![Tested on Linux](https://img.shields.io/badge/tested%20on-linux-blue)](https://github.com/wild-edge/wildedge-python/actions/workflows/ci.yml)
 [![Tested on macOS](https://img.shields.io/badge/tested%20on-macOS-blue)](https://github.com/wild-edge/wildedge-python/actions/workflows/ci.yml)
 [![Tested on Windows](https://img.shields.io/badge/tested%20on-windows-blue)](https://github.com/wild-edge/wildedge-python/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/wildedge-sdk)](https://pypi.org/project/wildedge-sdk/)
 [![Coverage](https://codecov.io/gh/wild-edge/wildedge-python/branch/main/graph/badge.svg)](https://codecov.io/gh/wild-edge/wildedge-python)
 
 ML inference monitoring for Python: on-device and remote models. Tracks latency, tokens, errors, and model metadata with no code changes, plus traces for agent pipelines.
+
+**[Get a DSN](https://app.wildedge.dev)** · [Website](https://wildedge.dev) · [Docs](https://docs.wildedge.dev) · [Blog](https://blog.wildedge.dev)
 
 ## Install
 
@@ -19,7 +22,7 @@ ML inference monitoring for Python: on-device and remote models. Tracks latency,
 uv add wildedge-sdk
 ```
 
-Without a DSN everything is a silent no-op, so dev and CI need no configuration.
+To send events, sign up at [app.wildedge.dev](https://app.wildedge.dev), create a project and copy its DSN. Without a DSN everything is a silent no-op, so dev and CI need no configuration.
 
 ## CLI
 
