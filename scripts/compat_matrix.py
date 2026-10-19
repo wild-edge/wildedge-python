@@ -10,15 +10,15 @@ import sys
 MATRIX = {
     "anthropic": {
         "min": ["anthropic==0.25.0"],
-        "current": ["anthropic==0.92.0"],
+        "current": ["anthropic==1.15.0"],
     },
     "onnx": {
         "min": ["onnxruntime==1.18.1", "numpy==1.26.4"],
-        "current": ["onnxruntime==1.20.1", "numpy==2.1.3"],
+        "current": ["onnxruntime==1.31.0", "numpy==2.2.6"],
     },
     "torch": {
         "min": ["torch==2.4.1", "numpy==1.26.4"],
-        "current": ["torch==2.6.0", "numpy==2.1.3"],
+        "current": ["torch==2.14.1", "numpy==2.2.6"],
     },
     "timm": {
         "min": [
@@ -28,34 +28,34 @@ MATRIX = {
             "numpy==1.26.4",
         ],
         "current": [
-            "torch==2.6.0",
-            "torchvision==0.21.0",
-            "timm==1.0.15",
-            "numpy==2.1.3",
+            "torch==2.14.1",
+            "torchvision==0.29.1",
+            "timm==1.0.30",
+            "numpy==2.2.6",
         ],
     },
     "tensorflow": {
         "min": ["tensorflow==2.16.1", "keras==3.3.3", "numpy==1.26.4"],
-        "current": ["tensorflow==2.18.0", "keras==3.8.0", "numpy==2.0.2"],
+        "current": ["tensorflow==2.21.0", "keras==3.15.1", "numpy==2.2.6"],
     },
     "gguf": {
         "min": ["llama-cpp-python==0.2.90", "numpy==1.26.4"],
-        "current": ["llama-cpp-python==0.3.4", "numpy==2.1.3"],
+        "current": ["llama-cpp-python==0.3.36", "numpy==2.2.6"],
     },
     "openai": {
         "min": ["openai==1.30.0"],
-        "current": ["openai==1.61.0"],
+        "current": ["openai==3.35.1"],
     },
     "transformers": {
         "min": ["transformers==4.40.0", "torch==2.4.1", "numpy==1.26.4"],
-        "current": ["transformers==4.47.0", "torch==2.6.0", "numpy==2.1.3"],
+        "current": ["transformers==5.20.1", "torch==2.14.1", "numpy==2.2.6"],
     },
     "ultralytics": {
         "min": ["ultralytics==8.0.0", "numpy==1.26.4"],
-        "current": ["ultralytics==8.3.4", "numpy==2.1.3"],
+        "current": ["ultralytics==8.4.182", "numpy==2.2.6"],
     },
     "mlx": {
-        "current": ["mlx==0.22.0", "mlx-lm==0.21.0"],
+        "current": ["mlx==0.32.4", "mlx-lm==0.32.2"],
     },
 }
 
@@ -77,7 +77,10 @@ PYTHON_DEP_OVERRIDES = {
     "onnx": {
         "min": {
             "3.13": ["onnxruntime==1.20.1", "numpy==2.1.3"],
-        }
+        },
+        "current": {
+            "3.10": ["onnxruntime==1.23.2", "numpy==2.2.6"],
+        },
     },
     "torch": {
         "min": {
@@ -85,7 +88,12 @@ PYTHON_DEP_OVERRIDES = {
             "3.14": ["torch==2.5.0", "numpy==2.1.3"],
         },
         "current": {
-            "3.14": ["torch==2.10.0", "numpy==2.1.3"],
+            "3.14": ["torch==2.14.1", "numpy==2.5.4"],
+        },
+    },
+    "tensorflow": {
+        "current": {
+            "3.10": ["tensorflow==2.21.0", "keras==3.12.4", "numpy==2.2.6"],
         },
     },
     "transformers": {
@@ -110,10 +118,10 @@ PYTHON_DEP_OVERRIDES = {
         },
         "current": {
             "3.14": [
-                "torch==2.10.0",
-                "torchvision==0.25.0",
-                "timm==1.0.15",
-                "numpy==2.1.3",
+                "torch==2.14.1",
+                "torchvision==0.29.1",
+                "timm==1.0.30",
+                "numpy==2.5.4",
             ],
         },
     },
