@@ -5,6 +5,14 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Fixed
+
+- The gguf integration now tracks `Llama.create_chat_completion()` and
+  `Llama.create_completion()`, streaming or not. It used to patch only
+  `Llama.__call__`, so chat apps on llama-cpp-python reported model loads but
+  no inference events. It now patches `create_completion`, which every entry
+  point runs, so each call is tracked once.
+
 ## 0.2.2 - 2026-09-30
 
 ### Added

@@ -20,7 +20,13 @@ def patch_instance_call_once(
     *,
     patch_name: str,
     make_patched_call: Callable[[Callable[..., Any]], Callable[..., Any]],
+    method: str = "__call__",
 ) -> None:
+    """Swap obj's class for a cached subclass whose ``method`` is wrapped.
+
+    ``method`` defaults to ``__call__``; pass another name when the runtime's
+    entry points all funnel through a different method.
+    """
     current_cls = type(obj)
     if getattr(current_cls, "__wildedge_patch_name__", None) == patch_name:
         return
@@ -37,14 +43,14 @@ def patch_instance_call_once(
 
         patched_cls = per_class.get(patch_name)
         if patched_cls is None:
-            original_call = current_cls.__call__
+            original_call = getattr(current_cls, method)
             patched_call = make_patched_call(original_call)
             class_name = f"{current_cls.__name__}WildEdgePatched{patch_name.title()}"
             patched_cls = type(
                 class_name,
                 (current_cls,),
                 {
-                    "__call__": patched_call,
+                    method: patched_call,
                     "__wildedge_patch_name__": patch_name,
                     "__wildedge_original_call__": original_call,
                 },

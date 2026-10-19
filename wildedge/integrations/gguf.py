@@ -34,7 +34,10 @@ _QUANT_RE = re.compile(
 
 _llama_patched = False
 _LLAMA_PATCH_LOCK = threading.Lock()
-GGUF_CALL_PATCH_NAME = "gguf_call"
+# llama-cpp-python's __call__ and create_chat_completion (via the chat handler)
+# both run create_completion, so patching it tracks every entry point once.
+GGUF_COMPLETION_PATCH_NAME = "gguf_create_completion"
+GGUF_PATCHED_METHOD = "create_completion"
 GGUF_HANDLE_ATTR = "__wildedge_gguf_handle__"
 LLAMA_AUTO_LOAD_PATCH_NAME = "gguf_auto_load"
 
@@ -269,8 +272,9 @@ class GgufExtractor(BaseExtractor):
         setattr(obj, GGUF_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,
-            patch_name=GGUF_CALL_PATCH_NAME,
+            patch_name=GGUF_COMPLETION_PATCH_NAME,
             make_patched_call=build_patched_call,
+            method=GGUF_PATCHED_METHOD,
         )
 
     @classmethod

@@ -75,16 +75,37 @@ class _FakeOrtSession:
 
 
 class Llama:  # must match the name check in GgufExtractor.can_handle
+    """Mirrors llama-cpp-python's call graph: every entry point runs create_completion."""
+
     model_path = "/models/llama-3-Q4_K_M.gguf"
     n_gpu_layers = 0
     metadata = {"general.architecture": "llama", "general.version": "3.0"}
 
-    def __call__(self, *args, **kwargs):
+    def create_completion(self, prompt="", **kwargs):
+        if kwargs.get("stream"):
+            return iter(
+                [
+                    {"choices": [{"text": "hi", "finish_reason": None}]},
+                    {
+                        "choices": [{"text": "!", "finish_reason": "stop"}],
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    },
+                ]
+            )
         return {"usage": {"prompt_tokens": 10, "completion_tokens": 20}}
+
+    def __call__(self, prompt="", **kwargs):
+        return self.create_completion(prompt=prompt, **kwargs)
+
+    def create_chat_completion(self, messages, **kwargs):
+        # The chat handler formats the messages, then calls llama.create_completion.
+        prompt = "".join(m["content"] for m in messages)
+        result = self.create_completion(prompt=prompt, **kwargs)
+        return {"choices": [{"message": {"content": "hi"}}], "usage": result["usage"]}
 
 
 class _FailingLlama(Llama):
-    def __call__(self, *args, **kwargs):
+    def create_completion(self, prompt="", **kwargs):
         raise RuntimeError("cuda oom")
 
 
@@ -263,6 +284,51 @@ class TestGgufExtractor:
         with pytest.raises(RuntimeError):
             llm()
         assert publish_spy.events[0]["event_type"] == "error"
+
+    def test_install_hooks_tracks_chat_completion(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        llm.create_chat_completion(messages=[{"role": "user", "content": "hello"}])
+        assert len(publish_spy.events) == 1
+        event = publish_spy.events[0]
+        assert event["event_type"] == "inference"
+        assert event["inference"]["output_meta"]["tokens_out"] == 20
+
+    def test_install_hooks_tracks_create_completion(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        llm.create_completion(prompt="hello")
+        assert len(publish_spy.events) == 1
+        assert publish_spy.events[0]["inference"]["input_meta"]["char_count"] == 5
+
+    def test_install_hooks_tracks_streamed_chat_completion(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        chunks = list(llm.create_completion(prompt="hello", stream=True))
+        assert len(chunks) == 2
+        assert len(publish_spy.events) == 1
+        meta = publish_spy.events[0]["inference"]["output_meta"]
+        assert meta["tokens_out"] == 20
+        assert meta["stop_reason"] == "stop"
+
+    def test_install_hooks_tracks_chat_completion_error(self, publish_spy):
+        llm = _FailingLlama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        with pytest.raises(RuntimeError):
+            llm.create_chat_completion(messages=[{"role": "user", "content": "hi"}])
+        assert [e["event_type"] for e in publish_spy.events] == ["error"]
+
+    def test_install_hooks_twice_does_not_double_track(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        self.extractor.install_hooks(llm, handle)
+        llm.create_chat_completion(messages=[{"role": "user", "content": "hello"}])
+        assert len(publish_spy.events) == 1
 
 
 # ---------------------------------------------------------------------------
