@@ -41,16 +41,22 @@ PIPELINE_CALL_PATCH_NAME = "transformers_pipeline_call"
 # Per-instance attribute that stores the ModelHandle on a pipeline object.
 PIPELINE_HANDLE_ATTR = "__wildedge_pipeline_handle__"
 
-# Thread-local state:
-# - inside_pipeline_init: suppress from_pretrained tracking when called inside
-#   Pipeline.__init__ so the pipeline-level tracking takes precedence.
-# - pipeline_call_depth: > 0 while a tracked pipeline call runs, so the forward
-#   hooks of the model inside it don't record the same inference again.
-_tl = threading.local()
+
+class _ThreadState(threading.local):
+    """Per-thread flags that keep pipeline-level tracking the only record.
+
+    inside_pipeline_init: from_pretrained calls made by Pipeline.__init__ are
+    not tracked on their own.
+    pipeline_call_depth: while above zero, a tracked pipeline call is running
+    and the forward hooks of the model inside it record nothing.
+    """
+
+    def __init__(self) -> None:
+        self.inside_pipeline_init = False
+        self.pipeline_call_depth = 0
 
 
-def inside_tracked_pipeline_call() -> bool:
-    return getattr(_tl, "pipeline_call_depth", 0) > 0
+_tl = _ThreadState()
 
 
 debug_transformers_failure = functools.partial(debug_failure, "transformers")
@@ -311,12 +317,15 @@ class TransformersExtractor(BaseExtractor):
             _, _, arch = extract_model_config(obj)
             task_hint = infer_task_from_arch(arch)
 
+            # Forward passes inside a tracked pipeline call are recorded by
+            # the pipeline, so both hooks skip them.
             def pre_hook(module, args):  # type: ignore[no-untyped-def]
+                if _tl.pipeline_call_depth:
+                    return
                 _local.t0 = time.perf_counter()
 
             def post_hook(module, args, output):  # type: ignore[no-untyped-def]
-                # A pipeline call around this forward pass records the event.
-                if inside_tracked_pipeline_call():
+                if _tl.pipeline_call_depth:
                     return
                 t0 = getattr(_local, "t0", None)
                 duration_ms = elapsed_ms(t0) if t0 is not None else 0
@@ -429,7 +438,7 @@ class TransformersExtractor(BaseExtractor):
             input_modality, output_modality = pipeline_modalities(task)
 
             t0 = time.perf_counter()
-            _tl.pipeline_call_depth = getattr(_tl, "pipeline_call_depth", 0) + 1
+            _tl.pipeline_call_depth += 1
             try:
                 outputs = original_call(self, inputs, *args, **kwargs)
                 duration_ms = elapsed_ms(t0)
@@ -470,7 +479,7 @@ class TransformersExtractor(BaseExtractor):
 
         def patched_from_pretrained(model_cls, *args, **kwargs):  # type: ignore[no-untyped-def]
             # Don't double-track models loaded inside Pipeline.__init__
-            if getattr(_tl, "inside_pipeline_init", False):
+            if _tl.inside_pipeline_init:
                 return original_func(model_cls, *args, **kwargs)
             c = client_ref()  # type: ignore[call-arg]
             hub_before = (

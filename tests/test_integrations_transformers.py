@@ -147,18 +147,35 @@ def test_untracked_pipeline_does_not_suppress_model_hooks(patched_pipeline):
     assert len(inference_events(events)) == 1
 
 
-def test_suppression_is_per_thread(patched_pipeline):
-    events: list = []
-    _, model = tracked_pipeline(patched_pipeline, events)
+class CallsFromAnotherThreadToo:
+    """Pipeline model that also runs the hooked model on a second thread."""
 
-    # This thread is inside a tracked pipeline call; another thread is not.
-    tf_mod._tl.pipeline_call_depth = 1
-    try:
-        model(FakeTensor())  # suppressed: the pipeline call records it
-        other = threading.Thread(target=lambda: model(FakeTensor()))
+    def __init__(self, model: FakeModel) -> None:
+        self.model = model
+
+    def __call__(self, input_ids):
+        other = threading.Thread(target=self.model, args=(input_ids,))
         other.start()
         other.join()
-    finally:
-        tf_mod._tl.pipeline_call_depth = 0
+        return self.model(input_ids)
 
-    assert len(inference_events(events)) == 1  # only the other thread's call
+
+def test_model_call_on_another_thread_during_pipeline_call_is_tracked(
+    patched_pipeline,
+):
+    events: list = []
+    extractor = TransformersExtractor()
+    handle = make_handle(events)
+    model = FakeModel()
+    extractor.install_hooks(model, handle)
+    pipe = patched_pipeline(CallsFromAnotherThreadToo(model))
+    extractor.install_hooks(pipe, handle)
+
+    pipe("hello")
+
+    # The pipeline's own event, and the other thread's model call; the model
+    # call on the pipeline's thread is part of the pipeline event.
+    metas = [e["inference"]["input_meta"] for e in inference_events(events)]
+    assert len(metas) == 2
+    assert {"char_count": 5, "word_count": 1} in metas  # the pipeline call
+    assert {"token_count": 4} in metas  # the other thread's model call
