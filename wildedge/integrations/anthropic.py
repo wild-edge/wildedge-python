@@ -173,7 +173,9 @@ def make_anthropic_stream_callbacks(
                 if reason:
                     stop_reason[0] = reason
 
-    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+    def on_done(
+        duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
+    ) -> None:
         ti, to, cr, sr = tokens_in[0], tokens_out[0], cached_tokens[0], stop_reason[0]
         tps = round(to / duration_ms * 1000, 1) if duration_ms > 0 and to else None
         api_meta = (
@@ -183,7 +185,8 @@ def make_anthropic_stream_callbacks(
             duration_ms=duration_ms,
             input_modality="text",
             output_modality="generation",
-            success=True,
+            success=outcome == "completed",
+            error_code=None if outcome == "completed" else "STREAM_" + outcome.upper(),
             input_meta=build_input_meta(messages, ti),
             output_meta=GenerationOutputMeta(
                 task="generation",

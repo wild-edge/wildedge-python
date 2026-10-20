@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import itertools
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -268,105 +270,232 @@ def num_classes_from_output_shape(shape: tuple) -> int:
 # ---------------------------------------------------------------------------
 # Each integration provides:
 #   on_chunk(chunk) -> None        : update mutable state from a single chunk
-#   on_done(duration_ms, ttft_ms)  : record inference once the stream is exhausted
+#   on_done(duration_ms, ttft_ms, *, outcome="completed") : record one outcome
 #
 # The wrappers handle TTFT capture, error tracking, context-manager delegation,
 # and attribute proxying so callers get a drop-in replacement for the raw stream.
 
 
-class SyncStreamWrapper:
-    """Wraps a sync iterable stream to capture TTFT and record inference on exhaustion."""
+def stream_chunk_has_output(chunk: object) -> bool:
+    """Ignore role, usage, and lifecycle chunks when measuring first output."""
+
+    def field(value: object, name: str) -> Any:
+        return (
+            value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+        )
+
+    choices = field(chunk, "choices")
+    if choices is not None:
+        for choice in choices:
+            delta = field(choice, "delta")
+            if field(choice, "text") or any(
+                field(delta, key)
+                for key in ("content", "refusal", "tool_calls", "function_call")
+            ):
+                return True
+        return False
+    event_type = field(chunk, "type")
+    if event_type is not None:
+        if event_type == "content_block_delta":
+            delta = field(chunk, "delta")
+            return any(
+                field(delta, key)
+                for key in ("text", "thinking", "partial_json", "data")
+            )
+        return event_type in (
+            "response.output_text.delta",
+            "response.refusal.delta",
+            "response.function_call_arguments.delta",
+            "response.output_audio.delta",
+        ) and bool(field(chunk, "delta"))
+    return True
+
+
+class StreamState:
+    """One lifecycle per stream, with telemetry isolated from application code."""
 
     def __init__(
         self,
-        original: object,
         handle: ModelHandle,
         t0: float,
         on_chunk: Callable[[object], None] | None,
-        on_done: Callable[[int, int | None], None],
+        on_done: Callable[..., None],
     ) -> None:
-        self._original = original
         self._handle = handle
         self._t0 = t0
         self._on_chunk = on_chunk
         self._on_done = on_done
+        self._finished = False
+        self._ttft_ms = None
+        self._context = contextvars.copy_context()
 
-    def __iter__(self):
-        return self._track()
-
-    def _track(self):
-        ttft_ms: int | None = None
+    def _safe(self, callback: Callable, *args: Any, **kwargs: Any) -> Any:
         try:
-            for chunk in self._original:  # type: ignore[union-attr]
-                if ttft_ms is None:
-                    ttft_ms = elapsed_ms(self._t0)
-                if self._on_chunk is not None:
-                    self._on_chunk(chunk)
-                yield chunk
+            return self._context.run(callback, *args, **kwargs)
         except Exception as exc:
-            track_api_error(self._handle, exc, elapsed_ms(self._t0))
-            raise
+            debug_failure("stream", "telemetry callback", exc)
+            return None
+
+    def _chunk(self, chunk: object) -> None:
+        if self._ttft_ms is None and self._safe(stream_chunk_has_output, chunk):
+            self._ttft_ms = elapsed_ms(self._t0)
+        if self._on_chunk is not None:
+            self._safe(self._on_chunk, chunk)
+
+    def _finish(self, outcome: str = "completed") -> None:
+        if self._finished:
+            return
+        self._finished = True
+        if outcome == "completed":
+            self._safe(self._on_done, elapsed_ms(self._t0), self._ttft_ms)
         else:
-            self._on_done(elapsed_ms(self._t0), ttft_ms)
+            self._safe(
+                self._on_done, elapsed_ms(self._t0), self._ttft_ms, outcome=outcome
+            )
+
+    def _error(self, exc: Exception) -> None:
+        if not self._finished:
+            self._finished = True
+            self._safe(track_api_error, self._handle, exc, elapsed_ms(self._t0))
+
+
+class SyncStreamWrapper(StreamState):
+    """A single-pass iterator tracking exhaustion, failure, and explicit closure."""
+
+    def __init__(
+        self,
+        original: Any,
+        handle: ModelHandle,
+        t0: float,
+        on_chunk: Callable[[object], None] | None,
+        on_done: Callable[..., None],
+    ) -> None:
+        super().__init__(handle, t0, on_chunk, on_done)
+        self._original = original
+        self._iterator = None
+
+    def __iter__(self) -> SyncStreamWrapper:
+        return self
+
+    def __next__(self) -> Any:
+        if self._finished:
+            raise StopIteration
+        try:
+            if self._iterator is None:
+                self._iterator = iter(self._original)
+            chunk = next(self._iterator)
+        except StopIteration:
+            self._finish()
+            raise
+        except Exception as exc:
+            self._error(exc)
+            raise
+        self._chunk(chunk)
+        return chunk
+
+    def close(self) -> Any:
+        try:
+            close = getattr(self._original, "close", None)
+            if close is not None:
+                return close()
+            return None
+        finally:
+            self._finish("closed")
 
     def __enter__(self) -> SyncStreamWrapper:
         if hasattr(self._original, "__enter__"):
-            self._original.__enter__()  # type: ignore[union-attr]
+            self._original.__enter__()
         return self
 
-    def __exit__(self, *args: object) -> object:
-        if hasattr(self._original, "__exit__"):
-            return self._original.__exit__(*args)  # type: ignore[union-attr]
-        return None
+    def __exit__(self, *args: Any) -> Any:
+        try:
+            if hasattr(self._original, "__exit__"):
+                return self._original.__exit__(*args)
+            close = getattr(self._original, "close", None)
+            if close is not None:
+                close()
+            return None
+        finally:
+            self._finish("closed")
 
-    def __getattr__(self, name: str) -> object:
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._original, name)
 
 
-class AsyncStreamWrapper:
-    """Wraps an async iterable stream to capture TTFT and record inference on exhaustion."""
+class AsyncStreamWrapper(StreamState):
+    """Async counterpart, including cancellation while waiting for a chunk."""
 
     def __init__(
         self,
-        original: object,
+        original: Any,
         handle: ModelHandle,
         t0: float,
         on_chunk: Callable[[object], None] | None,
-        on_done: Callable[[int, int | None], None],
+        on_done: Callable[..., None],
     ) -> None:
+        super().__init__(handle, t0, on_chunk, on_done)
         self._original = original
-        self._handle = handle
-        self._t0 = t0
-        self._on_chunk = on_chunk
-        self._on_done = on_done
+        self._iterator = None
 
-    def __aiter__(self):
-        return self._track()
+    def __aiter__(self) -> AsyncStreamWrapper:
+        return self
 
-    async def _track(self):
-        ttft_ms: int | None = None
+    async def __anext__(self) -> Any:
+        if self._finished:
+            raise StopAsyncIteration
         try:
-            async for chunk in self._original:  # type: ignore[union-attr]
-                if ttft_ms is None:
-                    ttft_ms = elapsed_ms(self._t0)
-                if self._on_chunk is not None:
-                    self._on_chunk(chunk)
-                yield chunk
-        except Exception as exc:
-            track_api_error(self._handle, exc, elapsed_ms(self._t0))
+            if self._iterator is None:
+                self._iterator = self._original.__aiter__()
+            chunk = await self._iterator.__anext__()
+        except StopAsyncIteration:
+            self._finish()
             raise
-        else:
-            self._on_done(elapsed_ms(self._t0), ttft_ms)
+        except asyncio.CancelledError:
+            self._finish("cancelled")
+            raise
+        except Exception as exc:
+            self._error(exc)
+            raise
+        self._chunk(chunk)
+        return chunk
+
+    async def close(self) -> Any:
+        try:
+            close = getattr(self._original, "aclose", None) or getattr(
+                self._original, "close", None
+            )
+            if close is not None:
+                return await close()
+            return None
+        finally:
+            self._finish("closed")
+
+    async def aclose(self) -> Any:
+        return await self.close()
 
     async def __aenter__(self) -> AsyncStreamWrapper:
         if hasattr(self._original, "__aenter__"):
-            await self._original.__aenter__()  # type: ignore[union-attr]
+            await self._original.__aenter__()
         return self
 
-    async def __aexit__(self, *args: object) -> object:
-        if hasattr(self._original, "__aexit__"):
-            return await self._original.__aexit__(*args)  # type: ignore[union-attr]
-        return None
+    async def __aexit__(self, *args: Any) -> Any:
+        try:
+            if hasattr(self._original, "__aexit__"):
+                return await self._original.__aexit__(*args)
+            close = getattr(self._original, "aclose", None) or getattr(
+                self._original, "close", None
+            )
+            if close is not None:
+                await close()
+            return None
+        finally:
+            self._finish(
+                "cancelled"
+                if args
+                and args[0] is not None
+                and issubclass(args[0], asyncio.CancelledError)
+                else "closed"
+            )
 
-    def __getattr__(self, name: str) -> object:
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._original, name)

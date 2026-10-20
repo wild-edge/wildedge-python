@@ -134,7 +134,10 @@ def test_unfinished_and_error_streams():
     on_chunk, on_done = make_responses_stream_callbacks(handle, [], 0)
     on_chunk(SimpleNamespace(type="response.created"))
     on_done(100, 1)
-    handle.track_inference.assert_not_called()
+    handle.track_inference.assert_called_once()
+    assert handle.track_inference.call_args.kwargs["error_code"] == "STREAM_INCOMPLETE"
+    handle = MagicMock()
+    on_chunk, on_done = make_responses_stream_callbacks(handle, [], 0)
     on_chunk(SimpleNamespace(type="error", code="server_error"))
     on_done(100, 1)
     handle.track_error.assert_called_once()
