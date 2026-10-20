@@ -5,6 +5,14 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Changed
+
+- The ultralytics integration now requires ultralytics 8.0.200 or later
+  (was 8.0.0). Earlier 8.0.x releases keep their helpers under
+  `ultralytics.yolo.utils`, and the integration turned itself off on them
+  without a word. `instrument("ultralytics")` now logs a warning naming the
+  installed version instead.
+
 ### Fixed
 
 - The gguf integration now tracks `Llama.create_chat_completion()` and

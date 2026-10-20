@@ -27,14 +27,28 @@ from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
+# Oldest supported release; earlier ones keep their helpers under
+# ultralytics.yolo.utils instead of ultralytics.utils.
+MIN_ULTRALYTICS_VERSION = "8.0.200"
+
 try:
     import ultralytics as _ultralytics
-    from ultralytics.utils import (
-        WEIGHTS_DIR as _ULTRALYTICS_WEIGHTS_DIR,  # type: ignore[import-untyped]
-    )
 except ImportError:
     _ultralytics = None  # type: ignore[assignment]
-    _ULTRALYTICS_WEIGHTS_DIR = None  # type: ignore[assignment]
+
+_ULTRALYTICS_WEIGHTS_DIR = None
+# Set when ultralytics is installed but older than MIN_ULTRALYTICS_VERSION.
+_unsupported_ultralytics_version: str | None = None
+if _ultralytics is not None:
+    try:
+        from ultralytics.utils import (
+            WEIGHTS_DIR as _ULTRALYTICS_WEIGHTS_DIR,  # type: ignore[import-untyped]
+        )
+    except ImportError:
+        _unsupported_ultralytics_version = getattr(
+            _ultralytics, "__version__", "unknown"
+        )
+        _ultralytics = None  # type: ignore[assignment]
 
 try:
     import numpy as np  # type: ignore[import-untyped]
@@ -393,6 +407,14 @@ class UltralyticsExtractor(BaseExtractor):
         is emitted with the file size and the total load duration.
         """
         global _ultralytics_patched
+        if _unsupported_ultralytics_version is not None:
+            logger.warning(
+                "wildedge: ultralytics %s is older than %s, the oldest supported "
+                "release; the ultralytics integration is disabled",
+                _unsupported_ultralytics_version,
+                MIN_ULTRALYTICS_VERSION,
+            )
+            return
         if _ultralytics_patched or _ultralytics is None:
             return
 
