@@ -162,7 +162,10 @@ def make_anthropic_stream_callbacks(
             or event_type == "RawMessageStopEvent"
         ):
             message_stopped = True
-        if event_type == "RawMessageStartEvent":
+        if (
+            event_type == "RawMessageStartEvent"
+            or getattr(event, "type", None) == "message_start"
+        ):
             msg = getattr(event, "message", None)
             if msg is not None:
                 usage = getattr(msg, "usage", None)
@@ -170,7 +173,10 @@ def make_anthropic_stream_callbacks(
                     tokens_in[0] = getattr(usage, "input_tokens", None)
                     cached_tokens[0] = getattr(usage, "cache_read_input_tokens", None)
                 resolved_model[0] = getattr(msg, "model", None)
-        elif event_type == "RawMessageDeltaEvent":
+        elif (
+            event_type == "RawMessageDeltaEvent"
+            or getattr(event, "type", None) == "message_delta"
+        ):
             usage = getattr(event, "usage", None)
             if usage is not None:
                 tokens_out[0] = getattr(usage, "output_tokens", None)
