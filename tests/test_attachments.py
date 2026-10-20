@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from wildedge import constants
 from wildedge.attachments import (
     Attachment,
     AttachmentManager,
@@ -15,6 +16,7 @@ from wildedge.attachments import (
     PendingAttachment,
     UploadOutcome,
 )
+from wildedge.client import WildEdge
 from wildedge.events.inference import InferenceEvent
 from wildedge.model import ModelHandle, ModelInfo
 
@@ -509,8 +511,6 @@ def test_transmit_caps_request_timeout_at_deadline(monkeypatch, tmp_path):
 
 
 def test_drain_uploads_more_than_one_batch(tmp_path):
-    from wildedge import constants
-
     n = constants.ATTACHMENT_PRESIGN_BATCH_SIZE * 2 + 1
     store = _filled_store(tmp_path, n)
     tx = _StubTransmitter([UploadOutcome.UPLOADED] * n)
@@ -572,8 +572,6 @@ def test_drain_after_feature_disabled_is_noop(tmp_path):
 
 
 def _client_with_pending(tmp_path, n=2):
-    from wildedge.client import WildEdge
-
     client = WildEdge(
         dsn="https://test@test.com/key",
         attachments_enabled=True,
@@ -627,8 +625,6 @@ def test_transmit_deadline_passing_after_presign_skips_put(monkeypatch, tmp_path
 
 
 def test_drain_stops_once_store_is_empty(tmp_path):
-    from wildedge import constants
-
     n = constants.ATTACHMENT_PRESIGN_BATCH_SIZE
     store = _filled_store(tmp_path, n)
     tx = _StubTransmitter([UploadOutcome.UPLOADED] * n)
@@ -639,9 +635,6 @@ def test_drain_stops_once_store_is_empty(tmp_path):
 
 
 def test_flush_with_attachments_disabled(monkeypatch):
-    from wildedge import constants
-    from wildedge.client import WildEdge
-
     monkeypatch.delenv(constants.ENV_ATTACHMENTS_ENABLED, raising=False)
     client = WildEdge(dsn="https://test@test.com/key")
     try:
