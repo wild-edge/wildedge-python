@@ -54,16 +54,16 @@ class track:
         self.input_meta = input_meta
         self.output_meta = output_meta
         self.generation_config = generation_config
-        self._correlation = dict(
-            trace_id=trace_id,
-            span_id=span_id,
-            parent_span_id=parent_span_id,
-            run_id=run_id,
-            agent_id=agent_id,
-            step_index=step_index,
-            conversation_id=conversation_id,
-            context=context,
-        )
+        self._correlation = {
+            "trace_id": trace_id,
+            "span_id": span_id,
+            "parent_span_id": parent_span_id,
+            "run_id": run_id,
+            "agent_id": agent_id,
+            "step_index": step_index,
+            "conversation_id": conversation_id,
+            "context": context,
+        }
         self.start_time: float | None = None
 
     def __call__(self, func):

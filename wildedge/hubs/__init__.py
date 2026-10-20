@@ -37,11 +37,11 @@ from wildedge.hubs.registry import HUB_SPECS, HUBS_BY_NAME, HubSpec, supported_h
 from wildedge.hubs.torchhub import TorchHubTracker
 
 __all__ = [
+    "HUBS_BY_NAME",
+    "HUB_SPECS",
     "BaseHubTracker",
+    "HubSpec",
     "HuggingFaceHubTracker",
     "TorchHubTracker",
-    "HubSpec",
-    "HUB_SPECS",
-    "HUBS_BY_NAME",
     "supported_hubs",
 ]

@@ -21,7 +21,7 @@ def _get_libc() -> ctypes.CDLL:
 CF_STRING_ENCODING_UTF8 = 0x08000100
 CF_NUMBER_SINT32_TYPE = 3
 
-# NSProcessInfoThermalState values (0–3)
+# NSProcessInfoThermalState values (0-3)
 MACOS_THERMAL_STATES: dict[int, tuple[str, str]] = {
     0: ("nominal", "nominal"),
     1: ("fair", "fair"),

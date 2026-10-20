@@ -221,19 +221,18 @@ def wrap_sync_messages(messages_obj: object, client_ref: object) -> None:
                         handle, messages
                     )
                     return SyncStreamWrapper(result, handle, t0, on_chunk, on_done)
-                else:
-                    duration = elapsed_ms(t0)
-                    usage = getattr(result, "usage", None)
-                    tokens_in = getattr(usage, "input_tokens", None) if usage else None
-                    handle.track_inference(
-                        duration_ms=duration,
-                        input_modality="text",
-                        output_modality="generation",
-                        success=True,
-                        input_meta=build_input_meta(messages, tokens_in),
-                        output_meta=build_output_meta(result, duration),
-                        api_meta=build_api_meta(result),
-                    )
+                duration = elapsed_ms(t0)
+                usage = getattr(result, "usage", None)
+                tokens_in = getattr(usage, "input_tokens", None) if usage else None
+                handle.track_inference(
+                    duration_ms=duration,
+                    input_modality="text",
+                    output_modality="generation",
+                    success=True,
+                    input_meta=build_input_meta(messages, tokens_in),
+                    output_meta=build_output_meta(result, duration),
+                    api_meta=build_api_meta(result),
+                )
             return result
         except Exception as exc:
             if handle is not None:
@@ -264,19 +263,18 @@ def wrap_async_messages(messages_obj: object, client_ref: object) -> None:
                         handle, messages
                     )
                     return AsyncStreamWrapper(result, handle, t0, on_chunk, on_done)
-                else:
-                    duration = elapsed_ms(t0)
-                    usage = getattr(result, "usage", None)
-                    tokens_in = getattr(usage, "input_tokens", None) if usage else None
-                    handle.track_inference(
-                        duration_ms=duration,
-                        input_modality="text",
-                        output_modality="generation",
-                        success=True,
-                        input_meta=build_input_meta(messages, tokens_in),
-                        output_meta=build_output_meta(result, duration),
-                        api_meta=build_api_meta(result),
-                    )
+                duration = elapsed_ms(t0)
+                usage = getattr(result, "usage", None)
+                tokens_in = getattr(usage, "input_tokens", None) if usage else None
+                handle.track_inference(
+                    duration_ms=duration,
+                    input_modality="text",
+                    output_modality="generation",
+                    success=True,
+                    input_meta=build_input_meta(messages, tokens_in),
+                    output_meta=build_output_meta(result, duration),
+                    api_meta=build_api_meta(result),
+                )
             return result
         except Exception as exc:
             if handle is not None:

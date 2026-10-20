@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 from abc import ABC, abstractmethod
 
@@ -77,10 +78,8 @@ class BaseHubTracker(ABC):
                     path = os.path.join(dirpath, filename)
                     if os.path.islink(path):
                         continue
-                    try:
+                    with contextlib.suppress(OSError):
                         snapshot[path] = os.path.getsize(path)
-                    except OSError:
-                        pass
         except Exception:
             pass
         return snapshot

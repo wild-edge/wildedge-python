@@ -155,7 +155,7 @@ def detection_output_meta(
             total_preds += len(confs)
             all_confs.extend(confs)
 
-            for i, (conf, cls_id) in enumerate(zip(confs, classes)):
+            for i, (conf, cls_id) in enumerate(zip(confs, classes, strict=False)):
                 if len(top_preds) >= 5:
                     break
                 label = (names or {}).get(int(cls_id), str(int(cls_id)))
@@ -199,7 +199,7 @@ def classify_output_meta(
                 top5conf = (
                     probs.top5conf.tolist() if hasattr(probs.top5conf, "tolist") else []
                 )
-                for cls_id, conf in zip(top5, top5conf):
+                for cls_id, conf in zip(top5, top5conf, strict=False):
                     label = (names or {}).get(int(cls_id), str(int(cls_id)))
                     top_preds.append(
                         TopKPrediction(label=label, confidence=round(float(conf), 4))
@@ -228,12 +228,10 @@ def weights_file_exists(model_arg: object) -> bool:
     if p.is_file():
         return True
     # ultralytics resolves short names (e.g. "yolov8n.pt") against its assets dir
-    if (
+    return (
         _ULTRALYTICS_WEIGHTS_DIR is not None
         and (_ULTRALYTICS_WEIGHTS_DIR / p.name).is_file()
-    ):
-        return True
-    return False
+    )
 
 
 def build_download_record(obj: object, load_ms: int) -> dict | None:

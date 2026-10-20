@@ -6,7 +6,7 @@ import uuid
 import weakref
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from wildedge import constants
@@ -248,7 +248,7 @@ class WildEdge:
     # Framework integrations: patch ML runtime constructors for inference tracking.
     SUPPORTED_INTEGRATIONS = supported_integrations()
     NOOP_INTEGRATIONS = noop_integrations()
-    PATCH_INSTALLERS = {
+    PATCH_INSTALLERS: ClassVar[dict[str, Callable[[object], None]]] = {
         "anthropic": AnthropicExtractor.install_auto_load_patch,
         "gguf": GgufExtractor.install_auto_load_patch,
         "mlx": MlxExtractor.install_auto_load_patch,
@@ -262,7 +262,7 @@ class WildEdge:
 
     # Hub trackers: record download provenance (where models came from).
     SUPPORTED_HUBS = supported_hubs()
-    HUB_TRACKER_CLASSES: dict[str, type[BaseHubTracker]] = {
+    HUB_TRACKER_CLASSES: ClassVar[dict[str, type[BaseHubTracker]]] = {
         "huggingface": HuggingFaceHubTracker,
         "torchhub": TorchHubTracker,
     }

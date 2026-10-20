@@ -102,10 +102,7 @@ def image_input_meta(tensor: object) -> ImageInputMeta | None:
         t_min = float(tensor.min().item())  # type: ignore[union-attr]
         t_max = float(tensor.max().item())  # type: ignore[union-attr]
         span = t_max - t_min
-        if span > 0:
-            norm = (tensor - t_min) / span  # type: ignore[operator]
-        else:
-            norm = tensor  # type: ignore[assignment]
+        norm = (tensor - t_min) / span if span > 0 else tensor  # type: ignore[operator]
 
         brightness_mean, brightness_stddev, buckets = image_brightness_histogram(
             norm.flatten()
@@ -157,7 +154,7 @@ def classification_output_meta(
             label=labels[int(idx.item())] if labels else str(int(idx.item())),
             confidence=round(float(conf.item()), 4),
         )
-        for conf, idx in zip(top_vals, top_idx)
+        for conf, idx in zip(top_vals, top_idx, strict=True)
     ]
 
     return ClassificationOutputMeta(
