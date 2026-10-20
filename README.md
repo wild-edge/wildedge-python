@@ -119,6 +119,10 @@ The `openai` integration also tracks `client.responses.create(...)`, including
 async clients and `stream=True`. See [Responses tracking](docs/providers.md#responses-api)
 for coverage and streaming behavior.
 
+The `openai` integration also tracks sync and async `embeddings.create()` calls.
+See [Embeddings](docs/providers.md#embeddings) and the
+[example](examples/openai_embeddings_example.py).
+
 **Hub tracking**
 
 Pass `hubs=` to track model download provenance. Hubs are framework-agnostic and can be combined with any integration.

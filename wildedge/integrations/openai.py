@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import functools
 import threading
 import time
 from typing import TYPE_CHECKING
 
-from wildedge.events.inference import ApiMeta, GenerationOutputMeta
+from wildedge.events.inference import (
+    ApiMeta,
+    EmbeddingOutputMeta,
+    GenerationOutputMeta,
+    TextInputMeta,
+)
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import (
     SOURCE_BY_HOSTNAME,  # noqa: F401  (re-exported; moved to common)
@@ -411,6 +417,105 @@ def wrap_async_responses(responses: object, source: str, client_ref: object) -> 
     responses.create = patched_create
 
 
+def record_embedding(
+    handle: ModelHandle, result: object, value: object, duration: int
+) -> None:
+    """Record metadata only; never retain input text or embedding vectors."""
+    usage = getattr(result, "usage", None)
+    tokens = getattr(usage, "prompt_tokens", None)
+    batch_size = None
+    chars = words = None
+    if isinstance(value, str):
+        batch_size = 1
+        chars, words = len(value), len(value.split())
+    elif isinstance(value, (list, tuple)):
+        if value and isinstance(value[0], int):
+            batch_size = 1
+        else:
+            batch_size = len(value)
+            if value and all(isinstance(item, str) for item in value):
+                chars = sum(len(item) for item in value)
+                words = sum(len(item.split()) for item in value)
+    data = getattr(result, "data", None)
+    dimensions = None
+    if data:
+        vector = getattr(data[0], "embedding", None)
+        if isinstance(vector, (list, tuple)):
+            dimensions = len(vector)
+        elif isinstance(vector, str):
+            byte_count = len(base64.b64decode(vector, validate=True))
+            if byte_count % 4 == 0:
+                dimensions = byte_count // 4
+    handle.track_inference(
+        duration_ms=duration,
+        input_modality="text",
+        output_modality="embedding",
+        success=True,
+        batch_size=batch_size,
+        input_meta=TextInputMeta(
+            char_count=chars, word_count=words, token_count=tokens
+        ),
+        output_meta=EmbeddingOutputMeta(dimensions=dimensions, tokens_in=tokens),
+        api_meta=build_api_meta(result),
+    )
+
+
+def wrap_sync_embeddings(embeddings: object, source: str, client_ref: object) -> None:
+    original_create = embeddings.create
+    model_handles: dict[str, ModelHandle] = {}
+
+    @functools.wraps(original_create)
+    def patched_create(*args, **kwargs):
+        client = client_ref()
+        model_id = kwargs.get("model")
+        if client is None or client.closed or not model_id:
+            return original_create(*args, **kwargs)
+        handle = resolve_handle(model_id, embeddings, model_handles, client, source)
+        t0 = time.perf_counter()
+        try:
+            result = original_create(*args, **kwargs)
+        except Exception as exc:
+            if handle is not None:
+                track_api_error(handle, exc, elapsed_ms(t0))
+            raise
+        if handle is not None:
+            try:
+                record_embedding(handle, result, kwargs.get("input"), elapsed_ms(t0))
+            except Exception as exc:
+                debug_openai_failure("embedding tracking", exc)
+        return result
+
+    embeddings.create = patched_create
+
+
+def wrap_async_embeddings(embeddings: object, source: str, client_ref: object) -> None:
+    original_create = embeddings.create
+    model_handles: dict[str, ModelHandle] = {}
+
+    @functools.wraps(original_create)
+    async def patched_create(*args, **kwargs):
+        client = client_ref()
+        model_id = kwargs.get("model")
+        if client is None or client.closed or not model_id:
+            return await original_create(*args, **kwargs)
+        handle = resolve_handle(model_id, embeddings, model_handles, client, source)
+        t0 = time.perf_counter()
+        try:
+            result = await original_create(*args, **kwargs)
+        except Exception as exc:
+            if handle is not None:
+                track_api_error(handle, exc, elapsed_ms(t0))
+            raise
+        if handle is not None:
+            try:
+                record_embedding(handle, result, kwargs.get("input"), elapsed_ms(t0))
+            except Exception as exc:
+                debug_openai_failure("embedding tracking", exc)
+        return result
+
+    embeddings.create = patched_create
+
+
 class OpenAIExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
         return type(obj).__name__ in (
@@ -420,6 +525,8 @@ class OpenAIExtractor(BaseExtractor):
             "AsyncCompletions",
             "Responses",
             "AsyncResponses",
+            "Embeddings",
+            "AsyncEmbeddings",
         )
 
     def extract_info(
@@ -444,7 +551,7 @@ class OpenAIExtractor(BaseExtractor):
 
     @classmethod
     def install_auto_load_patch(cls, client_ref: object) -> None:
-        """Patch new OpenAI clients to track Chat Completions and Responses."""
+        """Patch new OpenAI clients to track Chat Completions, Responses, and embeddings."""
         global _openai_patched
         if _openai_patched or _openai is None:
             return
@@ -483,6 +590,13 @@ class OpenAIExtractor(BaseExtractor):
                             )
                         except Exception as exc:
                             debug_openai_failure("sync responses wrap", exc)
+                    if hasattr(self_inner, "embeddings"):
+                        try:
+                            wrap_sync_embeddings(
+                                self_inner.embeddings, source, client_ref
+                            )
+                        except Exception as exc:
+                            debug_openai_failure("sync embeddings wrap", exc)
 
             def patched_async_init(self_inner, *args, **kwargs):  # type: ignore[no-untyped-def]
                 original_async_init(self_inner, *args, **kwargs)
@@ -504,6 +618,13 @@ class OpenAIExtractor(BaseExtractor):
                             )
                         except Exception as exc:
                             debug_openai_failure("async responses wrap", exc)
+                    if hasattr(self_inner, "embeddings"):
+                        try:
+                            wrap_async_embeddings(
+                                self_inner.embeddings, source, client_ref
+                            )
+                        except Exception as exc:
+                            debug_openai_failure("async embeddings wrap", exc)
 
             patched_sync_init.__wildedge_patch_name__ = OPENAI_INIT_PATCH_NAME  # type: ignore[attr-defined]
             patched_sync_init.__wildedge_original_call__ = original_sync_init  # type: ignore[attr-defined]

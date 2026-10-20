@@ -275,11 +275,14 @@ class ApiMeta:
 class EmbeddingOutputMeta:
     task: str = "embedding"
     dimensions: int | None = None
+    tokens_in: int | None = None
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {"task": self.task}
         if self.dimensions is not None:
             d["dimensions"] = self.dimensions
+        if self.tokens_in is not None:
+            d["tokens_in"] = self.tokens_in
         return d
 
 

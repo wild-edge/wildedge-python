@@ -105,3 +105,35 @@ In WildEdge, locate that run and verify four inference events beneath the four
 named spans, with input/output token usage and first-output timing on the two
 streams. Provider checks alone do not prove telemetry delivery; confirm these
 events in the dashboard.
+
+
+## Embeddings
+
+The `openai` integration also tracks sync and async `client.embeddings.create()`
+calls. Enable instrumentation before constructing the client. OpenAI-compatible
+providers work through the same integration if they implement the embeddings
+endpoint.
+
+Records latency, resolved model, input token usage, batch size, and dimensions.
+Text, batches of strings, token ID arrays, and batches of token ID arrays are
+supported. Arbitrary iterables pass through without instrumentation consuming
+them; their batch size is omitted. Dimensions come from the returned vector
+length, or float32 byte length for explicit base64 output. Usage comes from the
+provider, not a local tokenizer. Both float and base64 vectors remain in the
+application response and are never included in telemetry. Raw inputs are also
+not uploaded by this adapter.
+
+Input usage is recorded in `input_meta.token_count` and `output_meta.tokens_in`
+so existing analytics can query it. Embeddings do not emit generated-token
+counts, throughput, or TTFT. API exceptions use the existing error tracking.
+
+With `OPENAI_API_KEY` and `WILDEDGE_DSN` configured, run from the SDK root:
+
+```bash
+uv run examples/openai_embeddings_example.py
+```
+
+This makes two small billable calls, one sync and one async. Find the printed
+run ID in WildEdge and verify two inference events, each linked to its named
+span, with batch size 2, dimensions, and input usage. Set
+`OPENAI_EMBEDDING_MODEL` to override `text-embedding-3-small`.

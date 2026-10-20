@@ -262,3 +262,61 @@ async def test_responses_example(compat_client):
     assert len(events) == 4
     assert all(e["run_id"] == "responses-example-test" for e in events)
     assert len({e["parent_span_id"] for e in events}) == 4
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("encoding", ["float", "base64"])
+async def test_embeddings_is_tracked(compat_client, asynchronous, encoding):
+    compat_client.instrument("openai")
+
+    def handler(request):
+        assert request.url.path == "/v1/embeddings"
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "model": "text-embedding-3-small",
+                "data": [
+                    {
+                        "object": "embedding",
+                        "index": i,
+                        "embedding": [0.25, 0.5, 0.75]
+                        if encoding == "float"
+                        else "AACAPgAAAD8AAEA/",
+                    }
+                    for i in range(2)
+                ],
+                "usage": {"prompt_tokens": 7, "total_tokens": 7},
+            },
+        )
+
+    if asynchronous:
+        client = openai.AsyncOpenAI(
+            api_key="sk-compat",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        async with client:
+            result = await client.embeddings.create(
+                model="text-embedding-3-small",
+                input=["hello", "world"],
+                encoding_format=encoding,
+            )
+    else:
+        with _client(handler) as client:
+            result = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=["hello", "world"],
+                encoding_format=encoding,
+            )
+    assert len(result.data) == 2
+    event = compat_client.one("inference")
+    inference = event["inference"]
+    assert inference["batch_size"] == 2
+    assert inference["input_meta"]["token_count"] == 7
+    assert inference["output_meta"] == {
+        "task": "embedding",
+        "dimensions": 3,
+        "tokens_in": 7,
+    }
+    assert inference["api_meta"]["resolved_model_id"] == "text-embedding-3-small"
+    assert "embedding" not in inference["output_meta"]
