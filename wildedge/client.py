@@ -25,6 +25,7 @@ from wildedge.hubs.base import BaseHubTracker
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.registry import supported_hubs
 from wildedge.hubs.torchhub import TorchHubTracker
+from wildedge.instrumentation import claim_instrumentation, has_other_live_owner
 from wildedge.integrations.anthropic import AnthropicExtractor
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.gguf import GgufExtractor
@@ -482,6 +483,15 @@ class WildEdge:
 
     def publish(self, event_dict: dict) -> None:
         if self.closed or self.noop:
+            if (
+                not self.noop
+                and event_dict.get("event_type") in ("inference", "error")
+                and not getattr(self, "_closed_publish_warned", False)
+            ):
+                self._closed_publish_warned = True
+                logger.warning(
+                    "wildedge: event belongs to a closed SDK client; recreate models after initializing its replacement"
+                )
             return
 
         if self.debug:
@@ -707,7 +717,7 @@ class WildEdge:
                 "wildedge: hub '%s' library not installed; skipping", hub_name
             )
             return
-        tracker.install_patch(weakref.ref(self))
+        tracker.install_patch(claim_instrumentation(self, "hub:" + hub_name))
         self.hub_trackers[hub_name] = tracker
         if self.debug:
             logger.debug("wildedge: hub tracker '%s' activated", hub_name)
@@ -814,6 +824,8 @@ class WildEdge:
             if self.debug:
                 logger.debug("wildedge: instrument skipped (no DSN configured)")
             return
+        if self.closed:
+            raise RuntimeError("Cannot instrument with a closed WildEdge client")
         if integration is None:
             if not hubs:
                 raise ValueError(
@@ -859,7 +871,7 @@ class WildEdge:
                 logger.debug(LOG_INSTRUMENT_TORCH_KERAS, integration)
         else:
             installer = self.PATCH_INSTALLERS[integration]
-            installer(weakref.ref(self))
+            installer(claim_instrumentation(self, integration))
         for hub_name in hubs or []:
             self._activate_hub(hub_name)
 
@@ -1008,8 +1020,10 @@ class WildEdge:
         With a timeout, buffered attachments are uploaded in the time left after
         the event flush. Without one, they stay on disk for the next start.
         """
+        if self.closed:
+            return
         self.closed = True
-        if not self.noop:
+        if not self.noop and not has_other_live_owner(self):
             stop_sampler()
         if self.attachment_uploader is not None:
             self.attachment_uploader.stop()

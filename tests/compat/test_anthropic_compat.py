@@ -4,7 +4,7 @@ import json
 
 import anthropic
 import pytest
-from conftest import sdk_http_module
+from conftest import make_compat_client, sdk_http_module
 
 httpx = sdk_http_module("anthropic")
 
@@ -342,3 +342,43 @@ async def test_native_stream_provider_error_midstream(compat_client, asynchronou
     error = compat_client.one("error")["error"]
     assert error["provider_error_code"] == "overloaded_error"
     assert not compat_client.of_type("inference")
+
+
+def test_replacement_client_keeps_native_helper_ownership(compat_client):
+    compat_client.instrument("anthropic")
+    old = _client(lambda request: httpx.Response(200, json=MESSAGE))
+    old.messages.create(model="claude-haiku-4-5", max_tokens=32, messages=[])
+    compat_client.close()
+    replacement = make_compat_client()
+    try:
+        replacement.instrument("anthropic")
+        old.messages.create(model="claude-haiku-4-5", max_tokens=32, messages=[])
+        events = [
+            {
+                "type": "message_start",
+                "message": {**MESSAGE, "content": [], "stop_reason": None},
+            },
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": {"output_tokens": 3},
+            },
+            {"type": "message_stop"},
+        ]
+        body = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
+        with (
+            _client(
+                lambda request: httpx.Response(
+                    200, text=body, headers={"content-type": "text/event-stream"}
+                )
+            ) as new,
+            new.messages.stream(
+                model="claude-haiku-4-5", max_tokens=32, messages=[]
+            ) as stream,
+        ):
+            assert stream.get_final_message().usage.output_tokens == 3
+        assert len(compat_client.of_type("inference")) == 1
+        replacement.one("inference")
+    finally:
+        old.close()
+        replacement.close()

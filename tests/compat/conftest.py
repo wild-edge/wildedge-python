@@ -113,7 +113,14 @@ class CompatClient:
         self.events: list[dict] = []
         # Handles keep a reference to client.publish, so swap it before any
         # model is registered.
-        client.publish = self.events.append  # type: ignore[method-assign]
+        original_publish = client.publish
+
+        def publish(event):
+            original_publish(event)
+            if not client.closed:
+                self.events.append(event)
+
+        client.publish = publish  # type: ignore[method-assign]
 
     def __getattr__(self, name: str):
         return getattr(self.client, name)
@@ -128,10 +135,8 @@ class CompatClient:
         return found[0]
 
 
-@pytest.fixture(scope="session")
-def _session_client():
-    # One client per process, as in a real app: integration patches are
-    # process-wide and stay bound to the client that installed them (#74).
+def make_compat_client():
+    """Construct a recording client without background network services."""
     with (
         patch(
             "wildedge.client.detect_device",
@@ -146,13 +151,14 @@ def _session_client():
             enable_offline_persistence=False,
             sampling_interval_s=0,
         )
-    wrapped = CompatClient(client)
-    yield wrapped
-    client.close()
+    return CompatClient(client)
 
 
 @pytest.fixture
-def compat_client(_session_client):
-    """The shared client, with the events of earlier tests cleared."""
-    _session_client.events.clear()
-    return _session_client
+def compat_client():
+    """Fresh clients exercise replacement through already-installed process patches."""
+    wrapped = make_compat_client()
+    try:
+        yield wrapped
+    finally:
+        wrapped.close()

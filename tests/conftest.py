@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import wildedge.hubs.huggingface as huggingface
+import wildedge.instrumentation as instrumentation
 import wildedge.paths as paths
 from wildedge.client import WildEdge
 from wildedge.defaults import set_default_client
@@ -123,3 +125,10 @@ def client_with_stubbed_runtime():
             dsn="https://secret@ingest.wildedge.dev/key",
             sampling_interval_s=None,
         )
+
+
+@pytest.fixture(autouse=True)
+def isolate_instrumentation_owner(monkeypatch):
+    monkeypatch.setattr(instrumentation, "_owner", None)
+    monkeypatch.setattr(instrumentation, "_enabled", set())
+    monkeypatch.setattr(huggingface, "_client_route", None)

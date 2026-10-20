@@ -15,6 +15,7 @@ import threading
 import time
 
 from wildedge.hubs.base import BaseHubTracker
+from wildedge.instrumentation import ClientRoute
 from wildedge.logging import logger
 from wildedge.timing import elapsed_ms
 
@@ -28,9 +29,16 @@ except ImportError:
 _local = threading.local()
 _hf_hub_download_patched = False
 _snapshot_download_patched = False
+_client_route: ClientRoute | None = None
 
 
 def _buffer() -> list[dict]:
+    if _client_route is not None:
+        client = _client_route()
+        session = client.session_id if client is not None else None
+        if getattr(_local, "owner_session", None) != session:
+            _local.records = []
+            _local.owner_session = session
     if not hasattr(_local, "records"):
         _local.records = []
     return _local.records
@@ -44,7 +52,10 @@ def _record_download(
     cache_hit: bool,
     bandwidth_bps: int | None,
 ) -> None:
-    _buffer().append(
+    records = _buffer()
+    if _client_route is not None and _client_route() is None:
+        return
+    records.append(
         {
             "repo_id": repo_id,
             "size": size,
@@ -246,12 +257,12 @@ class HuggingFaceHubTracker(BaseHubTracker):
         """
         Patch ``hf_hub_download`` and ``snapshot_download`` for thread-local tracking.
 
-        ``client_ref`` is accepted for interface consistency but not used: the HF
-        hub tracker buffers records in a thread-local store and relies on the
-        client draining them via ``_drain_hub_trackers()`` in
-        ``_on_model_auto_loaded``.
+        Thread-local records are scoped to the enabled owner's session so a
+        replacement cannot drain provenance buffered for a previous project.
         """
-        global _hf_hub_download_patched, _snapshot_download_patched
+        global _hf_hub_download_patched, _snapshot_download_patched, _client_route
+        if isinstance(client_ref, ClientRoute):
+            _client_route = client_ref
 
         if _hf_hub_download_patched and _snapshot_download_patched:
             return

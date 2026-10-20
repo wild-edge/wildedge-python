@@ -25,34 +25,44 @@ def init(
     """
     Initialize the process default client and instrument integrations.
 
-    When a default client already exists (typically installed by ``wildedge
+    When a live default client already exists (typically installed by ``wildedge
     run`` before user code loaded) and no ``dsn`` is passed, that client is
     reused: the requested integrations are applied to it (instrumenting is
     idempotent per process) and it is returned. Passing ``dsn`` always
-    constructs a fresh client and makes it the new default.
+    constructs a fresh client and makes it the new default after instrumentation
+    succeeds. A closed default is replaced. Another live instrumentation owner
+    must be closed before enabling process-wide patches on a new client.
 
     Additional keyword arguments are forwarded to WildEdge(...) when a new
     client is constructed.
     """
     client = None if "dsn" in kwargs else peek_default_client()
+    if client is not None and client.closed:
+        client = None
     if client is not None and kwargs:
         logger.warning(
             "wildedge: init() reusing the existing default client; ignoring %s",
             ", ".join(sorted(kwargs)),
         )
-    if client is None:
+    created = client is None
+    if created:
         client = WildEdge(**kwargs)
 
     normalized_integrations = _normalize_list(integrations)
     normalized_hubs = _normalize_list(hubs)
 
-    if normalized_integrations:
-        for integration in normalized_integrations:
-            client.instrument(integration, hubs=normalized_hubs or None)
-    elif normalized_hubs:
-        client.instrument(None, hubs=normalized_hubs)
-    elif getattr(client, "debug", False):
-        logger.debug("wildedge: init called without integrations or hubs")
+    try:
+        if normalized_integrations:
+            for integration in normalized_integrations:
+                client.instrument(integration, hubs=normalized_hubs or None)
+        elif normalized_hubs:
+            client.instrument(None, hubs=normalized_hubs)
+        elif getattr(client, "debug", False):
+            logger.debug("wildedge: init called without integrations or hubs")
+    except Exception:
+        if created:
+            client.close()
+        raise
 
     set_default_client(client)
     return client

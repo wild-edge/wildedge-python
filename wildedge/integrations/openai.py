@@ -14,6 +14,7 @@ from wildedge.events.inference import (
     GenerationOutputMeta,
     TextInputMeta,
 )
+from wildedge.instrumentation import bind_client_reference
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import (
     SOURCE_BY_HOSTNAME,  # noqa: F401  (re-exported; moved to common)
@@ -597,26 +598,25 @@ class OpenAIExtractor(BaseExtractor):
                 original_sync_init(self_inner, *args, **kwargs)
                 c = client_ref()  # type: ignore[call-arg]
                 if c is not None and not c.closed:
+                    bound_ref = bind_client_reference(client_ref, c)
                     source = source_from_base_url(
                         str(getattr(self_inner, "base_url", None) or "")
                     )
                     try:
                         wrap_sync_completions(
-                            self_inner.chat.completions, source, client_ref
+                            self_inner.chat.completions, source, bound_ref
                         )
                     except Exception as exc:
                         debug_openai_failure("sync client wrap", exc)
                     if hasattr(self_inner, "responses"):
                         try:
-                            wrap_sync_responses(
-                                self_inner.responses, source, client_ref
-                            )
+                            wrap_sync_responses(self_inner.responses, source, bound_ref)
                         except Exception as exc:
                             debug_openai_failure("sync responses wrap", exc)
                     if hasattr(self_inner, "embeddings"):
                         try:
                             wrap_sync_embeddings(
-                                self_inner.embeddings, source, client_ref
+                                self_inner.embeddings, source, bound_ref
                             )
                         except Exception as exc:
                             debug_openai_failure("sync embeddings wrap", exc)
@@ -625,26 +625,27 @@ class OpenAIExtractor(BaseExtractor):
                 original_async_init(self_inner, *args, **kwargs)
                 c = client_ref()  # type: ignore[call-arg]
                 if c is not None and not c.closed:
+                    bound_ref = bind_client_reference(client_ref, c)
                     source = source_from_base_url(
                         str(getattr(self_inner, "base_url", None) or "")
                     )
                     try:
                         wrap_async_completions(
-                            self_inner.chat.completions, source, client_ref
+                            self_inner.chat.completions, source, bound_ref
                         )
                     except Exception as exc:
                         debug_openai_failure("async client wrap", exc)
                     if hasattr(self_inner, "responses"):
                         try:
                             wrap_async_responses(
-                                self_inner.responses, source, client_ref
+                                self_inner.responses, source, bound_ref
                             )
                         except Exception as exc:
                             debug_openai_failure("async responses wrap", exc)
                     if hasattr(self_inner, "embeddings"):
                         try:
                             wrap_async_embeddings(
-                                self_inner.embeddings, source, client_ref
+                                self_inner.embeddings, source, bound_ref
                             )
                         except Exception as exc:
                             debug_openai_failure("async embeddings wrap", exc)
