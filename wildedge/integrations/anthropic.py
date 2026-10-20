@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from wildedge.events.inference import ApiMeta, GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor
@@ -258,6 +259,7 @@ def wrap_sync_messages(messages_obj: object, client_ref: object) -> None:
             raise
 
     messages_obj.create = patched_create  # type: ignore[attr-defined]
+    wrap_native_stream(messages_obj, client_ref)
 
 
 def wrap_async_messages(messages_obj: object, client_ref: object) -> None:
@@ -300,6 +302,121 @@ def wrap_async_messages(messages_obj: object, client_ref: object) -> None:
             raise
 
     messages_obj.create = patched_create  # type: ignore[attr-defined]
+    wrap_native_stream(messages_obj, client_ref)
+
+
+class AnthropicStreamManager:
+    """Instrument the native helper's raw iterator while preserving its public API."""
+
+    def __init__(self, manager: Any, handle: ModelHandle, messages: list) -> None:
+        self._manager = manager
+        self._handle = handle
+        self._messages = messages
+        self._tracked = None
+
+    def _safe(self, callback, *args, **kwargs) -> None:
+        try:
+            callback(*args, **kwargs)
+        except Exception as exc:
+            debug_anthropic_failure("native stream telemetry", exc)
+
+    def _wrap(self, stream: Any, t0: float, asynchronous: bool) -> Any:
+        # Both old and current SDKs route event/text/final-message helpers
+        # through _iterator. Preserve the SDK parser and returned stream object.
+        try:
+            callbacks = make_anthropic_stream_callbacks(self._handle, self._messages)
+            wrapper = AsyncStreamWrapper if asynchronous else SyncStreamWrapper
+            tracked = wrapper(stream._iterator, self._handle, t0, *callbacks)
+            original_close = stream.close
+            if asynchronous:
+
+                @functools.wraps(original_close)
+                async def close():
+                    try:
+                        return await original_close()
+                    finally:
+                        tracked._finish("closed")
+            else:
+
+                @functools.wraps(original_close)
+                def close():
+                    try:
+                        return original_close()
+                    finally:
+                        tracked._finish("closed")
+
+            stream._iterator = tracked
+            stream.close = close
+            self._tracked = tracked
+        except Exception as exc:
+            debug_anthropic_failure("native stream wrap", exc)
+        return stream
+
+    def __enter__(self) -> Any:
+        t0 = time.perf_counter()
+        try:
+            stream = self._manager.__enter__()
+        except Exception as exc:
+            self._safe(track_api_error, self._handle, exc, elapsed_ms(t0))
+            raise
+        return self._wrap(stream, t0, False)
+
+    def __exit__(self, *args: Any) -> Any:
+        return self._manager.__exit__(*args)
+
+    async def __aenter__(self) -> Any:
+        t0 = time.perf_counter()
+        try:
+            stream = await self._manager.__aenter__()
+        except asyncio.CancelledError:
+            self._safe(
+                self._handle.track_inference,
+                duration_ms=elapsed_ms(t0),
+                success=False,
+                error_code="STREAM_CANCELLED",
+            )
+            raise
+        except Exception as exc:
+            self._safe(track_api_error, self._handle, exc, elapsed_ms(t0))
+            raise
+        return self._wrap(stream, t0, True)
+
+    async def __aexit__(self, *args: Any) -> Any:
+        if (
+            self._tracked is not None
+            and args
+            and args[0] is not None
+            and issubclass(args[0], asyncio.CancelledError)
+        ):
+            self._tracked._finish("cancelled")
+        return await self._manager.__aexit__(*args)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._manager, name)
+
+
+def wrap_native_stream(messages_obj: object, client_ref: object) -> None:
+    original_stream = getattr(messages_obj, "stream", None)
+    if original_stream is None:
+        return
+    model_handles: dict[str, ModelHandle] = {}
+
+    @functools.wraps(original_stream)
+    def patched_stream(*args, **kwargs):
+        client = client_ref()
+        model_id = kwargs.get("model")
+        if client is None or client.closed or not model_id:
+            return original_stream(*args, **kwargs)
+        handle = resolve_handle(model_id, messages_obj, model_handles, client)
+        manager = original_stream(*args, **kwargs)
+        if handle is None:
+            return manager
+        messages = kwargs.get("messages", [])
+        return AnthropicStreamManager(
+            manager, handle, messages if isinstance(messages, list) else []
+        )
+
+    messages_obj.stream = patched_stream
 
 
 class AnthropicExtractor(BaseExtractor):

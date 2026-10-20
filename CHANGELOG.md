@@ -16,6 +16,10 @@ under Unreleased and move into a version section at release time.
 
 ### Added
 
+- Anthropic native `messages.stream()` helpers are now instrumented for sync
+  and async clients, including event iteration, `text_stream`, and final-message
+  helpers, with the shared streaming lifecycle contract.
+
 - OpenAI sync and async `embeddings.create()` instrumentation records latency,
   input token usage, batch size, vector dimensions, model metadata and errors.
   Embedding vectors and raw inputs are never attached by this adapter.
