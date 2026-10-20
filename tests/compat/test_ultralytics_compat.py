@@ -35,10 +35,13 @@ def test_yolo_call_is_tracked(compat_client, yolo, image):
     assert inference["inference"]["success"] is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="model.predict() is not tracked, only model() (#72)",
-)
 def test_yolo_predict_is_tracked(compat_client, yolo, image):
     yolo.predict(image, imgsz=64, verbose=False)
     compat_client.one("inference")
+
+
+def test_predict_and_call_each_track_once(compat_client, yolo, image):
+    yolo.predict(image, imgsz=64, verbose=False)
+    assert len(compat_client.of_type("inference")) == 1
+    yolo(image, imgsz=64, verbose=False)
+    assert len(compat_client.of_type("inference")) == 2

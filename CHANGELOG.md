@@ -7,6 +7,10 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- Ultralytics `model.predict()` now records inference telemetry. Instrumentation
+  patches `predict`, which `model(...)` delegates to, so both entry points are
+  tracked exactly once.
+
 - Streaming wrappers now finalize once across exhaustion, explicit closure,
   cancellation, and iterator errors. Early closure/cancellation records an
   unsuccessful inference with partial metadata when available. TTFT ignores
