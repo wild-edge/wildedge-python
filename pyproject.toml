@@ -65,6 +65,9 @@ ban-relative-imports = "all"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/compat needs the pinned ML libraries; the Compatibility workflow runs
+# it file by file (scripts/compat_matrix.py).
+norecursedirs = [".*", "*.egg", "build", "dist", "node_modules", "venv", "compat"]
 log_level = "ERROR"
 asyncio_mode = "auto"
 markers = [
