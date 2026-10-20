@@ -30,6 +30,9 @@
   uv run ruff check .
   uv run ruff format .
   ```
+  CI runs both (`ruff check` and `ruff format --check`) and fails on any finding.
+  The rule set is in `pyproject.toml`; prefer fixing over `# noqa`, and give a
+  reason when a `noqa` is needed.
 
 - Follow PEP 8 and PEP 484 (type hints).
 
