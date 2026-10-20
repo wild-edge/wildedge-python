@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import runpy
+from pathlib import Path
 
 import openai
+import pytest
 from conftest import sdk_http_module
 
 httpx = sdk_http_module("openai")
@@ -116,3 +119,146 @@ def test_api_error_is_tracked(compat_client):
     error = compat_client.one("error")
     assert error["error"]["http_status"] == 429
     assert error["error"]["provider_error_code"] == "rate_limit_exceeded"
+
+
+RESPONSE = {
+    "id": "resp-compat",
+    "object": "response",
+    "created_at": 1700000000,
+    "model": "gpt-4o-mini",
+    "status": "completed",
+    "error": None,
+    "incomplete_details": None,
+    "output": [],
+    "parallel_tool_calls": True,
+    "tools": [],
+    "tool_choice": "auto",
+    "usage": {
+        "input_tokens": 9,
+        "output_tokens": 2,
+        "total_tokens": 11,
+        "input_tokens_details": {"cached_tokens": 3},
+        "output_tokens_details": {"reasoning_tokens": 1},
+    },
+}
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_responses_is_tracked(compat_client, asynchronous, streaming):
+    compat_client.instrument("openai")
+    with openai.OpenAI(api_key="sk-compat") as probe:
+        if not hasattr(probe, "responses"):
+            return  # The minimum supported openai version predates Responses.
+
+    def handler(request):
+        assert request.url.path == "/v1/responses"
+        if not streaming:
+            return httpx.Response(200, json=RESPONSE)
+        events = [
+            {
+                "type": "response.created",
+                "sequence_number": 0,
+                "response": {**RESPONSE, "status": "in_progress", "usage": None},
+            },
+            {
+                "type": "response.output_text.delta",
+                "sequence_number": 1,
+                "item_id": "msg-1",
+                "output_index": 0,
+                "content_index": 0,
+                "delta": "Hi",
+                "logprobs": [],
+            },
+            {"type": "response.completed", "sequence_number": 2, "response": RESPONSE},
+        ]
+        body = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
+        return httpx.Response(
+            200, text=body, headers={"content-type": "text/event-stream"}
+        )
+
+    if asynchronous:
+        client = openai.AsyncOpenAI(
+            api_key="sk-compat",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        async with client:
+            result = await client.responses.create(
+                model="gpt-4o-mini", input="Say hello", stream=streaming
+            )
+            if streaming:
+                assert [e.type async for e in result][-1] == "response.completed"
+            else:
+                assert result.id == RESPONSE["id"]
+    else:
+        with _client(handler) as client:
+            result = client.responses.create(
+                model="gpt-4o-mini", input="Say hello", stream=streaming
+            )
+            if streaming:
+                assert [e.type for e in result][-1] == "response.completed"
+            else:
+                assert result.id == RESPONSE["id"]
+    event = compat_client.one("inference")
+    assert event["model_id"] == "gpt-4o-mini"
+    output = event["inference"]["output_meta"]
+    assert output["tokens_in"] == 9
+    assert output["tokens_out"] == 2
+    assert output["cached_input_tokens"] == 3
+    assert output["reasoning_tokens_out"] == 1
+    assert output["stop_reason"] == "completed"
+
+
+async def test_responses_example(compat_client):
+    compat_client.instrument("openai")
+    with openai.OpenAI(api_key="sk-compat") as probe:
+        if not hasattr(probe, "responses"):
+            return
+    example = runpy.run_path(
+        str(Path(__file__).parents[2] / "examples" / "openai_responses_example.py")
+    )
+    payload = {
+        **RESPONSE,
+        "output": [
+            {
+                "id": "msg-1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "Hello from Responses",
+                        "annotations": [],
+                    }
+                ],
+            }
+        ],
+    }
+
+    def handler(request):
+        if not json.loads(request.content).get("stream"):
+            return httpx.Response(200, json=payload)
+        event = {
+            "type": "response.completed",
+            "sequence_number": 0,
+            "response": payload,
+        }
+        return httpx.Response(
+            200,
+            text=f"event: response.completed\ndata: {json.dumps(event)}\n\n",
+            headers={"content-type": "text/event-stream"},
+        )
+
+    example["run_sync"].__globals__["OpenAI"] = lambda: _client(handler)
+    example["run_async"].__globals__["AsyncOpenAI"] = lambda: openai.AsyncOpenAI(
+        api_key="sk-compat",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    with compat_client.trace(run_id="responses-example-test"):
+        example["run_sync"]()
+        await example["run_async"]()
+    events = compat_client.of_type("inference")
+    assert len(events) == 4
+    assert all(e["run_id"] == "responses-example-test" for e in events)
+    assert len({e["parent_span_id"] for e in events}) == 4

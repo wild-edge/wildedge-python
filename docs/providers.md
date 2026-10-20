@@ -50,3 +50,58 @@ wildedge.register_model(client, source="ollama", model_id="gemma-7b")
   providers omit them; they record as `None`, not `0`.
 - Streamed responses carry no usage unless you pass
   `stream_options={"include_usage": True}`. Timing and TTFT are unaffected.
+
+
+## Responses API
+
+The `openai` integration instruments `client.responses.create()` and
+`await client.responses.create()`, with or without `stream=True`. Enable it
+before constructing the OpenAI client, as with Chat Completions.
+
+```python
+import wildedge
+from openai import OpenAI
+
+wildedge.init(integrations=["openai"])
+client = OpenAI()
+response = client.responses.create(model="gpt-4o-mini", input="Say hello")
+print(response.output_text)
+wildedge.flush()
+```
+
+Usage comes from Responses' `input_tokens` / `output_tokens`, including cached
+input and reasoning tokens when provided. The stop reason is the response
+status, or the incomplete reason such as `max_output_tokens`. Failed responses
+are recorded as unsuccessful. No prompt or response text is uploaded by this
+adapter. String input and simple user messages provide text input metadata;
+input iterators are passed through without being consumed by instrumentation.
+
+For streams, consume the iterator to exhaustion to record the terminal response
+and its usage. Time to first output ignores lifecycle events and measures the
+first nonempty text, refusal, function argument, or audio delta. Streams without
+a terminal response do not produce a successful inference event. Early closure,
+cancellation, background response polling, and individual tool spans are outside
+this initial coverage. API exceptions retain their original behavior and use
+the same error tracking as Chat Completions.
+
+OpenAI-compatible hosts must implement the Responses endpoint to use this path.
+Older OpenAI SDK versions without a `responses` resource continue to support
+Chat Completions.
+
+
+### End-to-end check
+
+From the SDK root, with `OPENAI_API_KEY` and `WILDEDGE_DSN` set:
+
+```bash
+uv run examples/openai_responses_example.py
+```
+
+This uses the local SDK checkout and makes four small, billable requests:
+sync, sync streaming, async, and async streaming. Set `OPENAI_MODEL` to override
+the default `gpt-4o-mini`. The script checks completion and usage, prints a
+unique `responses-e2e-...` run ID, and closes the SDK with a 15-second deadline.
+In WildEdge, locate that run and verify four inference events beneath the four
+named spans, with input/output token usage and first-output timing on the two
+streams. Provider checks alone do not prove telemetry delivery; confirm these
+events in the dashboard.
