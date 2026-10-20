@@ -45,9 +45,9 @@ class BaseHubTracker(ABC):
         """
         Monkey-patch the hub library's download or load functions.
 
-        Called at most once per process. ``client_ref`` is a ``weakref.ref``
-        to the ``WildEdge`` client; dereference it before use and guard against
-        ``None`` (client may have been closed or garbage-collected).
+        Patches are installed at most once per process. ``client_ref`` is a
+        callable resolving the current enabled owner, or ``None`` when inactive.
+        Call it before publishing; activation may repeat for a replacement owner.
         """
 
     @abstractmethod

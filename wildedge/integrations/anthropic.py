@@ -9,6 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from wildedge.events.inference import ApiMeta, GenerationOutputMeta, TextInputMeta
+from wildedge.instrumentation import bind_client_reference
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import (
     AsyncStreamWrapper,
@@ -470,8 +471,9 @@ class AnthropicExtractor(BaseExtractor):
                 original_sync_init(self_inner, *args, **kwargs)
                 c = client_ref()  # type: ignore[call-arg]
                 if c is not None and not c.closed:
+                    bound_ref = bind_client_reference(client_ref, c)
                     try:
-                        wrap_sync_messages(self_inner.messages, client_ref)
+                        wrap_sync_messages(self_inner.messages, bound_ref)
                     except Exception as exc:
                         debug_anthropic_failure("sync client wrap", exc)
 
@@ -479,8 +481,9 @@ class AnthropicExtractor(BaseExtractor):
                 original_async_init(self_inner, *args, **kwargs)
                 c = client_ref()  # type: ignore[call-arg]
                 if c is not None and not c.closed:
+                    bound_ref = bind_client_reference(client_ref, c)
                     try:
-                        wrap_async_messages(self_inner.messages, client_ref)
+                        wrap_async_messages(self_inner.messages, bound_ref)
                     except Exception as exc:
                         debug_anthropic_failure("async client wrap", exc)
 

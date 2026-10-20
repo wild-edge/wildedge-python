@@ -7,6 +7,13 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- Process-wide integrations and hub patches now support sequential SDK client
+  replacement after the previous owner closes. Reinitialization replaces a closed
+  default; live ownership conflicts raise explicitly. Existing models/provider
+  clients retain their original destination and must be recreated. Attempts to
+  use a closed telemetry destination warn once instead of silently dropping
+  inference/error events.
+
 - timm models now use the requested architecture/variant name for model identity
   instead of the Python class name, so models such as resnet18 and resnet50 no
   longer share telemetry. Manual registration falls back to timm architecture

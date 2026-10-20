@@ -74,6 +74,8 @@ def test_init_reuses_existing_default_client(monkeypatch):
     calls: list[tuple[str | None, list[str] | None]] = []
 
     class ExistingClient:
+        closed = False
+
         def instrument(self, integration, *, hubs=None):
             calls.append((integration, hubs))
 
@@ -89,6 +91,8 @@ def test_init_reuses_existing_default_client(monkeypatch):
 
 def test_init_with_dsn_replaces_default_client(monkeypatch):
     class ExistingClient:
+        closed = False
+
         def instrument(self, integration, *, hubs=None):
             raise AssertionError("existing client must not be touched")
 
@@ -112,6 +116,8 @@ def test_init_with_dsn_replaces_default_client(monkeypatch):
 
 def test_init_reuse_warns_about_ignored_kwargs(monkeypatch):
     class ExistingClient:
+        closed = False
+
         def instrument(self, integration, *, hubs=None):
             pass
 

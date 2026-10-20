@@ -6,7 +6,7 @@ from pathlib import Path
 
 import openai
 import pytest
-from conftest import sdk_http_module
+from conftest import make_compat_client, sdk_http_module
 
 httpx = sdk_http_module("openai")
 
@@ -360,3 +360,51 @@ async def test_early_stream_close_is_tracked_once(compat_client, asynchronous):
     assert inference["success"] is False
     assert inference["error_code"] == "STREAM_CLOSED"
     assert inference["output_meta"]["time_to_first_token_ms"] is not None
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_replacement_client_gets_new_provider_clients(
+    compat_client, asynchronous
+):
+    compat_client.instrument("openai")
+
+    def handler(request):
+        return httpx.Response(200, json=COMPLETION)
+
+    if asynchronous:
+        old = openai.AsyncOpenAI(
+            api_key="sk-compat",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        await old.chat.completions.create(model="gpt-4o-mini", messages=[])
+    else:
+        old = _client(handler)
+        old.chat.completions.create(model="gpt-4o-mini", messages=[])
+    compat_client.one("inference")
+    compat_client.close()
+    replacement = make_compat_client()
+    try:
+        replacement.instrument("openai")
+        if asynchronous:
+            await old.chat.completions.create(model="gpt-4o-mini", messages=[])
+            async with openai.AsyncOpenAI(
+                api_key="sk-compat",
+                http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+            ) as new:
+                await new.chat.completions.create(model="gpt-4o-mini", messages=[])
+                await new.chat.completions.create(model="gpt-4o-mini", messages=[])
+            await old.close()
+        else:
+            old.chat.completions.create(model="gpt-4o-mini", messages=[])
+            with _client(handler) as new:
+                new.chat.completions.create(model="gpt-4o-mini", messages=[])
+                new.chat.completions.create(model="gpt-4o-mini", messages=[])
+            old.close()
+        assert len(compat_client.of_type("inference")) == 1
+        assert len(replacement.of_type("inference")) == 2
+        assert (
+            replacement.registry.handles["gpt-4o-mini"]
+            is not compat_client.registry.handles["gpt-4o-mini"]
+        )
+    finally:
+        replacement.close()
