@@ -15,7 +15,7 @@ from wildedge.logging import logger
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Raise immediately on any redirect instead of following it."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: PLR0913
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
 
 
@@ -78,7 +78,7 @@ class Transmitter:
                 server_time=data.get("server_time"),
                 rejected=data.get("rejected"),
             )
-        elif status_code == 400:
+        if status_code == 400:
             logger.warning(
                 "wildedge: batch rejected (400) - discarding: %s",
                 raw[: constants.ERROR_MSG_MAX_LEN],
@@ -89,7 +89,7 @@ class Transmitter:
                 events_accepted=0,
                 events_rejected=len(batch.get("events", [])),
             )
-        elif status_code == 401:
+        if status_code == 401:
             logger.error("wildedge: authentication failed (401) - check your API key")
             return IngestResponse(
                 status="unauthorized",
@@ -97,7 +97,7 @@ class Transmitter:
                 events_accepted=0,
                 events_rejected=len(batch.get("events", [])),
             )
-        elif 300 <= status_code < 400:
+        if 300 <= status_code < 400:
             # Redirects should never occur (we disable redirect following).
             # Treat as a permanent config error so we don't loop.
             logger.error(
@@ -111,7 +111,7 @@ class Transmitter:
                 events_accepted=0,
                 events_rejected=len(batch.get("events", [])),
             )
-        elif status_code == 404:
+        if status_code == 404:
             logger.error(
                 "wildedge: endpoint not found (404) at %s; check WILDEDGE_DSN", url
             )
@@ -121,11 +121,11 @@ class Transmitter:
                 events_accepted=0,
                 events_rejected=len(batch.get("events", [])),
             )
-        elif status_code == 429 or status_code >= 500:
+        if status_code == 429 or status_code >= 500:
             raise TransmitError(
                 f"HTTP {status_code}: {raw[: constants.ERROR_MSG_MAX_LEN]!r}"
             )
-        elif 400 <= status_code < 500:
+        if 400 <= status_code < 500:
             # Other 4xx (e.g. 422 Unprocessable) are permanent client errors; discard.
             logger.warning(
                 "wildedge: batch rejected (%d) - discarding: %s",
@@ -138,11 +138,10 @@ class Transmitter:
                 events_accepted=0,
                 events_rejected=len(batch.get("events", [])),
             )
-        else:
-            # Guard against unexpected status codes that would otherwise return None.
-            raise TransmitError(
-                f"Unexpected HTTP {status_code}: {raw[: constants.ERROR_MSG_MAX_LEN]!r}"
-            )
+        # Guard against unexpected status codes that would otherwise return None.
+        raise TransmitError(
+            f"Unexpected HTTP {status_code}: {raw[: constants.ERROR_MSG_MAX_LEN]!r}"
+        )
 
     def close(self) -> None:
         pass

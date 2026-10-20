@@ -136,9 +136,11 @@ def test_response_anthropic_shape(client):
 
 
 def test_exception_records_error_not_inference(client):
-    with pytest.raises(ValueError):
-        with wildedge.llm_api(model="m", provider="p"):
-            raise ValueError("bad payload")
+    with (
+        pytest.raises(ValueError, match="bad payload"),
+        wildedge.llm_api(model="m", provider="p"),
+    ):
+        raise ValueError("bad payload")
 
     assert client.handle.inferences == []
     assert client.handle.errors == [
@@ -150,9 +152,8 @@ def test_http_error_leaves_code_to_server(client):
     class HTTPStatusError(Exception):
         response = SimpleNamespace(status_code=401)
 
-    with pytest.raises(HTTPStatusError):
-        with wildedge.llm_api(model="m", provider="p"):
-            raise HTTPStatusError("Client error '401 Unauthorized'")
+    with pytest.raises(HTTPStatusError), wildedge.llm_api(model="m", provider="p"):
+        raise HTTPStatusError("Client error '401 Unauthorized'")
 
     assert client.handle.errors[0]["error_code"] == "UNKNOWN"
 
@@ -161,9 +162,8 @@ def test_provider_error_without_status_leaves_code_to_server(client):
     class APIError(Exception):
         code = "server_error"
 
-    with pytest.raises(APIError):
-        with wildedge.llm_api(model="m", provider="p"):
-            raise APIError("An error occurred during streaming")
+    with pytest.raises(APIError), wildedge.llm_api(model="m", provider="p"):
+        raise APIError("An error occurred during streaming")
 
     assert client.handle.errors[0]["error_code"] == "UNKNOWN"
 

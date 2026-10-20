@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -191,7 +192,7 @@ def image_brightness_histogram(norm_flat: Any) -> tuple[float, float, list[int]]
     edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
     buckets = [
         int(((norm_flat >= lo) & (norm_flat < hi)).sum())
-        for lo, hi in zip(edges, edges[1:])
+        for lo, hi in itertools.pairwise(edges)
     ]
     buckets[-1] += int((norm_flat == 1.0).sum())
 

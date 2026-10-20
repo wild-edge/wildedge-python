@@ -91,7 +91,7 @@ class WindowsPlatform(Platform):
 
     def disk_bytes(self) -> int | None:
         try:
-            drive = os.environ.get("SystemDrive", "C:\\")
+            drive = os.environ.get("SYSTEMDRIVE", "C:\\")
             return shutil.disk_usage(drive).total
         except Exception as exc:
             debug_detection_failure("windows disk_bytes", exc)

@@ -6,23 +6,23 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import wildedge.paths as paths
 from wildedge.client import WildEdge
+from wildedge.defaults import set_default_client
 from wildedge.model import ModelInfo
+from wildedge.platforms import stop_sampler
 from wildedge.platforms.device_info import DeviceInfo
 
 
 @pytest.fixture(autouse=True)
 def reset_hardware_sampler():
     yield
-    from wildedge.platforms import stop_sampler
 
     stop_sampler()
 
 
 @pytest.fixture(autouse=True)
 def reset_default_client():
-    from wildedge.defaults import set_default_client
-
     set_default_client(None)
     yield
     set_default_client(None)
@@ -37,7 +37,6 @@ def isolate_sdk_state(tmp_path, monkeypatch):
     between runs and machines (and once masking a real regression locally
     while CI failed).
     """
-    import wildedge.paths as paths
 
     monkeypatch.setattr(paths, "default_sdk_state_dir", lambda: tmp_path / "state")
     monkeypatch.setattr(paths, "default_sdk_cache_dir", lambda: tmp_path / "cache")
@@ -103,7 +102,7 @@ def publish_spy():
 
 @pytest.fixture
 def dummy_handle():
-    handle = SimpleNamespace(
+    return SimpleNamespace(
         model_id="model-1",
         track_download=MagicMock(),
         track_load=MagicMock(),
@@ -111,7 +110,6 @@ def dummy_handle():
         track_inference=MagicMock(),
         track_error=MagicMock(),
     )
-    return handle
 
 
 @pytest.fixture
@@ -121,8 +119,7 @@ def client_with_stubbed_runtime():
         patch("wildedge.client.Transmitter"),
         patch("wildedge.client.Consumer"),
     ):
-        client = WildEdge(
+        return WildEdge(
             dsn="https://secret@ingest.wildedge.dev/key",
             sampling_interval_s=None,
         )
-    return client

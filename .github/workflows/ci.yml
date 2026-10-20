@@ -7,6 +7,7 @@ on:
       - 'wildedge/**'
       - 'tests/**'
       - 'scripts/**'
+      - 'examples/**'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/ci.yml'
@@ -16,11 +17,31 @@ on:
       - 'wildedge/**'
       - 'tests/**'
       - 'scripts/**'
+      - 'examples/**'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/ci.yml'
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install uv
+      run: |
+        pip install uv
+    - name: Install dependencies
+      run: |
+        uv sync --group dev
+    - name: Ruff lint
+      run: uv run ruff check --output-format=github .
+    - name: Ruff format
+      run: uv run ruff format --check .
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:

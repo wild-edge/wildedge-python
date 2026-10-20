@@ -117,8 +117,10 @@ def test_trace_is_pure_context_and_creates_no_client(monkeypatch):
 def test_module_api_works_end_to_end_without_dsn(monkeypatch):
     monkeypatch.delenv(constants.ENV_DSN, raising=False)
     monkeypatch.delenv(constants.ENV_INTEGRATIONS, raising=False)
-    with wildedge.trace(run_id="r"):
-        with wildedge.span(kind="eval", name="lint") as span:
-            span.set_attributes(lint_errors=3)
-            span.fail("3 lint errors")
+    with (
+        wildedge.trace(run_id="r"),
+        wildedge.span(kind="eval", name="lint") as span,
+    ):
+        span.set_attributes(lint_errors=3)
+        span.fail("3 lint errors")
     assert wildedge.get_client().noop is True

@@ -269,7 +269,7 @@ class TestOnnxExtractor:
         assert info.model_name == "resnet50"
 
     @pytest.mark.parametrize(
-        "raw, expected",
+        ("raw", "expected"),
         [
             (None, None),
             (0, None),
@@ -286,7 +286,7 @@ class TestOnnxExtractor:
         assert parse_model_version(raw) == expected
 
     @pytest.mark.parametrize(
-        "path, expected",
+        ("path", "expected"),
         [
             ("/m/pl_PL-gosia-medium.onnx", "pl_PL-gosia-medium"),
             ("C:\\voices\\en_US-amy.onnx", "en_US-amy"),

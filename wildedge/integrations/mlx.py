@@ -244,7 +244,7 @@ class MlxExtractor(BaseExtractor):
         _mlx_lm.load = patched_load
 
     @classmethod
-    def _patch_generate(cls, client_ref: object) -> None:  # noqa: ARG003
+    def _patch_generate(cls, client_ref: object) -> None:
         original_generate = _mlx_lm.generate
         if (
             getattr(original_generate, "__wildedge_patch_name__", None)

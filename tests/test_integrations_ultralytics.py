@@ -130,7 +130,7 @@ def test_is_yolo_false_for_string():
 
 
 @pytest.mark.parametrize(
-    "name,expected",
+    ("name", "expected"),
     [
         ("yolov8n", "yolov8"),
         ("yolov8s-seg", "yolov8"),
@@ -208,8 +208,7 @@ def test_image_input_meta_returns_none_when_numpy_absent():
 
 
 def test_image_input_meta_extracts_hwc_array():
-    pytest.importorskip("numpy")
-    import numpy as np
+    np = pytest.importorskip("numpy")
 
     arr = np.zeros((480, 640, 3), dtype=np.uint8)
     meta = image_input_meta(arr)

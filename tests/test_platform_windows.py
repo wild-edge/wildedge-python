@@ -24,8 +24,10 @@ def test_hardware_context_fields(monkeypatch):
 @pytest.mark.requires_windows
 def test_real_meminfo():
     total, available = WindowsPlatform().meminfo()
-    assert isinstance(total, int) and total > 0
-    assert isinstance(available, int) and 0 < available <= total
+    assert isinstance(total, int)
+    assert total > 0
+    assert isinstance(available, int)
+    assert 0 < available <= total
 
 
 @pytest.mark.requires_windows

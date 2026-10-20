@@ -22,14 +22,16 @@ def test_track_inference_uses_trace_context():
         publish,
     )
 
-    with trace_context(
-        trace_id="trace-123",
-        run_id="run-1",
-        agent_id="agent-1",
-        attributes={"trace_key": "trace_val"},
+    with (
+        trace_context(
+            trace_id="trace-123",
+            run_id="run-1",
+            agent_id="agent-1",
+            attributes={"trace_key": "trace_val"},
+        ),
+        span_context(span_id="span-abc", step_index=2, attributes={"span_key": 2}),
     ):
-        with span_context(span_id="span-abc", step_index=2, attributes={"span_key": 2}):
-            handle.track_inference(duration_ms=5)
+        handle.track_inference(duration_ms=5)
 
     assert events[0]["trace_id"] == "trace-123"
     assert events[0]["parent_span_id"] == "span-abc"
@@ -81,9 +83,11 @@ def test_nested_spans_correct_parent_chain():
     events: list[dict] = []
     client = _FakeClient(events)
 
-    with SpanContextManager(client, kind="agent_step", name="outer") as outer:
-        with SpanContextManager(client, kind="tool", name="inner") as inner:
-            pass
+    with (
+        SpanContextManager(client, kind="agent_step", name="outer") as outer,
+        SpanContextManager(client, kind="tool", name="inner") as inner,
+    ):
+        pass
 
     assert len(events) == 2
     inner_ev, outer_ev = events[0], events[1]

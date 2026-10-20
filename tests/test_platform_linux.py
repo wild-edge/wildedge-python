@@ -19,7 +19,7 @@ def test_meminfo_parses_total_and_available(monkeypatch):
         lambda p, **kw: (
             __import__("io").StringIO(content)
             if p == "/proc/meminfo"
-            else open(p, **kw)
+            else open(p, **kw)  # noqa: SIM115 - the caller closes it
         ),
     )
     total, available = LinuxPlatform().meminfo()
@@ -86,7 +86,8 @@ def test_battery_no_supply_returns_none(tmp_path, monkeypatch):
         lambda p: ps if p == "/sys/class/power_supply" else Path(p),
     )
     level, charging = LinuxPlatform().battery()
-    assert level is None and charging is None
+    assert level is None
+    assert charging is None
 
 
 def test_thermal_nominal(tmp_path, monkeypatch):
@@ -181,8 +182,10 @@ def test_trip_point_states_covers_all_severity_levels():
 @pytest.mark.requires_linux
 def test_real_meminfo():
     total, available = LinuxPlatform().meminfo()
-    assert isinstance(total, int) and total > 0
-    assert isinstance(available, int) and 0 < available <= total
+    assert isinstance(total, int)
+    assert total > 0
+    assert isinstance(available, int)
+    assert 0 < available <= total
 
 
 @pytest.mark.requires_linux
