@@ -115,6 +115,10 @@ client libraries? Wrap the call in
 to get the same events:
 [llm_api_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/llm_api_example.py).
 
+The `openai` integration also tracks `client.responses.create(...)`, including
+async clients and `stream=True`. See [Responses tracking](docs/providers.md#responses-api)
+for coverage and streaming behavior.
+
 **Hub tracking**
 
 Pass `hubs=` to track model download provenance. Hubs are framework-agnostic and can be combined with any integration.

@@ -249,6 +249,168 @@ def wrap_async_completions(
     completions.create = patched_create  # type: ignore[attr-defined]
 
 
+def responses_messages(value: object) -> list:
+    """Normalize text inputs without consuming arbitrary input iterables."""
+    if isinstance(value, str):
+        return [{"role": "user", "content": value}]
+    return value if isinstance(value, list) else []
+
+
+def build_responses_output_meta(
+    response: object, duration_ms: int
+) -> GenerationOutputMeta:
+    usage = getattr(response, "usage", None)
+    tokens_out = getattr(usage, "output_tokens", None)
+    status = getattr(response, "status", None)
+    reason = getattr(getattr(response, "incomplete_details", None), "reason", None)
+    return GenerationOutputMeta(
+        tokens_in=getattr(usage, "input_tokens", None),
+        tokens_out=tokens_out,
+        cached_input_tokens=getattr(
+            getattr(usage, "input_tokens_details", None), "cached_tokens", None
+        ),
+        reasoning_tokens_out=getattr(
+            getattr(usage, "output_tokens_details", None), "reasoning_tokens", None
+        ),
+        tokens_per_second=round(tokens_out / duration_ms * 1000, 1)
+        if duration_ms > 0 and tokens_out
+        else None,
+        stop_reason=reason or status,
+    )
+
+
+def record_response(
+    handle: ModelHandle,
+    response: object,
+    messages: list,
+    duration: int,
+    ttft_ms: int | None = None,
+) -> None:
+    if getattr(response, "status", None) in ("queued", "in_progress"):
+        return
+    output = build_responses_output_meta(response, duration)
+    output.time_to_first_token_ms = ttft_ms
+    error = getattr(response, "error", None)
+    handle.track_inference(
+        duration_ms=duration,
+        input_modality="text",
+        output_modality="generation",
+        success=getattr(response, "status", None) != "failed" and error is None,
+        error_code=getattr(error, "code", None),
+        input_meta=build_input_meta(messages, output.tokens_in),
+        output_meta=output,
+        api_meta=build_api_meta(response),
+    )
+
+
+def make_responses_stream_callbacks(
+    handle: ModelHandle, messages: list, t0: float
+) -> tuple:
+    response = None
+    ttft = None
+    recorded = False
+
+    def on_chunk(chunk: object) -> None:
+        nonlocal response, ttft, recorded
+        event_type = getattr(chunk, "type", "")
+        if (
+            event_type
+            in (
+                "response.output_text.delta",
+                "response.refusal.delta",
+                "response.function_call_arguments.delta",
+                "response.output_audio.delta",
+            )
+            and getattr(chunk, "delta", None)
+            and ttft is None
+        ):
+            ttft = elapsed_ms(t0)
+        if event_type in (
+            "response.completed",
+            "response.incomplete",
+            "response.failed",
+        ):
+            response = getattr(chunk, "response", None)
+        elif event_type == "error" and not recorded:
+            handle.track_error(
+                error_code=getattr(chunk, "code", None) or "PROVIDER_ERROR",
+                duration_ms=elapsed_ms(t0),
+            )
+            recorded = True
+
+    def on_done(duration_ms: int, _first_event_ms: int | None) -> None:
+        nonlocal recorded
+        if response is not None and not recorded:
+            recorded = True
+            record_response(handle, response, messages, duration_ms, ttft)
+
+    return on_chunk, on_done
+
+
+def wrap_sync_responses(responses: object, source: str, client_ref: object) -> None:
+    original_create = responses.create
+    model_handles: dict[str, ModelHandle] = {}
+
+    @functools.wraps(original_create)
+    def patched_create(*args, **kwargs):
+        client = client_ref()
+        model_id = kwargs.get("model")
+        if client is None or client.closed or not model_id:
+            return original_create(*args, **kwargs)
+        handle = resolve_handle(model_id, responses, model_handles, client, source)
+        t0 = time.perf_counter()
+        try:
+            result = original_create(*args, **kwargs)
+        except Exception as exc:
+            if handle is not None:
+                track_api_error(handle, exc, elapsed_ms(t0))
+            raise
+        if handle is not None:
+            try:
+                messages = responses_messages(kwargs.get("input"))
+                if kwargs.get("stream"):
+                    callbacks = make_responses_stream_callbacks(handle, messages, t0)
+                    return SyncStreamWrapper(result, handle, t0, *callbacks)
+                record_response(handle, result, messages, elapsed_ms(t0))
+            except Exception as exc:
+                debug_openai_failure("responses tracking", exc)
+        return result
+
+    responses.create = patched_create
+
+
+def wrap_async_responses(responses: object, source: str, client_ref: object) -> None:
+    original_create = responses.create
+    model_handles: dict[str, ModelHandle] = {}
+
+    @functools.wraps(original_create)
+    async def patched_create(*args, **kwargs):
+        client = client_ref()
+        model_id = kwargs.get("model")
+        if client is None or client.closed or not model_id:
+            return await original_create(*args, **kwargs)
+        handle = resolve_handle(model_id, responses, model_handles, client, source)
+        t0 = time.perf_counter()
+        try:
+            result = await original_create(*args, **kwargs)
+        except Exception as exc:
+            if handle is not None:
+                track_api_error(handle, exc, elapsed_ms(t0))
+            raise
+        if handle is not None:
+            try:
+                messages = responses_messages(kwargs.get("input"))
+                if kwargs.get("stream"):
+                    callbacks = make_responses_stream_callbacks(handle, messages, t0)
+                    return AsyncStreamWrapper(result, handle, t0, *callbacks)
+                record_response(handle, result, messages, elapsed_ms(t0))
+            except Exception as exc:
+                debug_openai_failure("responses tracking", exc)
+        return result
+
+    responses.create = patched_create
+
+
 class OpenAIExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
         return type(obj).__name__ in (
@@ -256,6 +418,8 @@ class OpenAIExtractor(BaseExtractor):
             "AsyncOpenAI",
             "Completions",
             "AsyncCompletions",
+            "Responses",
+            "AsyncResponses",
         )
 
     def extract_info(
@@ -280,7 +444,7 @@ class OpenAIExtractor(BaseExtractor):
 
     @classmethod
     def install_auto_load_patch(cls, client_ref: object) -> None:
-        """Patch openai.OpenAI and openai.AsyncOpenAI to wrap chat.completions.create."""
+        """Patch new OpenAI clients to track Chat Completions and Responses."""
         global _openai_patched
         if _openai_patched or _openai is None:
             return
@@ -312,6 +476,13 @@ class OpenAIExtractor(BaseExtractor):
                         )
                     except Exception as exc:
                         debug_openai_failure("sync client wrap", exc)
+                    if hasattr(self_inner, "responses"):
+                        try:
+                            wrap_sync_responses(
+                                self_inner.responses, source, client_ref
+                            )
+                        except Exception as exc:
+                            debug_openai_failure("sync responses wrap", exc)
 
             def patched_async_init(self_inner, *args, **kwargs):  # type: ignore[no-untyped-def]
                 original_async_init(self_inner, *args, **kwargs)
@@ -326,6 +497,13 @@ class OpenAIExtractor(BaseExtractor):
                         )
                     except Exception as exc:
                         debug_openai_failure("async client wrap", exc)
+                    if hasattr(self_inner, "responses"):
+                        try:
+                            wrap_async_responses(
+                                self_inner.responses, source, client_ref
+                            )
+                        except Exception as exc:
+                            debug_openai_failure("async responses wrap", exc)
 
             patched_sync_init.__wildedge_patch_name__ = OPENAI_INIT_PATCH_NAME  # type: ignore[attr-defined]
             patched_sync_init.__wildedge_original_call__ = original_sync_init  # type: ignore[attr-defined]

@@ -5,6 +5,14 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Added
+
+- The OpenAI integration now tracks `responses.create()` for synchronous and
+  asynchronous clients, including streaming. Records input/output token usage,
+  cached and reasoning tokens, response status or incomplete reason, resolved
+  model metadata, and time to first output delta for streams. Older OpenAI SDKs
+  without Responses remain supported.
+
 ### Changed
 
 - The ultralytics integration now requires ultralytics 8.0.200 or later
