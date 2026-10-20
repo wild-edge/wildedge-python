@@ -41,9 +41,16 @@ PIPELINE_CALL_PATCH_NAME = "transformers_pipeline_call"
 # Per-instance attribute that stores the ModelHandle on a pipeline object.
 PIPELINE_HANDLE_ATTR = "__wildedge_pipeline_handle__"
 
-# Thread-local flag: suppress from_pretrained tracking when called inside
-# Pipeline.__init__ so the pipeline-level tracking takes precedence.
+# Thread-local state:
+# - inside_pipeline_init: suppress from_pretrained tracking when called inside
+#   Pipeline.__init__ so the pipeline-level tracking takes precedence.
+# - pipeline_call_depth: > 0 while a tracked pipeline call runs, so the forward
+#   hooks of the model inside it don't record the same inference again.
 _tl = threading.local()
+
+
+def inside_tracked_pipeline_call() -> bool:
+    return getattr(_tl, "pipeline_call_depth", 0) > 0
 
 
 debug_transformers_failure = functools.partial(debug_failure, "transformers")
@@ -308,6 +315,9 @@ class TransformersExtractor(BaseExtractor):
                 _local.t0 = time.perf_counter()
 
             def post_hook(module, args, output):  # type: ignore[no-untyped-def]
+                # A pipeline call around this forward pass records the event.
+                if inside_tracked_pipeline_call():
+                    return
                 t0 = getattr(_local, "t0", None)
                 duration_ms = elapsed_ms(t0) if t0 is not None else 0
 
@@ -419,6 +429,7 @@ class TransformersExtractor(BaseExtractor):
             input_modality, output_modality = pipeline_modalities(task)
 
             t0 = time.perf_counter()
+            _tl.pipeline_call_depth = getattr(_tl, "pipeline_call_depth", 0) + 1
             try:
                 outputs = original_call(self, inputs, *args, **kwargs)
                 duration_ms = elapsed_ms(t0)
@@ -439,6 +450,8 @@ class TransformersExtractor(BaseExtractor):
                     error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
                 )
                 raise
+            finally:
+                _tl.pipeline_call_depth -= 1
 
         patched_call.__wildedge_patch_name__ = PIPELINE_CALL_PATCH_NAME  # type: ignore[attr-defined]
         patched_call.__wildedge_original_call__ = original_call  # type: ignore[attr-defined]

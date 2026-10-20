@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 import torch
 import transformers
 
@@ -34,11 +33,6 @@ def test_from_pretrained_load_and_forward_are_tracked(compat_client, tmp_path):
     assert inference["inference"]["success"] is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="pipeline() calls are counted twice: the inner model keeps its "
-    "forward hooks after the pipeline supersedes it (#70)",
-)
 def test_pipeline_load_and_call_are_tracked(compat_client, tmp_path):
     _save_tiny_bert(tmp_path)
     vocab = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]", "hello", "world"]

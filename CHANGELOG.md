@@ -35,6 +35,12 @@ under Unreleased and move into a version section at release time.
   session created without an `id` falls back to the file name too, and
   `model_version` 0, negative or INT64_MAX (the exporters' "unset") is sent as
   `unknown` instead of `9223372036854775807`.
+- transformers pipelines record one inference event per call instead of two.
+  `pipeline()` loads the model before `Pipeline.__init__` runs, so the model
+  was registered with its own forward hooks, and each pipeline call was
+  tracked by the pipeline and again by the model inside it. The model's hooks
+  now skip calls made inside a tracked pipeline call; calling the model
+  directly is still tracked.
 
 ## 0.2.2 - 2026-09-30
 
