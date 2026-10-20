@@ -361,7 +361,7 @@ class _StubTransmitter:
         self.outcomes = list(outcomes)
         self.seen: list[str] = []
 
-    def transmit(self, pending):
+    def transmit(self, pending, deadline=None):
         self.seen.append(pending.attachment_id)
         return self.outcomes.pop(0)
 
@@ -476,5 +476,199 @@ def test_client_attachments_enabled_via_env(monkeypatch, tmp_path):
     )
     try:
         assert client.attachment_manager is not None
+    finally:
+        client.close()
+
+
+# --------------------------------------------------------------------------- #
+# Upload on flush / close
+# --------------------------------------------------------------------------- #
+
+
+def test_transmit_past_deadline_is_transient_without_requests(monkeypatch, tmp_path):
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen([]))
+    tx = AttachmentTransmitter(api_key="secret", host="https://ingest.example")
+    outcome = tx.transmit(_pending(tmp_path), deadline=time.monotonic() - 1)
+    assert outcome is UploadOutcome.TRANSIENT
+
+
+def test_transmit_caps_request_timeout_at_deadline(monkeypatch, tmp_path):
+    timeouts: list[float] = []
+    responses = iter([PRESIGN_OK, _Resp(200)])
+
+    def opener(req, timeout=None):
+        timeouts.append(timeout)
+        return next(responses)
+
+    monkeypatch.setattr(urllib.request, "urlopen", opener)
+    tx = AttachmentTransmitter(api_key="secret", host="https://ingest.example")
+    outcome = tx.transmit(_pending(tmp_path), deadline=time.monotonic() + 1.0)
+    assert outcome is UploadOutcome.UPLOADED
+    assert len(timeouts) == 2
+    assert all(0 < t <= 1.0 for t in timeouts)
+
+
+def test_drain_uploads_more_than_one_batch(tmp_path):
+    from wildedge import constants
+
+    n = constants.ATTACHMENT_PRESIGN_BATCH_SIZE * 2 + 1
+    store = _filled_store(tmp_path, n)
+    tx = _StubTransmitter([UploadOutcome.UPLOADED] * n)
+    up = AttachmentUploader(store, tx)
+    up.drain(timeout=5.0)
+    assert store.length() == 0
+    assert up.uploaded_count == n
+
+
+def test_drain_stops_at_transient(tmp_path):
+    store = _filled_store(tmp_path, 3)
+    tx = _StubTransmitter([UploadOutcome.UPLOADED, UploadOutcome.TRANSIENT])
+    up = AttachmentUploader(store, tx)
+    up.drain(timeout=5.0)
+    assert [p.attachment_id for p in store.peek_many(10)] == ["a1", "a2"]
+
+
+def test_drain_respects_timeout(tmp_path):
+    store = _filled_store(tmp_path, 3)
+
+    class Slow:
+        seen = 0
+
+        def transmit(self, pending, deadline=None):
+            Slow.seen += 1
+            time.sleep(0.1)
+            if deadline is not None and time.monotonic() >= deadline:
+                return UploadOutcome.TRANSIENT
+            return UploadOutcome.UPLOADED
+
+    up = AttachmentUploader(store, Slow())
+    t0 = time.monotonic()
+    up.drain(timeout=0.15)
+    assert time.monotonic() - t0 < 0.5
+    assert store.length() >= 1
+
+
+def test_drain_waits_for_background_batch_within_timeout(tmp_path):
+    store = _filled_store(tmp_path, 1)
+    up = AttachmentUploader(store, _StubTransmitter([UploadOutcome.UPLOADED]))
+    up.process_lock.acquire()  # the background thread is mid-batch
+    try:
+        t0 = time.monotonic()
+        up.drain(timeout=0.1)
+        assert time.monotonic() - t0 < 0.5
+    finally:
+        up.process_lock.release()
+    assert store.length() == 1  # left for the thread, not sent twice
+
+
+def test_drain_after_feature_disabled_is_noop(tmp_path):
+    store = _filled_store(tmp_path, 2)
+    tx = _StubTransmitter([UploadOutcome.FEATURE_DISABLED])
+    up = AttachmentUploader(store, tx)
+    up.drain(timeout=1.0)
+    _append(store, b"x", "late")
+    up.drain(timeout=1.0)
+    assert tx.seen == ["a0"]
+
+
+def _client_with_pending(tmp_path, n=2):
+    from wildedge.client import WildEdge
+
+    client = WildEdge(
+        dsn="https://test@test.com/key",
+        attachments_enabled=True,
+        attachment_dir=str(tmp_path),
+        sampling_interval_s=0,
+    )
+    client.attachment_uploader.flush_interval_s = 3600
+    tx = _StubTransmitter([UploadOutcome.UPLOADED] * n)
+    client.attachment_uploader.transmitter = tx
+    for i in range(n):
+        _append(client.attachment_uploader.store, b"x", f"c{i}")
+    return client, tx
+
+
+def test_close_with_timeout_uploads_pending_attachments(tmp_path):
+    client, tx = _client_with_pending(tmp_path)
+    client.close(timeout=2.0)
+    assert tx.seen == ["c0", "c1"]
+    assert client.attachment_uploader.store.length() == 0
+
+
+def test_close_without_timeout_leaves_attachments_buffered(tmp_path):
+    client, tx = _client_with_pending(tmp_path)
+    client.close()
+    assert tx.seen == []
+    assert client.attachment_uploader.store.length() == 2
+
+
+def test_flush_uploads_pending_attachments(tmp_path):
+    client, tx = _client_with_pending(tmp_path)
+    try:
+        client.flush(timeout=2.0)
+        assert tx.seen == ["c0", "c1"]
+    finally:
+        client.close()
+
+
+def test_transmit_deadline_passing_after_presign_skips_put(monkeypatch, tmp_path):
+    calls: list[str] = []
+
+    def opener(req, timeout=None):
+        calls.append(req.get_method())
+        time.sleep(0.06)
+        return PRESIGN_OK
+
+    monkeypatch.setattr(urllib.request, "urlopen", opener)
+    tx = AttachmentTransmitter(api_key="secret", host="https://ingest.example")
+    outcome = tx.transmit(_pending(tmp_path), deadline=time.monotonic() + 0.05)
+    assert outcome is UploadOutcome.TRANSIENT
+    assert calls == ["POST"]
+
+
+def test_drain_stops_once_store_is_empty(tmp_path):
+    from wildedge import constants
+
+    n = constants.ATTACHMENT_PRESIGN_BATCH_SIZE
+    store = _filled_store(tmp_path, n)
+    tx = _StubTransmitter([UploadOutcome.UPLOADED] * n)
+    up = AttachmentUploader(store, tx)
+    up.drain(timeout=5.0)
+    assert store.length() == 0
+    assert len(tx.seen) == n
+
+
+def test_flush_with_attachments_disabled(monkeypatch):
+    from wildedge import constants
+    from wildedge.client import WildEdge
+
+    monkeypatch.delenv(constants.ENV_ATTACHMENTS_ENABLED, raising=False)
+    client = WildEdge(dsn="https://test@test.com/key")
+    try:
+        client.flush(timeout=0.1)  # no uploader; must not raise
+    finally:
+        client.close()
+
+
+def test_flush_with_no_time_left_skips_attachments(tmp_path):
+    client, tx = _client_with_pending(tmp_path)
+    try:
+        client.flush(timeout=0)
+        assert tx.seen == []
+    finally:
+        client.close()
+
+
+def test_flush_survives_attachment_drain_error(tmp_path, caplog):
+    client, _ = _client_with_pending(tmp_path)
+
+    def boom(timeout):
+        raise RuntimeError("disk gone")
+
+    client.attachment_uploader.drain = boom
+    try:
+        with caplog.at_level("WARNING", logger="wildedge"):
+            client.flush(timeout=1.0)
+        assert any("disk gone" in r.getMessage() for r in caplog.records)
     finally:
         client.close()
