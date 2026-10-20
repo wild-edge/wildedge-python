@@ -25,6 +25,9 @@ from wildedge.integrations.keras import KerasExtractor
 from wildedge.integrations.keras import detect_accelerator as keras_detect_accelerator
 from wildedge.integrations.onnx import (
     OnnxExtractor,
+    model_file_stem,
+    model_id_from_path,
+    parse_model_version,
 )
 from wildedge.integrations.onnx import (
     detect_accelerator as onnx_detect_accelerator,
@@ -212,6 +215,94 @@ class TestOnnxExtractor:
         session.get_modelmeta = lambda: MagicMock(graph_name="", version=0)
         model_id, _ = self.extractor.extract_info(session, {})
         assert model_id is None
+
+    def _piper_session(self, path="/voices/pl_PL-gosia-medium.onnx"):
+        session = _FakeOrtSession()
+        session.get_modelmeta = lambda: MagicMock(
+            graph_name="main_graph", version=2**63 - 1
+        )
+        session._model_path = path
+        return session
+
+    def test_main_graph_name_falls_back_to_file_stem(self):
+        model_id, info = self.extractor.extract_info(self._piper_session(), {})
+        assert model_id == "pl_PL-gosia-medium"
+        assert info.model_name == "pl_PL-gosia-medium"
+
+    def test_int64_max_version_is_unset(self):
+        _, info = self.extractor.extract_info(self._piper_session(), {})
+        assert info.model_version == "unknown"
+
+    def test_different_voices_get_different_ids(self):
+        a, _ = self.extractor.extract_info(self._piper_session("/v/en_US-amy.onnx"), {})
+        b, _ = self.extractor.extract_info(
+            self._piper_session("/v/de_DE-thorsten.onnx"), {}
+        )
+        assert a != b
+
+    def test_hub_path_keeps_repo_id_and_names_model_after_file(self):
+        path = (
+            "/hf/hub/models--rhasspy--piper-voices/snapshots/abc/pl/"
+            "pl_PL-gosia-medium.onnx"
+        )
+        model_id, info = self.extractor.extract_info(self._piper_session(path), {})
+        assert model_id == "rhasspy/piper-voices"
+        assert info.model_name == "pl_PL-gosia-medium"
+
+    def test_session_from_bytes_without_name_still_needs_an_id(self):
+        session = self._piper_session(path=None)
+        model_id, info = self.extractor.extract_info(session, {})
+        assert model_id is None
+        assert info.model_name == "onnx-model"
+
+    def test_id_override_names_model_when_graph_and_file_are_generic(self):
+        session = self._piper_session(path="/models/model.onnx")
+        model_id, info = self.extractor.extract_info(session, {"id": "my-voice"})
+        assert model_id == "my-voice"
+        assert info.model_name == "my-voice"
+
+    def test_real_graph_name_wins_over_file_stem(self):
+        session = _FakeOrtSession()
+        session._model_path = "/models/exported-v3.onnx"
+        model_id, info = self.extractor.extract_info(session, {})
+        assert model_id == "resnet50"
+        assert info.model_name == "resnet50"
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            (None, None),
+            (0, None),
+            (-1, None),
+            (2**63 - 1, None),
+            (1, "1"),
+            (42, "42"),
+            ("7", "7"),
+            ("v2", "v2"),
+            ("  ", None),
+        ],
+    )
+    def test_parse_model_version(self, raw, expected):
+        assert parse_model_version(raw) == expected
+
+    @pytest.mark.parametrize(
+        "path, expected",
+        [
+            ("/m/pl_PL-gosia-medium.onnx", "pl_PL-gosia-medium"),
+            ("C:\\voices\\en_US-amy.onnx", "en_US-amy"),
+            ("/m/model.onnx", None),
+            ("/m/main_graph.onnx", None),
+            ("", None),
+            (None, None),
+            (b"bytes", None),
+        ],
+    )
+    def test_model_file_stem(self, path, expected):
+        assert model_file_stem(path) == expected
+
+    def test_model_id_from_path_skips_generic_stems(self):
+        assert model_id_from_path("/m/main_graph.onnx") is None
+        assert model_id_from_path("/m/yolo.onnx") == "yolo"
 
     def test_install_hooks_publishes_inference_on_run(self, publish_spy):
         session = _FakeOrtSession()

@@ -29,6 +29,12 @@ under Unreleased and move into a version section at release time.
   lost the attachments of its last few seconds (the uploader runs every 5 s)
   while its events still referenced them. `close()` without a timeout still
   leaves them on disk for the next start.
+- ONNX models exported with the default `main_graph` graph name (newer
+  `torch.onnx.export`, Piper TTS voices) are now named after their file, so
+  different voices no longer show up as one model called `main_graph`. A
+  session created without an `id` falls back to the file name too, and
+  `model_version` 0, negative or INT64_MAX (the exporters' "unset") is sent as
+  `unknown` instead of `9223372036854775807`.
 
 ## 0.2.2 - 2026-09-30
 

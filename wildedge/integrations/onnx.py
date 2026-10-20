@@ -43,7 +43,19 @@ except ImportError:
 
 _ort_patched = False
 _ORT_PATCH_LOCK = threading.Lock()
-_GENERIC_GRAPH_NAMES = {"torch_jit", "main", "model", "network", "graph", "onnx_model"}
+# Default graph names from exporters (torch.onnx.export uses torch_jit or
+# main_graph), so they say nothing about which model this is.
+_GENERIC_GRAPH_NAMES = {
+    "torch_jit",
+    "main_graph",
+    "main",
+    "model",
+    "network",
+    "graph",
+    "onnx_model",
+}
+# Exporters write INT64_MAX into model_version to mean "unset".
+_UNSET_MODEL_VERSION = 2**63 - 1
 ONNX_AUTO_LOAD_PATCH_NAME = "onnx_auto_load"
 
 
@@ -60,8 +72,32 @@ def model_id_from_path(path: str) -> str | None:
     for part in path.replace("\\", "/").split("/"):
         if part.startswith("models--"):
             return part[len("models--") :].replace("--", "/", 1)
-    stem = os.path.splitext(os.path.basename(path))[0]
+    return model_file_stem(path)
+
+
+def model_file_stem(path: object) -> str | None:
+    """File name without extension, unless it is a generic name like model.onnx."""
+    if not isinstance(path, str) or not path:
+        return None
+    stem = os.path.splitext(os.path.basename(path.replace("\\", "/")))[0]
     return stem if stem and stem not in _GENERIC_GRAPH_NAMES else None
+
+
+def parse_model_version(raw: object) -> str | None:
+    """Return the ONNX model_version as a string, or None when it is unset.
+
+    0, negative values and INT64_MAX all mean the exporter left it unset.
+    """
+    if raw is None:
+        return None
+    try:
+        number = int(raw)
+    except (TypeError, ValueError):
+        text = str(raw).strip()
+        return text or None
+    if number <= 0 or number >= _UNSET_MODEL_VERSION:
+        return None
+    return str(number)
 
 
 def is_ort_session(obj: object) -> bool:
@@ -151,12 +187,15 @@ class OnnxExtractor(BaseExtractor):
         graph_name = (
             raw_name if raw_name and raw_name not in _GENERIC_GRAPH_NAMES else None
         )
-        model_id = overrides.pop("id", None) or graph_name
-
-        raw_version = str(meta.version) if meta.version else None
-        version = overrides.pop("version", None) or (
-            raw_version if raw_version and raw_version != "0" else None
+        # onnxruntime keeps the path a session was created from (None for bytes).
+        model_path = getattr(obj, "_model_path", None)
+        model_id = (
+            overrides.pop("id", None)
+            or graph_name
+            or (model_id_from_path(model_path) if isinstance(model_path, str) else None)
         )
+
+        version = overrides.pop("version", None) or parse_model_version(meta.version)
         if version is None:
             logger.warning(
                 "wildedge: ONNX model version could not be detected - sending as null"
@@ -180,7 +219,10 @@ class OnnxExtractor(BaseExtractor):
         source = overrides.pop("source", "local")
 
         info = ModelInfo(
-            model_name=graph_name or model_id or "onnx-model",
+            model_name=graph_name
+            or model_file_stem(model_path)
+            or model_id
+            or "onnx-model",
             model_version=version,
             model_source=source,
             model_format="onnx",
