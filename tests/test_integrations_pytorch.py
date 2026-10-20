@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
+import wildedge.integrations.pytorch as pytorch_mod
 from wildedge.integrations.pytorch import (
     PytorchExtractor,
 )
@@ -163,3 +167,51 @@ class TestPytorchExtractor:
         handle = make_handle(publish_spy)
         self.extractor.install_hooks(model, handle)
         assert handle.detected_accelerator == "cpu"
+
+
+def test_timm_config_identity_and_explicit_override():
+    model = _FakeTorchModel()
+    model.pretrained_cfg = {"architecture": "resnet50"}
+    extractor = PytorchExtractor()
+    model_id, info = extractor.extract_info(model, {})
+    assert model_id == info.model_name == "resnet50"
+    model_id, info = extractor.extract_info(model, {"id": "custom-model"})
+    assert model_id == "custom-model"
+    assert info.model_name == "resnet50"
+
+
+def test_timm_requested_variant_takes_priority_over_config():
+    model = _FakeTorchModel()
+    model.pretrained_cfg = {"architecture": "resnet50"}
+    model.__wildedge_timm_model_name__ = "resnet50.a1_in1k"
+    model_id, info = PytorchExtractor().extract_info(model, {})
+    assert model_id == info.model_name == "resnet50.a1_in1k"
+
+
+def test_timm_invalid_config_falls_back_to_class():
+    model = _FakeTorchModel()
+    model.pretrained_cfg = {"architecture": None}
+    model.default_cfg = {"architecture": 123}
+    model_id, info = PytorchExtractor().extract_info(model, {})
+    assert model_id == info.model_name == "_FakeTorchModel"
+
+
+@pytest.mark.parametrize("keyword", [False, True])
+@pytest.mark.parametrize("name", ["resnet50.a1_in1k", "hf-hub:example/resnet50"])
+def test_timm_patch_retains_requested_name(monkeypatch, keyword, name):
+    model = _FakeTorchModel()
+    fake_timm = SimpleNamespace(create_model=MagicMock(return_value=model))
+    monkeypatch.setattr(pytorch_mod, "_timm", fake_timm)
+    monkeypatch.setattr(pytorch_mod, "_timm_patched", False)
+    client = MagicMock(closed=False)
+    client._diff_hub_caches.return_value = []
+    PytorchExtractor.install_timm_patch(lambda: client)
+    result = (
+        fake_timm.create_model(model_name=name)
+        if keyword
+        else fake_timm.create_model(name)
+    )
+    assert result is model
+    model_id, info = PytorchExtractor().extract_info(result, {})
+    assert model_id == info.model_name == name
+    client._on_model_auto_loaded.assert_called_once()
