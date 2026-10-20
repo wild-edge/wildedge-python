@@ -40,13 +40,55 @@ def test_llama_call_is_tracked(compat_client, llm):
     assert output["tokens_out"] == result["usage"]["completion_tokens"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="create_completion and create_chat_completion are not tracked (#64)",
-)
-def test_chat_and_completion_calls_are_tracked(compat_client, llm):
-    llm.create_completion("Once upon a time", max_tokens=4)
-    llm.create_chat_completion(
-        messages=[{"role": "user", "content": "Tell me a story"}], max_tokens=4
+def test_create_completion_is_tracked_with_its_config(compat_client, llm):
+    result = llm.create_completion(
+        "Once upon a time", max_tokens=4, temperature=0.3, stop=["\n"]
     )
-    assert len(compat_client.of_type("inference")) == 2
+
+    inference = compat_client.one("inference")["inference"]
+    output = inference["output_meta"]
+    assert output["tokens_in"] == result["usage"]["prompt_tokens"]
+    assert output["tokens_out"] == result["usage"]["completion_tokens"]
+    assert output["stop_reason"] == result["choices"][0]["finish_reason"]
+    config = inference["generation_config"]
+    assert config["temperature"] == 0.3
+    assert config["max_tokens"] == 4
+    assert config["stop_sequences_count"] == 1
+    # Arguments not passed are reported with llama-cpp-python's defaults.
+    assert "top_p" in config and "top_k" in config
+
+
+def test_chat_completion_is_tracked_once_as_chat(compat_client, llm):
+    result = llm.create_chat_completion(
+        messages=[
+            {"role": "user", "content": "Tell me a story"},
+            {"role": "assistant", "content": "Once upon a time"},
+            {"role": "user", "content": "Go on"},
+        ],
+        max_tokens=4,
+    )
+
+    inference = compat_client.one("inference")["inference"]
+    assert inference["input_meta"]["prompt_type"] == "chat"
+    assert inference["input_meta"]["turn_index"] == 1
+    assert inference["input_meta"]["word_count"] == 2
+    output = inference["output_meta"]
+    assert output["tokens_in"] == result["usage"]["prompt_tokens"]
+    assert output["stop_reason"] == result["choices"][0]["finish_reason"]
+    assert inference["generation_config"]["max_tokens"] == 4
+
+
+def test_streamed_chat_completion_is_tracked_once(compat_client, llm):
+    stream = llm.create_chat_completion(
+        messages=[{"role": "user", "content": "Tell me a story"}],
+        max_tokens=4,
+        stream=True,
+    )
+    chunks = list(stream)
+    assert chunks
+
+    inference = compat_client.one("inference")["inference"]
+    assert inference["input_meta"]["prompt_type"] == "chat"
+    output = inference["output_meta"]
+    assert output["time_to_first_token_ms"] >= 0
+    assert output["stop_reason"] in {"stop", "length"}
