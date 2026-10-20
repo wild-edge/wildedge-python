@@ -30,8 +30,6 @@ def load_rows() -> list[Row]:
             sys.executable,
             str(REPO_ROOT / "scripts" / "compat_matrix.py"),
             "github-matrix",
-            "--profile",
-            "full",
         ],
         check=True,
         capture_output=True,

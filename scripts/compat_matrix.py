@@ -232,30 +232,20 @@ def verify(integration: str, version_set: str, python_version: str) -> int:
     return 1 if mismatches else 0
 
 
-def github_matrix(profile: str) -> list[dict]:
-    """Rows for the compat workflow.
+def github_matrix() -> list[dict]:
+    """Rows for the compat workflow: every supported combination.
 
-    ``full`` runs every supported combination (nightly, release PRs, manual
-    runs). ``pr`` runs each integration's current pins on its newest stable
-    Python and its minimum pins on its oldest, skipping macOS-only rows.
+    Canary Pythons run with current pins only and don't fail the run.
     """
     rows = []
     for integration, sets in MATRIX.items():
         runner = RUNNER.get(integration, "ubuntu-latest")
-        if profile == "pr" and runner != "ubuntu-latest":
-            continue
-        stable = [py for py in SUPPORTED_PYTHON[integration] if py not in CANARY_PYTHON]
         for version_set in sets:
-            if profile == "pr":
-                pythons = [stable[-1] if version_set == "current" else stable[0]]
-            else:
-                pythons = list(stable)
-                if version_set == "current":
-                    pythons += [
-                        py
-                        for py in SUPPORTED_PYTHON[integration]
-                        if py in CANARY_PYTHON
-                    ]
+            pythons = [
+                py
+                for py in SUPPORTED_PYTHON[integration]
+                if py not in CANARY_PYTHON or version_set == "current"
+            ]
             for py in pythons:
                 rows.append(
                     {
@@ -269,8 +259,8 @@ def github_matrix(profile: str) -> list[dict]:
     return rows
 
 
-def print_github_matrix(profile: str) -> int:
-    print(json.dumps({"include": github_matrix(profile)}))
+def print_github_matrix() -> int:
+    print(json.dumps({"include": github_matrix()}))
     return 0
 
 
@@ -286,8 +276,7 @@ def main() -> int:
 
     sub.add_parser("rows")
     sub.add_parser("table")
-    gh = sub.add_parser("github-matrix")
-    gh.add_argument("--profile", required=True, choices=["full", "pr"])
+    sub.add_parser("github-matrix")
 
     args = parser.parse_args()
     if args.cmd == "deps":
@@ -299,7 +288,7 @@ def main() -> int:
     if args.cmd == "table":
         return print_table()
     if args.cmd == "github-matrix":
-        return print_github_matrix(args.profile)
+        return print_github_matrix()
     return 2
 
 

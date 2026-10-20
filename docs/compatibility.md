@@ -24,10 +24,10 @@ once the bug is fixed and the marker has to come off.
 
 ### When they run
 
-- Pull requests into `devel` or `main` that touch the SDK: each integration's
-  `min` pins on its oldest Python and `current` pins on its newest.
-- Nightly, on release branches and on manual runs: every combination below.
-  Python 3.14 rows are canaries and don't fail the run. mlx runs on macOS.
+On pull requests into `main` or a release branch, on pushes to them, nightly
+against `devel`, and on manual runs. Every run covers all the combinations
+below. Python 3.14 rows are canaries and don't fail the run. mlx runs on
+macOS.
 
 To run the full matrix locally: `python scripts/run_compat_local.py`.
 `python scripts/compat_matrix.py table` prints the table below.

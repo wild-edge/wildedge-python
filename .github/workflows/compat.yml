@@ -4,9 +4,8 @@ name: Compatibility
 # scripts/compat_matrix.py, which is also the source of the job matrix and of
 # docs/compatibility.md.
 #
-# - Pull requests into devel or main: each integration's minimum pins on its
-#   oldest Python and current pins on its newest ("pr" profile).
-# - Nightly, release branches and manual runs: every combination ("full").
+# Every run uses the full matrix. It runs on pull requests into main or a
+# release branch, on pushes to them, nightly against devel, and on demand.
 
 on:
   push:
@@ -18,7 +17,7 @@ on:
       - 'pyproject.toml'
       - '.github/workflows/compat.yml'
   pull_request:
-    branches: [ main, devel ]
+    branches: [ main, 'release/**' ]
     types: [opened, synchronize, reopened]
     paths:
       - 'wildedge/**'
@@ -38,9 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: rows
-        env:
-          PROFILE: ${{ (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/')) && 'pr' || 'full' }}
-        run: echo "rows=$(python scripts/compat_matrix.py github-matrix --profile "$PROFILE")" >> "$GITHUB_OUTPUT"
+        run: echo "rows=$(python scripts/compat_matrix.py github-matrix)" >> "$GITHUB_OUTPUT"
 
   compat:
     needs: matrix

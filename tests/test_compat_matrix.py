@@ -75,28 +75,8 @@ def test_docs_table_matches_the_matrix(capsys):
     )
 
 
-def test_pr_profile_runs_min_on_oldest_and_current_on_newest():
-    rows = compat_matrix.github_matrix("pr")
-    seen = {(r["integration"], r["version-set"]): r for r in rows}
-    for integration, sets in compat_matrix.MATRIX.items():
-        if compat_matrix.RUNNER.get(integration, "ubuntu-latest") != "ubuntu-latest":
-            assert not any(r["integration"] == integration for r in rows)
-            continue
-        stable = [
-            py
-            for py in compat_matrix.SUPPORTED_PYTHON[integration]
-            if py not in compat_matrix.CANARY_PYTHON
-        ]
-        for version_set in sets:
-            row = seen[(integration, version_set)]
-            expected = stable[0] if version_set == "min" else stable[-1]
-            assert row["python-version"] == expected
-    assert len(rows) == len(seen)
-    assert not any(r["canary"] for r in rows)
-
-
-def test_full_profile_covers_every_stable_combination():
-    rows = compat_matrix.github_matrix("full")
+def test_github_matrix_covers_every_combination():
+    rows = compat_matrix.github_matrix()
     keys = {(r["integration"], r["version-set"], r["python-version"]) for r in rows}
     assert len(keys) == len(rows)
     for integration, sets in compat_matrix.MATRIX.items():
