@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from wildedge.events import common
 from wildedge.events.error import ErrorCode, ErrorEvent
 from wildedge.events.feedback import FeedbackEvent, FeedbackType
 from wildedge.events.inference import InferenceEvent, TextInputMeta
@@ -181,8 +182,6 @@ def test_span_attribute_flattening_handles_unserializable_values():
 
 
 def test_span_attribute_warning_is_logged_once_per_key(caplog):
-    from wildedge.events import common
-
     common._warned_attribute_keys.discard("warn_once_tags")
     with caplog.at_level("WARNING", logger="wildedge"):
         for _ in range(3):
