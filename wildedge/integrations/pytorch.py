@@ -44,6 +44,7 @@ _GENERIC_MODULE_NAMES = {"Module", "Sequential", "ModuleList", "ModuleDict"}
 _timm_patched = False
 _TIMM_PATCH_LOCK = threading.Lock()
 TIMM_AUTO_LOAD_PATCH_NAME = "timm_auto_load"
+TIMM_MODEL_NAME_ATTR = "__wildedge_timm_model_name__"
 
 
 debug_pytorch_failure = functools.partial(debug_failure, "pytorch")
@@ -164,6 +165,20 @@ def classification_output_meta(
     )
 
 
+def timm_model_name(obj: object) -> str | None:
+    """Prefer the full requested name, including pretrained tags or hub paths."""
+    name = getattr(obj, TIMM_MODEL_NAME_ATTR, None)
+    if isinstance(name, str) and name:
+        return name
+    for key in ("pretrained_cfg", "default_cfg"):
+        config = getattr(obj, key, None)
+        if isinstance(config, dict):
+            name = config.get("architecture")
+            if isinstance(name, str) and name:
+                return name
+    return None
+
+
 class PytorchExtractor(BaseExtractor):
     def can_handle(self, obj: object) -> bool:
         return is_torch_module(obj)
@@ -172,9 +187,15 @@ class PytorchExtractor(BaseExtractor):
         self, obj: object, overrides: dict
     ) -> tuple[str | None, ModelInfo]:
         class_name = type(obj).__name__
-        model_id = overrides.pop("id", None) or class_name
+        model_name = timm_model_name(obj) or class_name
+        explicit_id = overrides.pop("id", None)
+        model_id = explicit_id or model_name
 
-        if class_name in _GENERIC_MODULE_NAMES:
+        if (
+            model_name == class_name
+            and class_name in _GENERIC_MODULE_NAMES
+            and not explicit_id
+        ):
             logger.warning(
                 "wildedge: PyTorch model_id defaults to generic class name '%s' - "
                 "pass model_id= to register_model() for a stable unique ID",
@@ -187,7 +208,7 @@ class PytorchExtractor(BaseExtractor):
         source = overrides.pop("source", "local")
 
         info = ModelInfo(
-            model_name=class_name,
+            model_name=model_name,
             model_version=version,
             model_source=source,
             model_format="pytorch",
@@ -315,6 +336,9 @@ class PytorchExtractor(BaseExtractor):
                 load_ms = elapsed_ms(t0)
                 logger.debug("wildedge: timm.create_model done load_ms=%d", load_ms)
                 if c is not None and not c.closed:
+                    name = args[0] if args else kwargs.get("model_name")
+                    if isinstance(name, str) and name:
+                        setattr(model, TIMM_MODEL_NAME_ATTR, name)
                     downloads = c._diff_hub_caches(hub_before, load_ms) or None
                     c._on_model_auto_loaded(model, load_ms=load_ms, downloads=downloads)
                 return model

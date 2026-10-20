@@ -7,6 +7,11 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- timm models now use the requested architecture/variant name for model identity
+  instead of the Python class name, so models such as resnet18 and resnet50 no
+  longer share telemetry. Manual registration falls back to timm architecture
+  metadata, and explicit model IDs retain priority.
+
 - Ultralytics `model.predict()` now records inference telemetry. Instrumentation
   patches `predict`, which `model(...)` delegates to, so both entry points are
   tracked exactly once.
