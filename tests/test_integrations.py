@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import inspect
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wildedge.integrations import gguf as gguf_integration
 from wildedge.integrations.gguf import (
     GgufExtractor,
+    call_arguments,
+    make_gguf_attachments,
+    make_gguf_generation_config,
+    make_gguf_output_meta,
+    make_gguf_stream_callbacks,
     parse_quantization,
 )
 from wildedge.integrations.gguf import (
@@ -75,16 +83,50 @@ class _FakeOrtSession:
 
 
 class Llama:  # must match the name check in GgufExtractor.can_handle
+    """Mirrors llama-cpp-python's call graph: every entry point runs create_completion."""
+
     model_path = "/models/llama-3-Q4_K_M.gguf"
     n_gpu_layers = 0
     metadata = {"general.architecture": "llama", "general.version": "3.0"}
 
-    def __call__(self, *args, **kwargs):
-        return {"usage": {"prompt_tokens": 10, "completion_tokens": 20}}
+    def create_completion(self, prompt="", **kwargs):
+        if kwargs.get("stream"):
+            return iter(
+                [
+                    {"choices": [{"text": "hi", "finish_reason": None}]},
+                    {
+                        "choices": [{"text": "!", "finish_reason": "stop"}],
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    },
+                ]
+            )
+        return {
+            "choices": [{"text": "hi!", "finish_reason": "length"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+        }
+
+    def __call__(self, prompt="", **kwargs):
+        return self.create_completion(prompt=prompt, **kwargs)
+
+    def create_chat_completion(self, messages, **kwargs):
+        # The chat handler formats the messages, then calls llama.create_completion.
+        prompt = "".join(m["content"] for m in messages)
+        result = self.create_completion(prompt=prompt, **kwargs)
+        if kwargs.get("stream"):
+            return result
+        return {
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "hi!"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": result["usage"],
+        }
 
 
 class _FailingLlama(Llama):
-    def __call__(self, *args, **kwargs):
+    def create_completion(self, prompt="", **kwargs):
         raise RuntimeError("cuda oom")
 
 
@@ -263,6 +305,248 @@ class TestGgufExtractor:
         with pytest.raises(RuntimeError):
             llm()
         assert publish_spy.events[0]["event_type"] == "error"
+
+    def test_install_hooks_tracks_chat_completion(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        llm.create_chat_completion(messages=[{"role": "user", "content": "hello"}])
+        assert len(publish_spy.events) == 1
+        event = publish_spy.events[0]
+        assert event["event_type"] == "inference"
+        assert event["inference"]["output_meta"]["tokens_out"] == 20
+
+    def test_install_hooks_tracks_create_completion(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        llm.create_completion(prompt="hello")
+        assert len(publish_spy.events) == 1
+        assert publish_spy.events[0]["inference"]["input_meta"]["char_count"] == 5
+
+    def test_install_hooks_tracks_streamed_chat_completion(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        chunks = list(llm.create_completion(prompt="hello", stream=True))
+        assert len(chunks) == 2
+        assert len(publish_spy.events) == 1
+        meta = publish_spy.events[0]["inference"]["output_meta"]
+        assert meta["tokens_out"] == 20
+        assert meta["stop_reason"] == "stop"
+
+    def test_install_hooks_tracks_chat_completion_error(self, publish_spy):
+        llm = _FailingLlama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        with pytest.raises(RuntimeError):
+            llm.create_chat_completion(messages=[{"role": "user", "content": "hi"}])
+        assert [e["event_type"] for e in publish_spy.events] == ["error"]
+
+    def test_install_hooks_twice_does_not_double_track(self, publish_spy):
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        self.extractor.install_hooks(llm, handle)
+        self.extractor.install_hooks(llm, handle)
+        llm.create_chat_completion(messages=[{"role": "user", "content": "hello"}])
+        assert len(publish_spy.events) == 1
+
+    def test_non_streaming_stop_reason(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        llm.create_completion(prompt="hello")
+        meta = publish_spy.events[0]["inference"]["output_meta"]
+        assert meta["stop_reason"] == "length"
+
+    def test_generation_config_from_kwargs(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        llm.create_chat_completion(
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.7,
+            top_p=0.9,
+            max_tokens=64,
+            repeat_penalty=1.1,
+            stop=["</s>", "User:"],
+        )
+        config = publish_spy.events[0]["inference"]["generation_config"]
+        assert config == {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_tokens": 64,
+            "repetition_penalty": 1.1,
+            "stop_sequences_count": 2,
+        }
+
+    def test_chat_input_meta(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": "be brief"},
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+                {"role": "user", "content": "what time is it"},
+            ]
+        )
+        meta = publish_spy.events[0]["inference"]["input_meta"]
+        assert meta["prompt_type"] == "chat"
+        assert meta["turn_index"] == 1
+        assert meta["word_count"] == 4
+        assert meta["token_count"] == 10
+
+    def test_streamed_chat_input_meta(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        stream = llm.create_chat_completion(
+            messages=[{"role": "user", "content": "hello"}], stream=True
+        )
+        list(stream)
+        assert len(publish_spy.events) == 1
+        inference = publish_spy.events[0]["inference"]
+        assert inference["input_meta"]["prompt_type"] == "chat"
+        assert inference["output_meta"]["stop_reason"] == "stop"
+
+    def test_completion_input_meta_is_not_chat(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        llm.create_completion(prompt="hello")
+        assert "prompt_type" not in publish_spy.events[0]["inference"]["input_meta"]
+
+    def test_no_attachments_when_disabled(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        llm.create_chat_completion(messages=[{"role": "user", "content": "hello"}])
+        assert "attachments" not in publish_spy.events[0]
+
+    def test_chat_attachments_when_enabled(self, publish_spy):
+        captured = []
+
+        def capture(attachments, inference_id, timestamp):
+            captured.extend(attachments)
+            return [{"attachment_id": str(i)} for i in range(len(attachments))]
+
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        handle.capture_attachments = capture
+        self.extractor.install_hooks(llm, handle)
+        messages = [{"role": "user", "content": "hello"}]
+        llm.create_chat_completion(messages=messages)
+        assert [(a.role, a.content_type) for a in captured] == [
+            ("input", "application/json"),
+            ("output", "text/plain"),
+        ]
+        assert json.loads(captured[0].data) == messages
+        assert captured[1].data == b"hi!"
+
+    def test_stop_given_as_string_counts_one_sequence(self):
+        config = make_gguf_generation_config({"stop": "</s>"})
+        assert config.stop_sequences_count == 1
+
+    def test_generation_config_none_without_sampling_arguments(self):
+        assert make_gguf_generation_config({"stop": []}) is None
+
+    def test_output_meta_none_without_tokens_ttft_or_stop_reason(self):
+        assert make_gguf_output_meta(None, None, None, None, 10) is None
+
+    def test_call_arguments_fill_defaults_and_flatten_kwargs(self):
+        def create_completion(self, prompt, temperature=0.8, **kwargs):
+            pass
+
+        args = call_arguments(
+            inspect.signature(create_completion), object(), ("hi",), {"seed": 1}
+        )
+        assert args["prompt"] == "hi"
+        assert args["temperature"] == 0.8
+        assert args["seed"] == 1
+        assert "kwargs" not in args
+
+    def test_call_arguments_fall_back_when_binding_fails(self):
+        def create_completion(self, prompt):
+            pass
+
+        args = call_arguments(
+            inspect.signature(create_completion), object(), ("hi", "extra"), {}
+        )
+        assert args == {"prompt": "hi"}
+
+    def test_call_arguments_without_signature(self):
+        assert call_arguments(None, object(), (), {"prompt": "p", "top_p": 0.5}) == {
+            "prompt": "p",
+            "top_p": 0.5,
+        }
+
+    def test_patched_call_survives_unreadable_signature(self, publish_spy):
+        with patch.object(
+            gguf_integration.inspect, "signature", side_effect=ValueError("no sig")
+        ):
+            patched = gguf_integration.build_patched_call(Llama.create_completion)
+        llm = Llama()
+        setattr(llm, gguf_integration.GGUF_HANDLE_ATTR, make_handle(publish_spy))
+        patched(llm, "hello", temperature=0.1)
+        event = publish_spy.events[0]["inference"]
+        assert event["input_meta"]["char_count"] == 5
+        assert event["generation_config"] == {"temperature": 0.1}
+
+    def test_generation_config_error_does_not_block_tracking(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        with patch.object(
+            gguf_integration,
+            "make_gguf_generation_config",
+            side_effect=RuntimeError("boom"),
+        ):
+            llm.create_completion(prompt="hello")
+        assert len(publish_spy.events) == 1
+        assert "generation_config" not in publish_spy.events[0]["inference"]
+
+    def test_malformed_usage_still_tracks(self, publish_spy):
+        class OddLlama(Llama):
+            def create_completion(self, prompt="", **kwargs):
+                return {"usage": "n/a"}
+
+        llm = OddLlama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        llm.create_completion(prompt="hello")
+        assert len(publish_spy.events) == 1
+
+    def test_chat_without_handle_is_untracked(self, publish_spy):
+        llm = Llama()
+        self.extractor.install_hooks(llm, make_handle(publish_spy))
+        setattr(llm, gguf_integration.GGUF_HANDLE_ATTR, None)
+        result = llm.create_chat_completion(messages=[{"role": "user", "content": "x"}])
+        assert result["choices"][0]["message"]["content"] == "hi!"
+        assert publish_spy.events == []
+
+    def test_stream_callbacks_read_chat_deltas_and_skip_non_dicts(self, publish_spy):
+        captured = []
+        handle = make_handle(publish_spy)
+        handle.capture_attachments = lambda a, *_: captured.extend(a) or []
+        on_chunk, on_done = make_gguf_stream_callbacks(handle, "p")
+        on_chunk("not a dict")
+        on_chunk({"choices": [{"delta": {"role": "assistant"}}]})
+        on_chunk({"choices": [{"delta": {"content": "he"}}]})
+        on_chunk({"choices": [{"delta": {"content": "y"}, "finish_reason": "stop"}]})
+        on_done(10, 2)
+        assert captured[-1].data == b"hey"
+        meta = publish_spy.events[0]["inference"]["output_meta"]
+        assert meta["stop_reason"] == "stop"
+
+    def test_attachment_build_error_is_swallowed(self, publish_spy):
+        handle = make_handle(publish_spy)
+        handle.capture_attachments = lambda *a: []
+        circular: list = []
+        circular.append(circular)
+        assert make_gguf_attachments(handle, "p", [circular], "reply") is None
+
+    def test_streamed_completion_attaches_joined_reply(self, publish_spy):
+        captured = []
+        llm = Llama()
+        handle = make_handle(publish_spy)
+        handle.capture_attachments = lambda a, *_: captured.extend(a) or []
+        self.extractor.install_hooks(llm, handle)
+        list(llm.create_completion(prompt="hello", stream=True))
+        assert [a.data for a in captured] == [b"hello", b"hi!"]
 
 
 # ---------------------------------------------------------------------------
