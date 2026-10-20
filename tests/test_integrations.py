@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from unittest.mock import MagicMock, patch
 
@@ -452,8 +453,6 @@ class TestGgufExtractor:
         def create_completion(self, prompt, temperature=0.8, **kwargs):
             pass
 
-        import inspect
-
         args = call_arguments(
             inspect.signature(create_completion), object(), ("hi",), {"seed": 1}
         )
@@ -463,8 +462,6 @@ class TestGgufExtractor:
         assert "kwargs" not in args
 
     def test_call_arguments_fall_back_when_binding_fails(self):
-        import inspect
-
         def create_completion(self, prompt):
             pass
 
