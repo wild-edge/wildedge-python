@@ -7,7 +7,10 @@ install must fail the job, never skip it.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
+import os
+import urllib.request
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
@@ -18,6 +21,41 @@ import wildedge
 from wildedge.platforms.device_info import DeviceInfo
 
 FIXTURES = Path(__file__).parent / "fixtures"
+# Downloaded test models; CI caches this directory between runs.
+DOWNLOAD_CACHE = Path(
+    os.environ.get("WILDEDGE_COMPAT_CACHE", Path(__file__).parent / ".cache")
+)
+
+
+def downloaded_fixture(name: str, url: str, sha256: str) -> Path:
+    """Download ``url`` once into the cache and check its sha256.
+
+    A failed download or a different checksum fails the test: update the URL
+    (and the checksum if the file changed) where the fixture is declared.
+    """
+    path = DOWNLOAD_CACHE / name
+    if path.exists() and _sha256(path) == sha256:
+        return path
+    DOWNLOAD_CACHE.mkdir(parents=True, exist_ok=True)
+    partial = path.with_suffix(path.suffix + ".part")
+    try:
+        urllib.request.urlretrieve(url, partial)
+    except OSError as exc:
+        pytest.fail(f"could not download test model {name} from {url}: {exc}")
+    actual = _sha256(partial)
+    if actual != sha256:
+        partial.unlink()
+        pytest.fail(f"{url} has sha256 {actual}, expected {sha256}")
+    partial.replace(path)
+    return path
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 @pytest.hookimpl(hookwrapper=True)

@@ -13,7 +13,8 @@ for LLMs, input modality for vision models). Nothing touches the network:
 
 - openai and anthropic get canned responses through the SDK's own HTTP
   client (`MockTransport`).
-- onnx and gguf load small files from `tests/compat/fixtures`.
+- onnx loads a tiny model committed in `tests/compat/fixtures`. gguf
+  downloads a 1.2 MB model on first use, checked against a pinned sha256.
 - torch, timm, tensorflow, transformers, ultralytics and mlx build models from
   a config, with random weights.
 
