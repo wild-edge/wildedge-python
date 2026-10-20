@@ -9,7 +9,8 @@ generated from `scripts/compat_matrix.py`, which also defines the CI jobs.
 `tests/compat/test_<integration>_compat.py` loads a real model with the real
 library and checks the events the SDK records: a `model_load` event, then an
 `inference` event for the same model with the expected fields (token counts
-for LLMs, input modality for vision models). Nothing touches the network:
+for LLMs, input modality for vision models). Apart from one download for gguf, nothing
+touches the network:
 
 - openai and anthropic get canned responses through the SDK's own HTTP
   client (`MockTransport`).
