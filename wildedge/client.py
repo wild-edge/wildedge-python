@@ -994,11 +994,20 @@ class WildEdge:
         return obj
 
     def flush(self, timeout: float = 5.0) -> None:
-        """Block until the event queue drains or timeout expires."""
+        """Block until queued events and attachments are sent or timeout expires.
+
+        Events go first; buffered attachments use the time that is left.
+        """
+        deadline = time.monotonic() + timeout
         self.consumer.flush(timeout=timeout)
+        self._drain_attachments(deadline)
 
     def close(self, timeout: float | None = None) -> None:
-        """Best-effort shutdown; pass timeout to attempt bounded flush first."""
+        """Best-effort shutdown; pass timeout to attempt bounded flush first.
+
+        With a timeout, buffered attachments are uploaded in the time left after
+        the event flush. Without one, they stay on disk for the next start.
+        """
         self.closed = True
         if not self.noop:
             stop_sampler()
@@ -1007,7 +1016,20 @@ class WildEdge:
         if timeout is None:
             self.consumer.close()
         else:
+            deadline = time.monotonic() + timeout
             self.consumer.close(timeout=timeout)
+            self._drain_attachments(deadline)
+
+    def _drain_attachments(self, deadline: float) -> None:
+        if self.attachment_uploader is None:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            self.attachment_uploader.drain(remaining)
+        except Exception as exc:
+            logger.warning("wildedge: attachment upload on flush failed: %s", exc)
 
     def pending_count(self) -> int:
         """Return the number of events currently buffered."""

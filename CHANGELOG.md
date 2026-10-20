@@ -23,6 +23,12 @@ under Unreleased and move into a version section at release time.
   values and answered 422 for the batch, dropping unrelated loads, inferences
   and spans. Such values are now sent as JSON strings, with one warning per
   key.
+- `close(timeout=...)` and `flush(timeout=...)` now upload buffered
+  attachments in the time left after sending events. `close()` used to stop
+  the attachment uploader without a final upload, so a short-lived process
+  lost the attachments of its last few seconds (the uploader runs every 5 s)
+  while its events still referenced them. `close()` without a timeout still
+  leaves them on disk for the next start.
 
 ## 0.2.2 - 2026-09-30
 
