@@ -63,7 +63,7 @@ _ultralytics_patched = False
 _ULTRALYTICS_PATCH_LOCK = threading.Lock()
 
 # --- Marker names written onto patched objects and classes ---
-YOLO_CALL_PATCH_NAME = "ultralytics_call"
+YOLO_PREDICT_PATCH_NAME = "ultralytics_predict"
 YOLO_HANDLE_ATTR = "__wildedge_yolo_handle__"
 YOLO_AUTO_LOAD_PATCH_NAME = "ultralytics_auto_load"
 
@@ -391,9 +391,11 @@ class UltralyticsExtractor(BaseExtractor):
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
         handle.detected_accelerator = detect_accelerator(obj)
         setattr(obj, YOLO_HANDLE_ATTR, handle)
+        # YOLO.__call__ delegates to predict; patch their common entry point.
         patch_instance_call_once(
             obj,
-            patch_name=YOLO_CALL_PATCH_NAME,
+            patch_name=YOLO_PREDICT_PATCH_NAME,
+            method="predict",
             make_patched_call=build_patched_call,
         )
 
