@@ -6,11 +6,11 @@ and llama-cpp-python/GGUF completion iterators (sync).
 
 | Outcome | Telemetry |
 |---|---|
-| Iterator exhausted | One inference event; Responses requires a terminal response |
+| Iterator exhausted | One inference event; remote APIs require their completion marker |
 | Explicit `close()` / `aclose()` or early context exit | One unsuccessful inference with `STREAM_CLOSED`, unless already finalized |
 | Async cancellation while awaiting a chunk or exiting its context | One unsuccessful inference with `STREAM_CANCELLED`; cancellation is re-raised |
 | Provider/iterator exception | One error event using existing error classification; original exception is re-raised |
-| Responses EOF without terminal response | One unsuccessful inference with `STREAM_INCOMPLETE` |
+| Remote API EOF without completion marker | One unsuccessful inference with `STREAM_INCOMPLETE` |
 
 Repeated exhaustion and closing after finalization do not emit another outcome.
 Partial usage is retained when supplied by the provider, but missing totals are

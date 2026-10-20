@@ -181,6 +181,8 @@ def make_openai_stream_callbacks(
         duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
     ) -> None:
         ti, to, sr = tokens_in[0], tokens_out[0], stop_reason[0]
+        if outcome == "completed" and sr is None:
+            outcome = "incomplete"
         output_meta = build_streaming_output_meta(ttft_ms, ti, to, sr, duration_ms)
         handle.track_inference(
             duration_ms=duration_ms,

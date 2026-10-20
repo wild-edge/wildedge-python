@@ -251,3 +251,18 @@ async def test_async_telemetry_and_context():
     with trace_context(trace_id="consumer"):
         assert [item async for item in stream] == [1]
     assert seen == ["origin"]
+
+
+@pytest.mark.parametrize(
+    "factory", [make_openai_stream_callbacks, make_anthropic_stream_callbacks]
+)
+def test_remote_eof_without_completion_is_incomplete(factory):
+    handle = MagicMock()
+    callbacks = factory(handle, [])
+    stream = SyncStreamWrapper(iter([]), handle, time.perf_counter(), *callbacks)
+    list(stream)
+    stream.close()
+    handle.track_inference.assert_called_once()
+    event = handle.track_inference.call_args.kwargs
+    assert event["success"] is False
+    assert event["error_code"] == "STREAM_INCOMPLETE"

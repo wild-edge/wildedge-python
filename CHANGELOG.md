@@ -11,8 +11,8 @@ under Unreleased and move into a version section at release time.
   cancellation, and iterator errors. Early closure/cancellation records an
   unsuccessful inference with partial metadata when available. TTFT ignores
   lifecycle/role-only chunks; telemetry callbacks cannot break iteration and
-  retain the trace context captured at stream creation. Responses streams
-  ending without a terminal response record `STREAM_INCOMPLETE`.
+  retain the trace context captured at stream creation. Remote API streams
+  ending without their completion marker record `STREAM_INCOMPLETE`.
 
 ### Added
 

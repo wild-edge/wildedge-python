@@ -152,9 +152,16 @@ def make_anthropic_stream_callbacks(
     cached_tokens: list[int | None] = [None]
     stop_reason: list[str | None] = [None]
     resolved_model: list[str | None] = [None]
+    message_stopped = False
 
     def on_chunk(event: object) -> None:
+        nonlocal message_stopped
         event_type = type(event).__name__
+        if (
+            getattr(event, "type", None) == "message_stop"
+            or event_type == "RawMessageStopEvent"
+        ):
+            message_stopped = True
         if event_type == "RawMessageStartEvent":
             msg = getattr(event, "message", None)
             if msg is not None:
@@ -176,6 +183,8 @@ def make_anthropic_stream_callbacks(
     def on_done(
         duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
     ) -> None:
+        if outcome == "completed" and not message_stopped:
+            outcome = "incomplete"
         ti, to, cr, sr = tokens_in[0], tokens_out[0], cached_tokens[0], stop_reason[0]
         tps = round(to / duration_ms * 1000, 1) if duration_ms > 0 and to else None
         api_meta = (

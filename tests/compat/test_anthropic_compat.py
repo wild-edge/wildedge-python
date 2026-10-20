@@ -77,7 +77,8 @@ def test_api_error_is_tracked(compat_client):
 
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("early_close", [False, True])
-async def test_stream_lifecycle(compat_client, asynchronous, early_close):
+@pytest.mark.parametrize("truncated", [False, True])
+async def test_stream_lifecycle(compat_client, asynchronous, early_close, truncated):
     compat_client.instrument("anthropic")
     events = [
         {
@@ -101,6 +102,8 @@ async def test_stream_lifecycle(compat_client, asynchronous, early_close):
         },
         {"type": "message_stop"},
     ]
+    if truncated:
+        events = events[:-1]
     body = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
 
     def handler(request):
@@ -119,7 +122,7 @@ async def test_stream_lifecycle(compat_client, asynchronous, early_close):
                 if early_close:
                     await anext(stream)
                 else:
-                    assert len([event async for event in stream]) == 4
+                    assert len([event async for event in stream]) == len(events)
             await stream.close()
     else:
         with _client(handler) as client:
@@ -129,14 +132,16 @@ async def test_stream_lifecycle(compat_client, asynchronous, early_close):
                 if early_close:
                     next(stream)
                 else:
-                    assert len(list(stream)) == 4
+                    assert len(list(stream)) == len(events)
             stream.close()
     inference = compat_client.one("inference")["inference"]
-    assert inference["success"] is not early_close
+    assert inference["success"] == (not early_close and not truncated)
     assert inference["output_meta"]["tokens_in"] == 12
     if early_close:
         assert inference["error_code"] == "STREAM_CLOSED"
         assert inference["output_meta"].get("time_to_first_token_ms") is None
     else:
+        if truncated:
+            assert inference["error_code"] == "STREAM_INCOMPLETE"
         assert inference["output_meta"]["tokens_out"] == 3
         assert inference["output_meta"]["time_to_first_token_ms"] is not None
