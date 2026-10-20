@@ -12,6 +12,12 @@ under Unreleased and move into a version section at release time.
   `Llama.__call__`, so chat apps on llama-cpp-python reported model loads but
   no inference events. It now patches `create_completion`, which every entry
   point runs, so each call is tracked once.
+- gguf inference events now include the stop reason for non-streamed calls,
+  the generation config (`temperature`, `top_p`, `top_k`, `max_tokens`,
+  `repeat_penalty`, penalties, `seed`, stop sequence count), and, for chat
+  calls, `prompt_type="chat"` and `turn_index` measured on the last user
+  message. With attachments enabled, the prompt or chat messages and the reply
+  are attached.
 
 ## 0.2.2 - 2026-09-30
 
