@@ -33,6 +33,8 @@ INTEGRATION_SPECS: tuple[IntegrationSpec, ...] = (
     IntegrationSpec("tensorflow", ("tensorflow",), "client_patch"),
     IntegrationSpec("ultralytics", ("ultralytics",), "client_patch"),
     IntegrationSpec("transformers", ("transformers",), "client_patch"),
+    IntegrationSpec("faster_whisper", ("faster_whisper",), "client_patch"),
+    IntegrationSpec("mlx_whisper", ("mlx_whisper",), "client_patch"),
     IntegrationSpec("mlx", ("mlx_lm",), "client_patch"),
 )
 

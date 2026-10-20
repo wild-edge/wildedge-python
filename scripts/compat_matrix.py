@@ -9,6 +9,10 @@ import sys
 from importlib import metadata
 
 MATRIX = {
+    "faster_whisper": {
+        "current": ["faster-whisper==1.2.1", "ctranslate2==4.8.2", "numpy==2.2.6"]
+    },
+    "mlx_whisper": {"current": ["mlx-whisper==0.4.3", "mlx==0.32.3", "numpy==2.2.6"]},
     "anthropic": {
         "min": ["anthropic==0.25.0"],
         "current": ["anthropic==1.15.0"],
@@ -61,6 +65,8 @@ MATRIX = {
 }
 
 SUPPORTED_PYTHON = {
+    "faster_whisper": ["3.12", "3.13"],
+    "mlx_whisper": ["3.12", "3.13"],
     "anthropic": ["3.10", "3.11", "3.12", "3.13"],
     "onnx": ["3.10", "3.11", "3.12", "3.13", "3.14"],
     "torch": ["3.10", "3.11", "3.12", "3.13", "3.14"],
@@ -80,6 +86,7 @@ COVERED_BY = {
 
 # Integrations that need a specific runner; everything else runs on Linux.
 RUNNER = {
+    "mlx_whisper": "macos-14",
     "mlx": "macos-14",
 }
 

@@ -88,6 +88,7 @@ for client lifecycle and the full contract.
 | Integration | Example |
 |---|---|
 | `transformers` | [transformers_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/transformers_example.py) |
+| `mlx_whisper` / `faster_whisper` | [whisper_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/whisper_example.py) |
 | `mlx` | [mlx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/mlx_example.py) |
 | `timm` | [timm_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/timm_example.py) |
 | `gguf` | [gguf_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/gguf_example.py) |

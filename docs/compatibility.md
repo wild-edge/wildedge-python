@@ -38,6 +38,8 @@ To run the full matrix locally: `python scripts/run_compat_local.py`.
 
 | Integration | Version set | Dependencies | Supported Python |
 |---|---|---|---|
+| `faster_whisper` | `current` | `faster-whisper==1.2.1`, `ctranslate2==4.8.2`, `numpy==2.2.6` | 3.12, 3.13 |
+| `mlx_whisper` | `current` | `mlx-whisper==0.4.3`, `mlx==0.32.3`, `numpy==2.2.6` | 3.12, 3.13 |
 | `anthropic` | `min` | `anthropic==0.25.0` | 3.10, 3.11, 3.12, 3.13 |
 | `anthropic` | `current` | `anthropic==1.15.0` | 3.10, 3.11, 3.12, 3.13 |
 | `onnx` | `min` | `onnxruntime==1.18.1`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13, 3.14 |
