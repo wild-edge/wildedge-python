@@ -18,6 +18,11 @@ under Unreleased and move into a version section at release time.
   calls, `prompt_type="chat"` and `turn_index` measured on the last user
   message. With attachments enabled, the prompt or chat messages and the reply
   are attached.
+- A span attribute whose value is a list, dict or other non-scalar no longer
+  gets the whole event batch rejected. Ingest only accepts scalar attribute
+  values and answered 422 for the batch, dropping unrelated loads, inferences
+  and spans. Such values are now sent as JSON strings, with one warning per
+  key.
 
 ## 0.2.2 - 2026-09-30
 

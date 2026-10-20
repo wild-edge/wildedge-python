@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from wildedge.events.common import add_optional_fields
+from wildedge.events.common import add_optional_fields, flatten_attributes
 
 SpanKind = Literal[
     "agent_step",
@@ -54,7 +54,7 @@ class SpanEvent:
         if self.output_summary is not None:
             span_data["output_summary"] = self.output_summary
         if self.attributes is not None:
-            span_data["attributes"] = self.attributes
+            span_data["attributes"] = flatten_attributes(self.attributes)
 
         event = {
             "event_id": self.event_id,
