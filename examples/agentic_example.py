@@ -80,7 +80,7 @@ def calculator(expression: str) -> str:
     # ~60ms to simulate a remote computation call.
     time.sleep(0.06)
     try:
-        result = eval(expression, {"__builtins__": {}})  # noqa: S307
+        result = eval(expression, {"__builtins__": {}})
         return json.dumps({"expression": expression, "result": result})
     except Exception as e:
         return json.dumps({"error": str(e)})

@@ -242,7 +242,7 @@ class HuggingFaceHubTracker(BaseHubTracker):
         records.clear()
         return result
 
-    def install_patch(self, client_ref: object) -> None:  # noqa: ARG002
+    def install_patch(self, client_ref: object) -> None:
         """
         Patch ``hf_hub_download`` and ``snapshot_download`` for thread-local tracking.
 

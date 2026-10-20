@@ -55,7 +55,8 @@ def test_create_completion_is_tracked_with_its_config(compat_client, llm):
     assert config["max_tokens"] == 4
     assert config["stop_sequences_count"] == 1
     # Arguments not passed are reported with llama-cpp-python's defaults.
-    assert "top_p" in config and "top_k" in config
+    assert "top_p" in config
+    assert "top_k" in config
 
 
 def test_chat_completion_is_tracked_once_as_chat(compat_client, llm):

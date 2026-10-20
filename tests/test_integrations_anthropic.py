@@ -128,7 +128,7 @@ class FakeAsyncIterator:
         try:
             return next(self._iter)
         except StopIteration:
-            raise StopAsyncIteration
+            raise StopAsyncIteration from None
 
 
 # Named "Anthropic" / "AsyncAnthropic" so can_handle sees the right type name.

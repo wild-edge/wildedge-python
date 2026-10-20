@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import wildedge.platforms.macos as macos_mod
 from wildedge.platforms.base import cuda_device_count
 from wildedge.platforms.linux import LinuxPlatform
 from wildedge.platforms.macos import MACOS_THERMAL_STATES, MacOSPlatform
@@ -67,7 +68,7 @@ def test_base_cuda_device_count_nonzero(monkeypatch):
             return 0
 
         def cuDeviceGetCount(self, ptr):  # noqa: N802
-            ptr._obj.value = 2  # noqa: SLF001
+            ptr._obj.value = 2
             return 0
 
     monkeypatch.setattr("ctypes.CDLL", lambda _name: FakeCudaLib())
@@ -142,7 +143,6 @@ def test_macos_thermal_states_covers_all_levels():
 
 def test_macos_cpu_freq_intel(monkeypatch):
     """On Intel, both hw.cpufrequency and hw.cpufrequency_max are available."""
-    import wildedge.platforms.macos as macos_mod
 
     calls = []
 
@@ -161,7 +161,6 @@ def test_macos_cpu_freq_intel(monkeypatch):
 
 def test_macos_cpu_freq_apple_silicon(monkeypatch):
     """On Apple Silicon, hw.cpufrequency is absent; max falls back to hw.perflevel0.cpufrequency_max."""
-    import wildedge.platforms.macos as macos_mod
 
     def fake_sysctl(name):
         return {b"hw.perflevel0.cpufrequency_max": 4_056_000_000}.get(name)
@@ -173,8 +172,6 @@ def test_macos_cpu_freq_apple_silicon(monkeypatch):
 
 
 def test_macos_thermal_nominal(monkeypatch):
-    import wildedge.platforms.macos as macos_mod
-
     monkeypatch.setattr(macos_mod.ctypes.cdll, "LoadLibrary", lambda _: FakeObjc())
     monkeypatch.setattr(
         macos_mod.ctypes,
@@ -191,8 +188,6 @@ def test_macos_thermal_nominal(monkeypatch):
 
 
 def test_macos_thermal_serious(monkeypatch):
-    import wildedge.platforms.macos as macos_mod
-
     monkeypatch.setattr(macos_mod.ctypes.cdll, "LoadLibrary", lambda _: FakeObjc())
     monkeypatch.setattr(
         macos_mod.ctypes,
@@ -210,8 +205,6 @@ def test_macos_thermal_serious(monkeypatch):
 
 
 def test_macos_thermal_returns_none_on_error(monkeypatch):
-    import wildedge.platforms.macos as macos_mod
-
     monkeypatch.setattr(
         macos_mod.ctypes.cdll,
         "LoadLibrary",

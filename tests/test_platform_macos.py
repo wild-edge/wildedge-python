@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import pytest
 
+from wildedge.platforms import macos as macos_mod
 from wildedge.platforms.hardware import ThermalContext
 from wildedge.platforms.macos import MacOSPlatform
 
 
 def test_meminfo_computes_available(monkeypatch):
-    from wildedge.platforms import macos as macos_mod
-
     monkeypatch.setattr(
         macos_mod,
         "_sysctl_uint64",
@@ -25,8 +24,6 @@ def test_meminfo_computes_available(monkeypatch):
 
 
 def test_meminfo_available_none_when_page_size_missing(monkeypatch):
-    from wildedge.platforms import macos as macos_mod
-
     monkeypatch.setattr(macos_mod, "_sysctl_uint64", lambda name: 16_000_000_000)
     monkeypatch.setattr(macos_mod, "_sysctl_uint32", lambda name: None)
     _, available = MacOSPlatform().meminfo()
@@ -62,7 +59,8 @@ def test_hardware_context_fields(monkeypatch):
 @pytest.mark.requires_macos
 def test_real_meminfo():
     total, available = MacOSPlatform().meminfo()
-    assert isinstance(total, int) and total > 0
+    assert isinstance(total, int)
+    assert total > 0
     if available is not None:
         assert 0 < available <= total
 

@@ -92,7 +92,7 @@ class FakeAsyncCompletions:
 
 
 def make_stream_chunk(content=None, finish_reason=None, usage=None):
-    chunk = SimpleNamespace(
+    return SimpleNamespace(
         choices=[
             SimpleNamespace(
                 delta=SimpleNamespace(content=content),
@@ -104,7 +104,6 @@ def make_stream_chunk(content=None, finish_reason=None, usage=None):
         system_fingerprint=None,
         service_tier=None,
     )
-    return chunk
 
 
 class FakeStreamingCompletions:
@@ -138,7 +137,7 @@ class FakeAsyncIterator:
         try:
             return next(self._iter)
         except StopIteration:
-            raise StopAsyncIteration
+            raise StopAsyncIteration from None
 
 
 # Named "OpenAI" / "AsyncOpenAI" so can_handle sees the right type name.
@@ -184,7 +183,7 @@ def make_fake_client(closed=False):
 
 
 @pytest.mark.parametrize(
-    "url,expected",
+    ("url", "expected"),
     [
         (None, "openai"),
         ("", "openai"),

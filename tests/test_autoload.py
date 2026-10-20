@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
+import pathlib
 import subprocess
 import sys
 import textwrap
 from unittest.mock import patch
 
 import wildedge.autoload.sitecustomize as _sc_mod
+from wildedge.runtime.bootstrap import RuntimeConfigError, RuntimeStrictIntegrationError
 
 _MARKER = _sc_mod._INSTALLED_MARKER
 
@@ -138,8 +141,6 @@ def test_uvicorn_reload_worker_bootstraps(tmp_path):
     across exec and blocked the worker's bootstrap. sys.modules is not inherited
     across exec, so the worker re-initialises correctly.
     """
-    import os
-    import pathlib
 
     autoload_dir = str(
         pathlib.Path(
@@ -179,8 +180,6 @@ def test_uvicorn_reload_worker_bootstraps(tmp_path):
 
 
 def test_strict_missing_dsn_exits_120(monkeypatch):
-    from wildedge.runtime.bootstrap import RuntimeConfigError
-
     monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
     monkeypatch.setenv("WILDEDGE_STRICT", "1")
@@ -200,7 +199,6 @@ def test_strict_missing_dsn_exits_120(monkeypatch):
 
 def test_strict_integration_error_exits_121_without_strict_env(monkeypatch):
     """--strict-integrations is its own opt-in; it exits even without --strict."""
-    from wildedge.runtime.bootstrap import RuntimeStrictIntegrationError
 
     monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
@@ -236,8 +234,6 @@ def test_strict_internal_error_exits_122(monkeypatch):
 
 
 def test_non_strict_config_error_warns_and_continues(monkeypatch, capsys):
-    from wildedge.runtime.bootstrap import RuntimeConfigError
-
     monkeypatch.delitem(sys.modules, _MARKER, raising=False)
     monkeypatch.setenv("WILDEDGE_AUTOLOAD", "1")
     monkeypatch.delenv("WILDEDGE_STRICT", raising=False)
@@ -277,8 +273,6 @@ def test_startup_report_printed_from_env(monkeypatch, capsys):
 
 
 def test_no_propagate_clears_runtime_env(monkeypatch):
-    import os
-
     class FakeContext:
         debug = False
         print_startup_report = False
@@ -300,8 +294,6 @@ def test_no_propagate_clears_runtime_env(monkeypatch):
 
 def test_strict_missing_dsn_exit_code_in_real_interpreter(tmp_path):
     """sys.exit inside sitecustomize must terminate interpreter startup with our code."""
-    import os
-    import pathlib
 
     autoload_dir = str(
         pathlib.Path(

@@ -168,7 +168,7 @@ def patch_predict_once(
             )
             raise
 
-    setattr(obj, "predict", patched_predict)
+    obj.predict = patched_predict
     setattr(obj, TENSORFLOW_PREDICT_PATCHED_ATTR, True)
 
 

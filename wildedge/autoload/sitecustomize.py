@@ -15,6 +15,7 @@ on stderr and the wrapped program runs untracked. With WILDEDGE_STRICT set
 
 from __future__ import annotations
 
+import importlib.util as _iutil
 import os
 import sys
 
@@ -37,14 +38,14 @@ def _die(code: int) -> None:
     os._exit(code)
 
 
-if _INSTALLED_MARKER not in sys.modules:
+if _INSTALLED_MARKER not in sys.modules:  # noqa: SIM102 - re-entry guard kept separate
     # Activate if the CLI launched this process, or if WILDEDGE_DSN is set
     # and the user has manually prepended wildedge/autoload/ to PYTHONPATH.
     if os.environ.get(_AUTOLOAD) or os.environ.get(_DSN):
         # Set the guard before importing wildedge to prevent re-entry.
         sys.modules[_INSTALLED_MARKER] = True  # type: ignore[assignment]
         try:
-            from wildedge.runtime.bootstrap import (  # noqa: PLC0415
+            from wildedge.runtime.bootstrap import (
                 EXIT_BOOTSTRAP_INTERNAL_ERROR,
                 EXIT_CONFIG_ERROR,
                 EXIT_STRICT_INTEGRATION_ERROR,
@@ -54,7 +55,7 @@ if _INSTALLED_MARKER not in sys.modules:
                 format_startup_report,
                 install_runtime,
             )
-            from wildedge.settings import read_runner_env  # noqa: PLC0415
+            from wildedge.settings import read_runner_env
 
             _runner_env = read_runner_env()
             _context = None
@@ -99,8 +100,6 @@ if _INSTALLED_MARKER not in sys.modules:
 # Use importlib to find and exec it directly; avoids sys.modules manipulation
 # which can trigger CPython's module GC and clear globals mid-execution.
 def _load_existing_sitecustomize() -> None:
-    import importlib.util as _iutil
-
     _autoload_dir = os.path.dirname(os.path.abspath(__file__))
     _saved = sys.path[:]
     sys.path = [p for p in sys.path if p != _autoload_dir]

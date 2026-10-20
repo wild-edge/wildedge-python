@@ -208,8 +208,7 @@ def wrap_sync_completions(completions: object, source: str, client_ref: object) 
                 if is_streaming:
                     on_chunk, on_done = make_openai_stream_callbacks(handle, messages)
                     return SyncStreamWrapper(result, handle, t0, on_chunk, on_done)
-                else:
-                    record_inference(handle, result, messages, elapsed_ms(t0))
+                record_inference(handle, result, messages, elapsed_ms(t0))
             return result
         except Exception as exc:
             if handle is not None:
@@ -240,8 +239,7 @@ def wrap_async_completions(
                 if is_streaming:
                     on_chunk, on_done = make_openai_stream_callbacks(handle, messages)
                     return AsyncStreamWrapper(result, handle, t0, on_chunk, on_done)
-                else:
-                    record_inference(handle, result, messages, elapsed_ms(t0))
+                record_inference(handle, result, messages, elapsed_ms(t0))
             return result
         except Exception as exc:
             if handle is not None:

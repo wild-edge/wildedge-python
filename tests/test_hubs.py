@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
+import wildedge.hubs.huggingface as hf_mod
+import wildedge.hubs.torchhub as torchhub_mod
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.torchhub import TorchHubTracker
 
@@ -145,8 +147,6 @@ def test_torch_hub_diff_to_records_empty_when_no_new_files():
 
 
 def test_torch_hub_install_patch_is_idempotent(monkeypatch):
-    import wildedge.hubs.torchhub as torchhub_mod
-
     original_load_calls = []
 
     class FakeHub:
@@ -179,8 +179,6 @@ def test_torch_hub_install_patch_is_idempotent(monkeypatch):
 
 
 def test_hf_tracker_drain_returns_and_clears_buffer(monkeypatch):
-    import wildedge.hubs.huggingface as hf_mod
-
     tracker = HuggingFaceHubTracker()
     # Directly inject a record into the thread-local buffer
     hf_mod._buffer().append({"repo_id": "test/model", "source_type": "huggingface"})
