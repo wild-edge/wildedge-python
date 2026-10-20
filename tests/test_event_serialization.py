@@ -195,3 +195,17 @@ def test_span_attribute_warning_is_logged_once_per_key(caplog):
             ).to_dict()
     warnings = [r for r in caplog.records if "warn_once_tags" in r.getMessage()]
     assert len(warnings) == 1
+
+
+def test_span_attribute_falls_back_to_str_when_json_fails():
+    circular: list = []
+    circular.append(circular)
+    event = SpanEvent(
+        kind="custom",
+        name="s",
+        duration_ms=1,
+        status="ok",
+        attributes={"loop": circular, 7: "int key"},
+    )
+    attrs = event.to_dict()["span"]["attributes"]
+    assert attrs == {"loop": "[[...]]", "7": "int key"}
