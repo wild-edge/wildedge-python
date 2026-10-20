@@ -63,5 +63,7 @@ To run the full matrix locally: `python scripts/run_compat_local.py`.
 | `transformers` | `min` (`py3.13` override) | `transformers==4.45.0`, `torch==2.5.0`, `numpy==2.1.3` | 3.13 |
 | `transformers` | `current` | `transformers==5.20.1`, `torch==2.14.1`, `numpy==2.2.6` | 3.10, 3.11, 3.12, 3.13 |
 | `ultralytics` | `min` | `ultralytics==8.0.0`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13 |
+| `ultralytics` | `min` (`py3.12` override) | `ultralytics==8.0.0`, `numpy==1.26.4`, `setuptools==75.8.0` | 3.12 |
+| `ultralytics` | `min` (`py3.13` override) | `ultralytics==8.0.0`, `numpy==1.26.4`, `setuptools==75.8.0` | 3.13 |
 | `ultralytics` | `current` | `ultralytics==8.4.182`, `numpy==2.2.6` | 3.10, 3.11, 3.12, 3.13 |
 | `mlx` | `current` | `mlx==0.32.4`, `mlx-lm==0.32.2` | 3.12, 3.13 |

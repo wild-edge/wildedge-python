@@ -110,6 +110,14 @@ PYTHON_DEP_OVERRIDES = {
             "3.10": ["tensorflow==2.21.0", "keras==3.12.4", "numpy==2.2.6"],
         },
     },
+    "ultralytics": {
+        # ultralytics 8.0.0 imports pkg_resources without declaring setuptools,
+        # which Python 3.12+ environments no longer include.
+        "min": {
+            "3.12": ["ultralytics==8.0.0", "numpy==1.26.4", "setuptools==75.8.0"],
+            "3.13": ["ultralytics==8.0.0", "numpy==1.26.4", "setuptools==75.8.0"],
+        },
+    },
     "transformers": {
         "min": {
             "3.13": ["transformers==4.45.0", "torch==2.5.0", "numpy==2.1.3"],
