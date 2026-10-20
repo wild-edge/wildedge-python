@@ -349,8 +349,18 @@ class AttachmentTransmitter:
         self.host = host.rstrip("/")
         self.timeout = timeout
 
-    def transmit(self, pending: PendingAttachment) -> UploadOutcome:
-        outcome, upload_url = self._presign(pending)
+    def transmit(
+        self, pending: PendingAttachment, deadline: float | None = None
+    ) -> UploadOutcome:
+        """Presign and upload ``pending``.
+
+        ``deadline`` (a ``time.monotonic()`` value) caps each request's timeout;
+        past it the upload counts as transient and stays buffered.
+        """
+        timeout = self._request_timeout(deadline)
+        if timeout is None:
+            return UploadOutcome.TRANSIENT
+        outcome, upload_url = self._presign(pending, timeout)
         if upload_url is None:
             return outcome
         try:
@@ -358,9 +368,22 @@ class AttachmentTransmitter:
         except Exception as exc:
             logger.warning("wildedge: attachment bytes unreadable: %s", exc)
             return UploadOutcome.PERMANENT
-        return self._put(upload_url, data, pending.content_type)
+        timeout = self._request_timeout(deadline)
+        if timeout is None:
+            return UploadOutcome.TRANSIENT
+        return self._put(upload_url, data, pending.content_type, timeout)
 
-    def _presign(self, pending: PendingAttachment) -> tuple[UploadOutcome, str | None]:
+    def _request_timeout(self, deadline: float | None) -> float | None:
+        if deadline is None:
+            return self.timeout
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        return min(self.timeout, remaining)
+
+    def _presign(
+        self, pending: PendingAttachment, timeout: float
+    ) -> tuple[UploadOutcome, str | None]:
         url = f"{self.host}/api/attachments/presign"
         body = json.dumps(
             [
@@ -384,7 +407,7 @@ class AttachmentTransmitter:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 status = resp.status
                 raw = resp.read()
         except urllib.error.HTTPError as exc:
@@ -421,7 +444,9 @@ class AttachmentTransmitter:
         # 429 / 5xx / anything else: retry later.
         return UploadOutcome.TRANSIENT, None
 
-    def _put(self, upload_url: str, data: bytes, content_type: str) -> UploadOutcome:
+    def _put(
+        self, upload_url: str, data: bytes, content_type: str, timeout: float
+    ) -> UploadOutcome:
         req = urllib.request.Request(
             upload_url,
             data=data,
@@ -429,7 +454,7 @@ class AttachmentTransmitter:
             method="PUT",
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 status = resp.status
         except urllib.error.HTTPError as exc:
             status = exc.code
@@ -467,6 +492,10 @@ class AttachmentUploader:
         self.uploaded_count = 0
         self.dropped_count = 0
         self.stop_event = threading.Event()
+        # Serialises the background thread and drain() so no attachment is
+        # sent twice.
+        self.process_lock = threading.Lock()
+        self.disabled = False
         self.thread = self._make_thread()
 
     def _make_thread(self) -> threading.Thread:
@@ -501,10 +530,50 @@ class AttachmentUploader:
             except Exception as exc:  # pragma: no cover - never kill the thread
                 logger.warning("wildedge: attachment uploader error: %s", exc)
 
-    def process_pending(self) -> None:
+    def drain(self, timeout: float) -> None:
+        """Upload buffered attachments until none are left or ``timeout`` runs out.
+
+        Stops early when an upload fails transiently; what is left stays on
+        disk for the next start.
+        """
+        deadline = time.monotonic() + timeout
+        while self.process_pending(deadline=deadline):
+            pass
+        remaining = self.store.length()
+        if remaining and not self.disabled:
+            logger.debug(
+                "wildedge: %d attachment(s) left buffered for the next start",
+                remaining,
+            )
+
+    def process_pending(self, deadline: float | None = None) -> bool:
+        """Upload one batch, oldest first. Returns True when more may be pending.
+
+        ``deadline`` (a ``time.monotonic()`` value) bounds the call, including
+        the wait for a batch the background thread is sending.
+        """
+        if deadline is None:
+            acquired = self.process_lock.acquire()
+        else:
+            acquired = self.process_lock.acquire(
+                timeout=max(deadline - time.monotonic(), 0)
+            )
+        if not acquired:
+            return False
+        try:
+            return self._process_batch(deadline)
+        finally:
+            self.process_lock.release()
+
+    def _process_batch(self, deadline: float | None) -> bool:
+        if self.disabled:
+            return False
         # Evict stale buffered bytes from the front of the queue.
         cutoff = time.time() - self.max_age_s
         batch = self.store.peek_many(constants.ATTACHMENT_PRESIGN_BATCH_SIZE)
+        if not batch:
+            return False
+        full_batch = len(batch) == constants.ATTACHMENT_PRESIGN_BATCH_SIZE
         stale = [p for p in batch if p.registered_at < cutoff]
         if stale:
             self.store.remove(stale)
@@ -517,8 +586,9 @@ class AttachmentUploader:
             batch = [p for p in batch if p.registered_at >= cutoff]
 
         done: list[PendingAttachment] = []
+        more = full_batch
         for pending in batch:
-            outcome = self.transmitter.transmit(pending)
+            outcome = self.transmitter.transmit(pending, deadline=deadline)
             if outcome is UploadOutcome.UPLOADED:
                 done.append(pending)
                 self.uploaded_count += 1
@@ -530,10 +600,13 @@ class AttachmentUploader:
                     self.on_feature_disabled()
                 self.store.remove(done)
                 self.store.clear()
+                self.disabled = True
                 self.stop_event.set()
-                return
+                return False
             else:  # TRANSIENT - stop, preserve order, retry next tick
+                more = False
                 break
 
         if done:
             self.store.remove(done)
+        return more

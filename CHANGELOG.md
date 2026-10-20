@@ -5,6 +5,37 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Fixed
+
+- The gguf integration now tracks `Llama.create_chat_completion()` and
+  `Llama.create_completion()`, streaming or not. It used to patch only
+  `Llama.__call__`, so chat apps on llama-cpp-python reported model loads but
+  no inference events. It now patches `create_completion`, which every entry
+  point runs, so each call is tracked once.
+- gguf inference events now include the stop reason for non-streamed calls,
+  the generation config (`temperature`, `top_p`, `top_k`, `max_tokens`,
+  `repeat_penalty`, penalties, `seed`, stop sequence count), and, for chat
+  calls, `prompt_type="chat"` and `turn_index` measured on the last user
+  message. With attachments enabled, the prompt or chat messages and the reply
+  are attached.
+- A span attribute whose value is a list, dict or other non-scalar no longer
+  gets the whole event batch rejected. Ingest only accepts scalar attribute
+  values and answered 422 for the batch, dropping unrelated loads, inferences
+  and spans. Such values are now sent as JSON strings, with one warning per
+  key.
+- `close(timeout=...)` and `flush(timeout=...)` now upload buffered
+  attachments in the time left after sending events. `close()` used to stop
+  the attachment uploader without a final upload, so a short-lived process
+  lost the attachments of its last few seconds (the uploader runs every 5 s)
+  while its events still referenced them. `close()` without a timeout still
+  leaves them on disk for the next start.
+- ONNX models exported with the default `main_graph` graph name (newer
+  `torch.onnx.export`, Piper TTS voices) are now named after their file, so
+  different voices no longer show up as one model called `main_graph`. A
+  session created without an `id` falls back to the file name too, and
+  `model_version` 0, negative or INT64_MAX (the exporters' "unset") is sent as
+  `unknown` instead of `9223372036854775807`.
+
 ## 0.2.2 - 2026-09-30
 
 ### Added

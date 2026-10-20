@@ -311,6 +311,11 @@ client.track_span(
 )
 ```
 
+Span attribute values should be strings, numbers, booleans or `None`. Lists,
+dicts and other values are sent as JSON strings (`["a", "b"]` arrives as
+`'["a", "b"]'`), and the SDK logs a warning the first time it sees each such
+key.
+
 You can also attach optional correlation fields (`trace_id`, `span_id`,
 `parent_span_id`, `run_id`, `agent_id`, `step_index`, `conversation_id`) to any
 event by passing them into `track_inference`, `track_error`, `track_feedback`,
