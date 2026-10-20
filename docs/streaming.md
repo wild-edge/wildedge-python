@@ -2,7 +2,8 @@
 
 The shared wrappers track OpenAI Chat Completions and Responses
 `create(stream=True)`, Anthropic `messages.create(stream=True)` (sync and async),
-and llama-cpp-python/GGUF completion iterators (sync).
+Anthropic `messages.stream()` and its `text_stream` / `get_final_message()`
+helpers (sync and async), and llama-cpp-python/GGUF completion iterators (sync).
 
 | Outcome | Telemetry |
 |---|---|
@@ -42,10 +43,6 @@ the SDK client and do not consume one iterator concurrently from multiple tasks.
 
 ## Audit findings outside these wrappers
 
-- Anthropic's `messages.stream()` helper calls its transport directly and bypasses
-  the currently instrumented `messages.create()`. Use `create(stream=True)` for
-  the coverage above. Adding native helper support needs its own instrumentation
-  for `text_stream` and `get_final_message()`.
 - Provider convenience properties/methods that consume an underlying stream
   directly can bypass iteration on the wrapper. They are not covered by the
   lifecycle contract above; use the wrapped event iterator.
@@ -58,3 +55,28 @@ the SDK client and do not consume one iterator concurrently from multiple tasks.
   the caller, and the caller must supply usage and first-output marks.
 
 The audit does not claim coverage for streaming APIs that are not instrumented.
+
+## Anthropic native helper
+
+```python
+with client.messages.stream(model=model, max_tokens=64, messages=messages) as stream:
+    for text in stream.text_stream:
+        print(text, end="")
+    message = stream.get_final_message()
+```
+
+The async equivalent uses `async with`, `async for`, and
+`await stream.get_final_message()`. Event iteration, text iteration, and final
+message helpers share a single tracked iterator and produce one outcome. Early
+context exit, cancellation, request/iteration errors, and truncated EOF use the
+same lifecycle contract above. HTTP timing starts at context entry, when the
+native helper sends its request, rather than when its lazy manager is created.
+
+The adapter preserves the native stream object and parser. It wraps the SDK's
+internal `_iterator` and delegates native close behavior; compatibility is tested
+against both the minimum supported Anthropic SDK and the current pinned SDK.
+
+Run `uv run examples/anthropic_stream_example.py` from the SDK root with
+`ANTHROPIC_API_KEY` and `WILDEDGE_DSN` set. It makes two small billable calls,
+prints a run ID, and checks provider output and usage. Confirm two inference
+events and two spans under that run in WildEdge to verify telemetry delivery.
