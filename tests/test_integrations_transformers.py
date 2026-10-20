@@ -49,14 +49,18 @@ def make_pipeline_class():
     class Pipeline:
         task = "text-classification"
 
-        def __init__(self, model, fail=False):
+        def __init__(self, model, fail=False, extra_models=()):
             self.model = model
             self.fail = fail
+            # Other models a custom pipeline runs, e.g. from _forward.
+            self.extra_models = list(extra_models)
 
         def __call__(self, inputs, *args, **kwargs):
             if self.fail:
                 raise RuntimeError("tokenizer exploded")
             self.model(FakeTensor())
+            for extra in self.extra_models:
+                extra(FakeTensor())
             return [{"label": "LABEL_1", "score": 0.9}]
 
     # is_pipeline() looks for a class named Pipeline from a transformers module.
@@ -73,14 +77,14 @@ def patched_pipeline(monkeypatch):
     return pipeline_cls
 
 
-def make_handle(events: list) -> ModelHandle:
+def make_handle(events: list, model_id: str = "tiny-bert") -> ModelHandle:
     info = ModelInfo(
-        model_name="tiny-bert",
+        model_name=model_id,
         model_version="1",
         model_source="local",
         model_format="transformers",
     )
-    return ModelHandle(model_id="tiny-bert", info=info, publish=events.append)
+    return ModelHandle(model_id=model_id, info=info, publish=events.append)
 
 
 def tracked_pipeline(pipeline_cls, events, fail=False):
@@ -147,17 +151,13 @@ def test_untracked_pipeline_does_not_suppress_model_hooks(patched_pipeline):
     assert len(inference_events(events)) == 1
 
 
-class CallsFromAnotherThreadToo:
-    """Pipeline model that also runs the hooked model on a second thread."""
-
-    def __init__(self, model: FakeModel) -> None:
-        self.model = model
-
-    def __call__(self, input_ids):
-        other = threading.Thread(target=self.model, args=(input_ids,))
+def call_on_another_thread(model: FakeModel):
+    def run(input_ids):
+        other = threading.Thread(target=model, args=(input_ids,))
         other.start()
         other.join()
-        return self.model(input_ids)
+
+    return run
 
 
 def test_model_call_on_another_thread_during_pipeline_call_is_tracked(
@@ -168,7 +168,7 @@ def test_model_call_on_another_thread_during_pipeline_call_is_tracked(
     handle = make_handle(events)
     model = FakeModel()
     extractor.install_hooks(model, handle)
-    pipe = patched_pipeline(CallsFromAnotherThreadToo(model))
+    pipe = patched_pipeline(model, extra_models=[call_on_another_thread(model)])
     extractor.install_hooks(pipe, handle)
 
     pipe("hello")
@@ -179,3 +179,44 @@ def test_model_call_on_another_thread_during_pipeline_call_is_tracked(
     assert len(metas) == 2
     assert {"char_count": 5, "word_count": 1} in metas  # the pipeline call
     assert {"token_count": 4} in metas  # the other thread's model call
+
+
+def test_other_model_called_during_pipeline_call_is_tracked(patched_pipeline):
+    """A custom pipeline that also runs a second tracked model keeps both."""
+    events: list = []
+    extractor = TransformersExtractor()
+    main_model, reranker = FakeModel(), FakeModel()
+    main_handle = make_handle(events)
+    reranker_handle = make_handle(events, model_id="reranker")
+    extractor.install_hooks(main_model, main_handle)
+    extractor.install_hooks(reranker, reranker_handle)
+    pipe = patched_pipeline(main_model, extra_models=[reranker])
+    extractor.install_hooks(pipe, main_handle)
+
+    pipe("hello")
+
+    ids = sorted(e["model_id"] for e in inference_events(events))
+    assert ids == ["reranker", "tiny-bert"]
+
+
+def test_nested_pipeline_calls_keep_suppressing_until_the_outer_ends(
+    patched_pipeline,
+):
+    events: list = []
+    extractor = TransformersExtractor()
+    handle = make_handle(events)
+    model = FakeModel()
+    extractor.install_hooks(model, handle)
+    inner = patched_pipeline(model)
+    extractor.install_hooks(inner, handle)
+    # The outer pipeline wraps the same model and calls the inner one, then
+    # runs the model again after the inner call has returned.
+    outer = patched_pipeline(model, extra_models=[lambda _: inner("x"), model])
+    extractor.install_hooks(outer, handle)
+
+    outer("hello")
+
+    # One event per pipeline call; no model events from inside either.
+    inferences = inference_events(events)
+    assert len(inferences) == 2
+    assert all("word_count" in e["inference"]["input_meta"] for e in inferences)

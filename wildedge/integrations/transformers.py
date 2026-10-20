@@ -6,6 +6,7 @@ import functools
 import os
 import threading
 import time
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from wildedge import constants
@@ -43,17 +44,18 @@ PIPELINE_HANDLE_ATTR = "__wildedge_pipeline_handle__"
 
 
 class _ThreadState(threading.local):
-    """Per-thread flags that keep pipeline-level tracking the only record.
+    """Per-thread state that keeps pipeline-level tracking the only record.
 
     inside_pipeline_init: from_pretrained calls made by Pipeline.__init__ are
     not tracked on their own.
-    pipeline_call_depth: while above zero, a tracked pipeline call is running
-    and the forward hooks of the model inside it record nothing.
+    pipeline_models: id() of the model each running tracked pipeline call
+    wraps, counted for nesting. That model's forward hooks record nothing
+    while it is here; other models called during the pipeline call do.
     """
 
     def __init__(self) -> None:
         self.inside_pipeline_init = False
-        self.pipeline_call_depth = 0
+        self.pipeline_models: Counter[int] = Counter()
 
 
 _tl = _ThreadState()
@@ -317,15 +319,15 @@ class TransformersExtractor(BaseExtractor):
             _, _, arch = extract_model_config(obj)
             task_hint = infer_task_from_arch(arch)
 
-            # Forward passes inside a tracked pipeline call are recorded by
-            # the pipeline, so both hooks skip them.
+            # A tracked pipeline call records its own model's forward passes,
+            # so both hooks skip them.
             def pre_hook(module, args):  # type: ignore[no-untyped-def]
-                if _tl.pipeline_call_depth:
+                if _tl.pipeline_models[id(module)]:
                     return
                 _local.t0 = time.perf_counter()
 
             def post_hook(module, args, output):  # type: ignore[no-untyped-def]
-                if _tl.pipeline_call_depth:
+                if _tl.pipeline_models[id(module)]:
                     return
                 t0 = getattr(_local, "t0", None)
                 duration_ms = elapsed_ms(t0) if t0 is not None else 0
@@ -438,7 +440,8 @@ class TransformersExtractor(BaseExtractor):
             input_modality, output_modality = pipeline_modalities(task)
 
             t0 = time.perf_counter()
-            _tl.pipeline_call_depth += 1
+            model_key = id(getattr(self, "model", None))
+            _tl.pipeline_models[model_key] += 1
             try:
                 outputs = original_call(self, inputs, *args, **kwargs)
                 duration_ms = elapsed_ms(t0)
@@ -460,7 +463,9 @@ class TransformersExtractor(BaseExtractor):
                 )
                 raise
             finally:
-                _tl.pipeline_call_depth -= 1
+                _tl.pipeline_models[model_key] -= 1
+                if not _tl.pipeline_models[model_key]:
+                    del _tl.pipeline_models[model_key]
 
         patched_call.__wildedge_patch_name__ = PIPELINE_CALL_PATCH_NAME  # type: ignore[attr-defined]
         patched_call.__wildedge_original_call__ = original_call  # type: ignore[attr-defined]
