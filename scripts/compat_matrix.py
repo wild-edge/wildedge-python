@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from importlib import metadata
 
 MATRIX = {
     "anthropic": {
@@ -71,6 +72,19 @@ SUPPORTED_PYTHON = {
     "ultralytics": ["3.10", "3.11", "3.12", "3.13"],
     "mlx": ["3.12", "3.13"],
 }
+
+# Integrations without a row of their own, and the row that exercises them.
+COVERED_BY = {
+    "keras": "tensorflow",
+}
+
+# Integrations that need a specific runner; everything else runs on Linux.
+RUNNER = {
+    "mlx": "macos-14",
+}
+
+# Python versions run as non-blocking canaries, and only with current pins.
+CANARY_PYTHON = {"3.14"}
 
 # Interpreter-specific overrides where upstream wheels are unavailable for older pins.
 PYTHON_DEP_OVERRIDES = {
@@ -185,25 +199,99 @@ def print_table() -> int:
     return 0
 
 
+def _strip_local(version: str) -> str:
+    return version.split("+", 1)[0]
+
+
+def verify(integration: str, version_set: str, python_version: str) -> int:
+    """Check that the installed distributions match the pins exactly.
+
+    pip can satisfy a pin and then let another package upgrade it, or fall
+    back to a different release; this makes the job fail instead.
+    """
+    mismatches = []
+    for requirement in resolve_deps(integration, version_set, python_version):
+        name, _, wanted = requirement.partition("==")
+        try:
+            installed = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            mismatches.append(f"{name}: not installed, pinned {wanted}")
+            continue
+        if _strip_local(installed) != wanted:
+            mismatches.append(f"{name}: installed {installed}, pinned {wanted}")
+    for line in mismatches:
+        print(line, file=sys.stderr)
+    return 1 if mismatches else 0
+
+
+def github_matrix(profile: str) -> list[dict]:
+    """Rows for the compat workflow.
+
+    ``full`` runs every supported combination (nightly, release PRs, manual
+    runs). ``pr`` runs each integration's current pins on its newest stable
+    Python and its minimum pins on its oldest, skipping macOS-only rows.
+    """
+    rows = []
+    for integration, sets in MATRIX.items():
+        runner = RUNNER.get(integration, "ubuntu-latest")
+        if profile == "pr" and runner != "ubuntu-latest":
+            continue
+        stable = [py for py in SUPPORTED_PYTHON[integration] if py not in CANARY_PYTHON]
+        for version_set in sets:
+            if profile == "pr":
+                pythons = [stable[-1] if version_set == "current" else stable[0]]
+            else:
+                pythons = list(stable)
+                if version_set == "current":
+                    pythons += [
+                        py
+                        for py in SUPPORTED_PYTHON[integration]
+                        if py in CANARY_PYTHON
+                    ]
+            for py in pythons:
+                rows.append(
+                    {
+                        "integration": integration,
+                        "version-set": version_set,
+                        "python-version": py,
+                        "runs-on": runner,
+                        "canary": py in CANARY_PYTHON,
+                    }
+                )
+    return rows
+
+
+def print_github_matrix(profile: str) -> int:
+    print(json.dumps({"include": github_matrix(profile)}))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    deps = sub.add_parser("deps")
-    deps.add_argument("--integration", required=True)
-    deps.add_argument("--version-set", required=True, choices=["min", "current"])
-    deps.add_argument("--python-version", required=True)
+    for name in ("deps", "verify"):
+        cmd = sub.add_parser(name)
+        cmd.add_argument("--integration", required=True)
+        cmd.add_argument("--version-set", required=True, choices=["min", "current"])
+        cmd.add_argument("--python-version", required=True)
 
     sub.add_parser("rows")
     sub.add_parser("table")
+    gh = sub.add_parser("github-matrix")
+    gh.add_argument("--profile", required=True, choices=["full", "pr"])
 
     args = parser.parse_args()
     if args.cmd == "deps":
         return print_deps(args.integration, args.version_set, args.python_version)
+    if args.cmd == "verify":
+        return verify(args.integration, args.version_set, args.python_version)
     if args.cmd == "rows":
         return print_rows()
     if args.cmd == "table":
         return print_table()
+    if args.cmd == "github-matrix":
+        return print_github_matrix(args.profile)
     return 2
 
 

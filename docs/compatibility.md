@@ -1,6 +1,38 @@
 ## Compatibility Matrix
 
-The table below is generated from `scripts/compat_matrix.py`.
+Each integration is tested against the pinned library versions below: the
+oldest supported release (`min`) and a recent one (`current`). The table is
+generated from `scripts/compat_matrix.py`, which also defines the CI jobs.
+
+### What the tests check
+
+`tests/compat/test_<integration>_compat.py` loads a real model with the real
+library and checks the events the SDK records: a `model_load` event, then an
+`inference` event for the same model with the expected fields (token counts
+for LLMs, input modality for vision models). Nothing touches the network:
+
+- openai and anthropic get canned responses through the SDK's own HTTP
+  client (`MockTransport`).
+- onnx and gguf load small files from `tests/compat/fixtures`.
+- torch, timm, tensorflow, transformers, ultralytics and mlx build models from
+  a config, with random weights.
+
+A test never skips. A library that fails to install or import fails the job,
+and a step checks that the installed versions match the pins. A known SDK
+bug is marked `xfail(strict=True)` with its issue number, so the job fails
+once the bug is fixed and the marker has to come off.
+
+### When they run
+
+- Pull requests into `devel` or `main` that touch the SDK: each integration's
+  `min` pins on its oldest Python and `current` pins on its newest.
+- Nightly, on release branches and on manual runs: every combination below.
+  Python 3.14 rows are canaries and don't fail the run. mlx runs on macOS.
+
+To run the full matrix locally: `python scripts/run_compat_local.py`.
+`python scripts/compat_matrix.py table` prints the table below.
+
+### Matrix
 
 | Integration | Version set | Dependencies | Supported Python |
 |---|---|---|---|

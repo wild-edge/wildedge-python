@@ -24,14 +24,30 @@ class Row:
 
 
 def load_rows() -> list[Row]:
+    """The rows the nightly workflow runs; macOS-only rows only on macOS."""
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "compat_matrix.py"), "rows"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "compat_matrix.py"),
+            "github-matrix",
+            "--profile",
+            "full",
+        ],
         check=True,
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,
     )
-    return [Row(**r) for r in json.loads(result.stdout)]
+    on_macos = sys.platform == "darwin"
+    return [
+        Row(
+            python_version=r["python-version"],
+            integration=r["integration"],
+            version_set=r["version-set"],
+        )
+        for r in json.loads(result.stdout)["include"]
+        if on_macos or not r["runs-on"].startswith("macos")
+    ]
 
 
 WORKFLOW_ROWS: list[Row] = load_rows()
