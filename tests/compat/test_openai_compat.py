@@ -320,3 +320,43 @@ async def test_embeddings_is_tracked(compat_client, asynchronous, encoding):
     }
     assert inference["api_meta"]["resolved_model_id"] == "text-embedding-3-small"
     assert "embedding" not in inference["output_meta"]
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_early_stream_close_is_tracked_once(compat_client, asynchronous):
+    compat_client.instrument("openai")
+    chunk = {
+        "id": "c",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "gpt-4o-mini",
+        "choices": [{"index": 0, "delta": {"content": "Hi"}}],
+    }
+    body = f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n"
+
+    def handler(request):
+        return httpx.Response(
+            200, text=body, headers={"content-type": "text/event-stream"}
+        )
+
+    if asynchronous:
+        async with openai.AsyncOpenAI(
+            api_key="sk-compat",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        ) as client:
+            async with await client.chat.completions.create(
+                model="gpt-4o-mini", messages=[], stream=True
+            ) as stream:
+                assert (await anext(stream)).choices[0].delta.content == "Hi"
+            await stream.close()
+    else:
+        with _client(handler) as client:
+            with client.chat.completions.create(
+                model="gpt-4o-mini", messages=[], stream=True
+            ) as stream:
+                assert next(stream).choices[0].delta.content == "Hi"
+            stream.close()
+    inference = compat_client.one("inference")["inference"]
+    assert inference["success"] is False
+    assert inference["error_code"] == "STREAM_CLOSED"
+    assert inference["output_meta"]["time_to_first_token_ms"] is not None

@@ -5,6 +5,15 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Fixed
+
+- Streaming wrappers now finalize once across exhaustion, explicit closure,
+  cancellation, and iterator errors. Early closure/cancellation records an
+  unsuccessful inference with partial metadata when available. TTFT ignores
+  lifecycle/role-only chunks; telemetry callbacks cannot break iteration and
+  retain the trace context captured at stream creation. Remote API streams
+  ending without their completion marker record `STREAM_INCOMPLETE`.
+
 ### Added
 
 - OpenAI sync and async `embeddings.create()` instrumentation records latency,

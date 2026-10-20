@@ -172,6 +172,7 @@ Report security and privacy issues to: support@wildedge.dev
 - [Manual tracking](https://github.com/wild-edge/wildedge-python/blob/main/docs/manual-tracking.md)
 - [LLM API tracking](https://github.com/wild-edge/wildedge-python/blob/main/docs/llm_api.md)
 - [Compatibility Matrix](https://github.com/wild-edge/wildedge-python/blob/main/docs/compatibility.md)
+- [Streaming lifecycle](docs/streaming.md)
 - [Changelog](https://github.com/wild-edge/wildedge-python/blob/main/CHANGELOG.md)
 - [License](https://github.com/wild-edge/wildedge-python/blob/main/LICENSE)
 

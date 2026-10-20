@@ -152,10 +152,20 @@ def make_anthropic_stream_callbacks(
     cached_tokens: list[int | None] = [None]
     stop_reason: list[str | None] = [None]
     resolved_model: list[str | None] = [None]
+    message_stopped = False
 
     def on_chunk(event: object) -> None:
+        nonlocal message_stopped
         event_type = type(event).__name__
-        if event_type == "RawMessageStartEvent":
+        if (
+            getattr(event, "type", None) == "message_stop"
+            or event_type == "RawMessageStopEvent"
+        ):
+            message_stopped = True
+        if (
+            event_type == "RawMessageStartEvent"
+            or getattr(event, "type", None) == "message_start"
+        ):
             msg = getattr(event, "message", None)
             if msg is not None:
                 usage = getattr(msg, "usage", None)
@@ -163,7 +173,10 @@ def make_anthropic_stream_callbacks(
                     tokens_in[0] = getattr(usage, "input_tokens", None)
                     cached_tokens[0] = getattr(usage, "cache_read_input_tokens", None)
                 resolved_model[0] = getattr(msg, "model", None)
-        elif event_type == "RawMessageDeltaEvent":
+        elif (
+            event_type == "RawMessageDeltaEvent"
+            or getattr(event, "type", None) == "message_delta"
+        ):
             usage = getattr(event, "usage", None)
             if usage is not None:
                 tokens_out[0] = getattr(usage, "output_tokens", None)
@@ -173,7 +186,11 @@ def make_anthropic_stream_callbacks(
                 if reason:
                     stop_reason[0] = reason
 
-    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+    def on_done(
+        duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
+    ) -> None:
+        if outcome == "completed" and not message_stopped:
+            outcome = "incomplete"
         ti, to, cr, sr = tokens_in[0], tokens_out[0], cached_tokens[0], stop_reason[0]
         tps = round(to / duration_ms * 1000, 1) if duration_ms > 0 and to else None
         api_meta = (
@@ -183,7 +200,8 @@ def make_anthropic_stream_callbacks(
             duration_ms=duration_ms,
             input_modality="text",
             output_modality="generation",
-            success=True,
+            success=outcome == "completed",
+            error_code=None if outcome == "completed" else "STREAM_" + outcome.upper(),
             input_meta=build_input_meta(messages, ti),
             output_meta=GenerationOutputMeta(
                 task="generation",

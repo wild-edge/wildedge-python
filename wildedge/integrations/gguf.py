@@ -237,14 +237,17 @@ def make_gguf_stream_callbacks(
             if text:
                 reply_parts.append(text)
 
-    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+    def on_done(
+        duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
+    ) -> None:
         ti, to, sr = tokens_in[0], tokens_out[0], stop_reason[0]
         handle.track_inference(  # type: ignore[union-attr]
             duration_ms=duration_ms,
             input_modality="text",
             output_modality="generation",
             input_meta=make_gguf_input_meta(prompt, ti, messages),
-            success=True,
+            success=outcome == "completed",
+            error_code=None if outcome == "completed" else "STREAM_" + outcome.upper(),
             output_meta=make_gguf_output_meta(ti, to, sr, ttft_ms, duration_ms),
             generation_config=generation_config,
             attachments=make_gguf_attachments(

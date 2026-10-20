@@ -76,12 +76,15 @@ are recorded as unsuccessful. No prompt or response text is uploaded by this
 adapter. String input and simple user messages provide text input metadata;
 input iterators are passed through without being consumed by instrumentation.
 
+See [Streaming lifecycle](streaming.md) for completion, closure, cancellation,
+and coverage limits.
+
 For streams, consume the iterator to exhaustion to record the terminal response
 and its usage. Time to first output ignores lifecycle events and measures the
 first nonempty text, refusal, function argument, or audio delta. Streams without
-a terminal response do not produce a successful inference event. Early closure,
-cancellation, background response polling, and individual tool spans are outside
-this initial coverage. API exceptions retain their original behavior and use
+a terminal response record an unsuccessful inference. Explicit early closure and
+async cancellation are tracked; background response polling and individual tool
+spans remain outside coverage. API exceptions retain their original behavior and use
 the same error tracking as Chat Completions.
 
 OpenAI-compatible hosts must implement the Responses endpoint to use this path.

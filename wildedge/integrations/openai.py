@@ -177,14 +177,19 @@ def make_openai_stream_callbacks(
             if reason:
                 stop_reason[0] = reason
 
-    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+    def on_done(
+        duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
+    ) -> None:
         ti, to, sr = tokens_in[0], tokens_out[0], stop_reason[0]
+        if outcome == "completed" and sr is None:
+            outcome = "incomplete"
         output_meta = build_streaming_output_meta(ttft_ms, ti, to, sr, duration_ms)
         handle.track_inference(
             duration_ms=duration_ms,
             input_modality="text",
             output_modality="generation",
-            success=True,
+            success=outcome == "completed",
+            error_code=None if outcome == "completed" else "STREAM_" + outcome.upper(),
             input_meta=build_input_meta(messages, ti),
             output_meta=output_meta,
             api_meta=build_api_meta(last_chunk[0])
@@ -344,8 +349,26 @@ def make_responses_stream_callbacks(
             )
             recorded = True
 
-    def on_done(duration_ms: int, _first_event_ms: int | None) -> None:
+    def on_done(
+        duration_ms: int, _first_event_ms: int | None, *, outcome: str = "completed"
+    ) -> None:
         nonlocal recorded
+        if response is None and not recorded:
+            recorded = True
+            handle.track_inference(
+                duration_ms=duration_ms,
+                input_modality="text",
+                output_modality="generation",
+                input_meta=build_input_meta(messages, None),
+                output_meta=GenerationOutputMeta(
+                    time_to_first_token_ms=ttft,
+                    stop_reason=outcome if outcome != "completed" else "incomplete",
+                ),
+                success=False,
+                error_code="STREAM_INCOMPLETE"
+                if outcome == "completed"
+                else "STREAM_" + outcome.upper(),
+            )
         if response is not None and not recorded:
             recorded = True
             record_response(handle, response, messages, duration_ms, ttft)
