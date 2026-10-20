@@ -5,6 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
+import wildedge.hubs.huggingface as hf_mod
+import wildedge.integrations.gguf as gguf_mod
+import wildedge.integrations.onnx as onnx_mod
+import wildedge.integrations.pytorch as torch_mod
+import wildedge.integrations.transformers as tf_mod
 from wildedge.client import WildEdge
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.integrations.gguf import GgufExtractor
@@ -15,8 +20,6 @@ from wildedge.platforms.device_info import DeviceInfo
 
 
 def test_hf_install_patch_is_idempotent(monkeypatch):
-    import wildedge.hubs.huggingface as hf_mod
-
     def orig_hf_hub_download(repo_id, filename, **kwargs):
         return f"/tmp/{repo_id}/{filename}"
 
@@ -43,8 +46,6 @@ def test_hf_install_patch_is_idempotent(monkeypatch):
 
 
 def test_hf_install_patch_retries_unpatched_part(monkeypatch):
-    import wildedge.hubs.huggingface as hf_mod
-
     monkeypatch.setattr(hf_mod, "_hf", object())
     monkeypatch.setattr(hf_mod, "_fd", object())
     monkeypatch.setattr(hf_mod, "_hf_hub_download_patched", False)
@@ -66,8 +67,6 @@ def test_hf_install_patch_retries_unpatched_part(monkeypatch):
 
 
 def test_onnx_install_auto_load_patch_is_idempotent(monkeypatch):
-    import wildedge.integrations.onnx as onnx_mod
-
     class FakeSession:
         def __init__(self, *args, **kwargs):
             pass
@@ -87,8 +86,6 @@ def test_onnx_install_auto_load_patch_is_idempotent(monkeypatch):
 
 
 def test_timm_install_patch_is_idempotent(monkeypatch):
-    import wildedge.integrations.pytorch as torch_mod
-
     def create_model(*args, **kwargs):
         return object()
 
@@ -107,8 +104,6 @@ def test_timm_install_patch_is_idempotent(monkeypatch):
 
 
 def test_transformers_install_patch_is_idempotent(monkeypatch):
-    import wildedge.integrations.transformers as tf_mod
-
     class FakePipeline:
         def __init__(self, *args, **kwargs):
             pass
@@ -141,7 +136,6 @@ def test_transformers_install_patch_is_idempotent(monkeypatch):
 
 def test_transformers_from_import_style_intercepted(monkeypatch):
     """from transformers import pipeline; pipeline() must be intercepted."""
-    import wildedge.integrations.transformers as tf_mod
 
     loaded = []
 
@@ -164,7 +158,7 @@ def test_transformers_from_import_style_intercepted(monkeypatch):
 
     client = types.SimpleNamespace(
         closed=False,
-        _snapshot_hub_caches=lambda: {},
+        _snapshot_hub_caches=dict,
         _diff_hub_caches=lambda before, ms: None,
         _on_model_auto_loaded=lambda obj, **kw: loaded.append(("tracked", obj)),
     )
@@ -186,8 +180,6 @@ def test_transformers_from_import_style_intercepted(monkeypatch):
 
 
 def test_gguf_install_auto_load_patch_is_idempotent(monkeypatch):
-    import wildedge.integrations.gguf as gguf_mod
-
     class FakeLlama:
         def __init__(self, *args, **kwargs):
             pass

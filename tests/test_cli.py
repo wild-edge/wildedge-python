@@ -7,8 +7,11 @@ from pathlib import Path
 import pytest
 
 from wildedge import cli, constants
+from wildedge.defaults import peek_default_client
 from wildedge.integrations.registry import IntegrationSpec
+from wildedge.platforms.device_info import DeviceInfo
 from wildedge.runtime import bootstrap
+from wildedge.transmitter import IngestResponse, TransmitError
 
 
 def _fake_execle(captured: dict):
@@ -432,8 +435,6 @@ def test_parse_run_args_only_double_dash_raises():
 
 
 def test_install_runtime_registers_default_client(monkeypatch):
-    from wildedge.defaults import peek_default_client
-
     class FakeWildEdge:
         SUPPORTED_INTEGRATIONS = {"onnx"}
 
@@ -467,14 +468,10 @@ def _doctor_env(monkeypatch):
 
 
 def _fake_device(api_key, app_version, overrides=None):
-    from wildedge.platforms.device_info import DeviceInfo
-
     return DeviceInfo(device_id="d", device_type="linux")
 
 
 def test_doctor_send_test_event_accepted(monkeypatch, capsys):
-    from wildedge.transmitter import IngestResponse
-
     _doctor_env(monkeypatch)
     monkeypatch.setattr(cli, "detect_device", _fake_device)
     sent_batches: list[dict] = []
@@ -504,8 +501,6 @@ def test_doctor_send_test_event_accepted(monkeypatch, capsys):
 
 
 def test_doctor_send_test_event_unauthorized_exits_2(monkeypatch, capsys):
-    from wildedge.transmitter import IngestResponse
-
     _doctor_env(monkeypatch)
     monkeypatch.setattr(cli, "detect_device", _fake_device)
 
@@ -530,8 +525,6 @@ def test_doctor_send_test_event_unauthorized_exits_2(monkeypatch, capsys):
 
 
 def test_doctor_send_test_event_network_error_exits_2(monkeypatch, capsys):
-    from wildedge.transmitter import TransmitError
-
     _doctor_env(monkeypatch)
     monkeypatch.setattr(cli, "detect_device", _fake_device)
 

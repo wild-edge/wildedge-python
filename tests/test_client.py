@@ -4,7 +4,9 @@ from unittest.mock import patch
 
 import pytest
 
+import wildedge.client as client_module
 from wildedge import constants
+from wildedge.client import WildEdge
 
 
 @pytest.fixture(autouse=True)
@@ -22,8 +24,6 @@ def mock_dependencies():
 
 
 def test_batch_size_too_low():
-    from wildedge.client import WildEdge
-
     with pytest.raises(
         ValueError,
         match=f"batch_size must be between {constants.BATCH_SIZE_MIN} and {constants.BATCH_SIZE_MAX}",
@@ -32,9 +32,6 @@ def test_batch_size_too_low():
 
 
 def test_no_dsn_is_noop(monkeypatch, caplog):
-    import wildedge.client as client_module
-    from wildedge.client import WildEdge
-
     monkeypatch.delenv(constants.ENV_DSN, raising=False)
     monkeypatch.setattr(client_module, "_noop_notice_logged", False)
     with caplog.at_level("INFO"):
@@ -52,8 +49,6 @@ def test_no_dsn_is_noop(monkeypatch, caplog):
 
 
 def test_no_dsn_instrument_does_not_raise(monkeypatch):
-    from wildedge.client import WildEdge
-
     monkeypatch.delenv(constants.ENV_DSN, raising=False)
     client = WildEdge()
 
@@ -62,8 +57,6 @@ def test_no_dsn_instrument_does_not_raise(monkeypatch):
 
 
 def test_no_dsn_publish_does_not_enqueue(monkeypatch):
-    from wildedge.client import WildEdge
-
     monkeypatch.delenv(constants.ENV_DSN, raising=False)
     client = WildEdge()
 
@@ -72,8 +65,6 @@ def test_no_dsn_publish_does_not_enqueue(monkeypatch):
 
 
 def test_batch_size_too_high():
-    from wildedge.client import WildEdge
-
     with pytest.raises(
         ValueError,
         match=f"batch_size must be between {constants.BATCH_SIZE_MIN} and {constants.BATCH_SIZE_MAX}",
@@ -82,8 +73,6 @@ def test_batch_size_too_high():
 
 
 def test_flush_interval_too_low():
-    from wildedge.client import WildEdge
-
     with pytest.raises(
         ValueError,
         match=f"flush_interval_sec must be between {constants.FLUSH_INTERVAL_MIN} and {constants.FLUSH_INTERVAL_MAX}",
@@ -92,8 +81,6 @@ def test_flush_interval_too_low():
 
 
 def test_flush_interval_too_high():
-    from wildedge.client import WildEdge
-
     with pytest.raises(
         ValueError,
         match=f"flush_interval_sec must be between {constants.FLUSH_INTERVAL_MIN} and {constants.FLUSH_INTERVAL_MAX}",
@@ -102,8 +89,6 @@ def test_flush_interval_too_high():
 
 
 def test_max_queue_size_too_low():
-    from wildedge.client import WildEdge
-
     with pytest.raises(
         ValueError,
         match=f"max_queue_size must be between {constants.MAX_QUEUE_SIZE_MIN} and {constants.MAX_QUEUE_SIZE_MAX}",
@@ -112,8 +97,6 @@ def test_max_queue_size_too_low():
 
 
 def test_max_queue_size_too_high():
-    from wildedge.client import WildEdge
-
     with pytest.raises(
         ValueError,
         match=f"max_queue_size must be between {constants.MAX_QUEUE_SIZE_MIN} and {constants.MAX_QUEUE_SIZE_MAX}",
@@ -122,8 +105,6 @@ def test_max_queue_size_too_high():
 
 
 def test_valid_values():
-    from wildedge.client import WildEdge
-
     # Should not raise
     client = WildEdge(
         dsn="https://test@test.com/key",
@@ -135,22 +116,16 @@ def test_valid_values():
 
 
 def test_max_event_age_must_be_positive():
-    from wildedge.client import WildEdge
-
     with pytest.raises(ValueError, match="max_event_age_sec must be greater than 0"):
         WildEdge(dsn="https://test@test.com/key", max_event_age_sec=0)
 
 
 def test_max_dead_letter_batches_must_be_non_negative():
-    from wildedge.client import WildEdge
-
     with pytest.raises(ValueError, match="max_dead_letter_batches must be >= 0"):
         WildEdge(dsn="https://test@test.com/key", max_dead_letter_batches=-1)
 
 
 def test_app_identity_defaults_to_project_key():
-    from wildedge.client import WildEdge
-
     with (
         patch(
             "wildedge.client.default_pending_queue_dir", return_value="pending-dir"
@@ -167,8 +142,6 @@ def test_app_identity_defaults_to_project_key():
 
 
 def test_app_identity_override_used_for_paths():
-    from wildedge.client import WildEdge
-
     with (
         patch(
             "wildedge.client.default_pending_queue_dir", return_value="pending-dir"
@@ -185,8 +158,6 @@ def test_app_identity_override_used_for_paths():
 
 
 def test_app_identity_env_override_used_for_paths(monkeypatch):
-    from wildedge.client import WildEdge
-
     monkeypatch.setenv(constants.ENV_APP_IDENTITY, "env-app")
     with (
         patch(
@@ -204,8 +175,6 @@ def test_app_identity_env_override_used_for_paths(monkeypatch):
 
 
 def test_register_model_defaults_name_to_model_id_and_accepts_format():
-    from wildedge.client import WildEdge
-
     client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
     client.registry.register.return_value = (object(), True)
 
@@ -220,8 +189,6 @@ def test_register_model_defaults_name_to_model_id_and_accepts_format():
 
 
 def test_register_model_format_defaults_to_unknown():
-    from wildedge.client import WildEdge
-
     client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
     client.registry.register.return_value = (object(), True)
 
@@ -232,12 +199,11 @@ def test_register_model_format_defaults_to_unknown():
 
 
 @pytest.mark.parametrize(
-    "class_name, source",
+    ("class_name", "source"),
     [("Messages", "anthropic"), ("Completions", "openrouter")],
 )
 def test_register_model_api_integrations_use_their_extractor(class_name, source):
     """The anthropic and openai integrations register the patched resource object."""
-    from wildedge.client import WildEdge
 
     client = WildEdge(dsn="https://secret@ingest.wildedge.dev/key")
     client.registry.register.return_value = (object(), True)

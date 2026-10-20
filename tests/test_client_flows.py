@@ -13,9 +13,11 @@ def test_register_model_fallback_requires_id_when_no_extractor(
     client_with_stubbed_runtime,
 ):
     client = client_with_stubbed_runtime
-    with patch.object(client, "_find_extractor", return_value=None):
-        with pytest.raises(ValueError, match="Could not auto-derive a stable model_id"):
-            client.register_model(object())
+    with (
+        patch.object(client, "_find_extractor", return_value=None),
+        pytest.raises(ValueError, match="Could not auto-derive a stable model_id"),
+    ):
+        client.register_model(object())
 
 
 def test_on_model_auto_loaded_uses_hub_records_when_downloads_missing(

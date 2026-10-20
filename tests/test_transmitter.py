@@ -8,6 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wildedge.consumer import Consumer
+from wildedge.platforms.device_info import DeviceInfo
+from wildedge.queue import EventQueue
 from wildedge.transmitter import IngestResponse, TransmitError, Transmitter
 
 
@@ -75,29 +78,35 @@ class TestTransmitter:
 
     def test_send_429_raises_transmit_error(self):
         t = Transmitter(api_key="test-key", host="https://app.wildedge.dev")
-        with patch.object(
-            t._opener, "open", side_effect=_make_http_error(429, "Rate limited")
+        with (
+            patch.object(
+                t._opener, "open", side_effect=_make_http_error(429, "Rate limited")
+            ),
+            pytest.raises(TransmitError),
         ):
-            with pytest.raises(TransmitError):
-                t.send({"batch_id": "b-1", "events": []})
+            t.send({"batch_id": "b-1", "events": []})
 
     def test_send_500_raises_transmit_error(self):
         t = Transmitter(api_key="test-key", host="https://app.wildedge.dev")
-        with patch.object(
-            t._opener, "open", side_effect=_make_http_error(500, "Server error")
+        with (
+            patch.object(
+                t._opener, "open", side_effect=_make_http_error(500, "Server error")
+            ),
+            pytest.raises(TransmitError),
         ):
-            with pytest.raises(TransmitError):
-                t.send({"batch_id": "b-1", "events": []})
+            t.send({"batch_id": "b-1", "events": []})
 
     def test_network_error_raises_transmit_error(self):
         t = Transmitter(api_key="test-key", host="https://app.wildedge.dev")
-        with patch.object(
-            t._opener,
-            "open",
-            side_effect=urllib.error.URLError("Connection refused"),
+        with (
+            patch.object(
+                t._opener,
+                "open",
+                side_effect=urllib.error.URLError("Connection refused"),
+            ),
+            pytest.raises(TransmitError),
         ):
-            with pytest.raises(TransmitError):
-                t.send({"batch_id": "b-1", "events": []})
+            t.send({"batch_id": "b-1", "events": []})
 
     def test_auth_header_sent(self):
         captured = {}
@@ -191,19 +200,20 @@ def test_send_unexpected_status_raises_transmit_error(status_code):
     # cause AttributeError in the consumer (response.status), silently killing the
     # background thread and freezing the queue.
     t = Transmitter(api_key="test-key", host="https://app.wildedge.dev")
-    with patch.object(
-        t._opener, "open", return_value=_make_response(status_code, {"status": "ok"})
+    with (
+        patch.object(
+            t._opener,
+            "open",
+            return_value=_make_response(status_code, {"status": "ok"}),
+        ),
+        pytest.raises(TransmitError, match=f"Unexpected HTTP {status_code}"),
     ):
-        with pytest.raises(TransmitError, match=f"Unexpected HTTP {status_code}"):
-            t.send({"batch_id": "b-1", "events": []})
+        t.send({"batch_id": "b-1", "events": []})
 
 
 def test_unexpected_status_keeps_events_in_consumer_queue():
     # End-to-end regression: TransmitError from an unexpected status must cause the
     # consumer to retain events for retry, not lose them.
-    from wildedge.consumer import Consumer
-    from wildedge.platforms.device_info import DeviceInfo
-    from wildedge.queue import EventQueue
 
     queue = EventQueue(max_size=100)
     queue.add({"event_id": "e1", "event_type": "inference", "model_id": "m"})
@@ -215,7 +225,7 @@ def test_unexpected_status_keeps_events_in_consumer_queue():
         queue=queue,
         transmitter=mock_transmitter,
         device=DeviceInfo(device_id="d", device_type="linux"),
-        get_models=lambda: {},
+        get_models=dict,
         session_id="sess-1",
     )
     result = consumer.drain_once()

@@ -41,7 +41,7 @@ def test_debug_failure_logs_correctly(caplog):
 
 
 @pytest.mark.parametrize(
-    "dtype_str, expected",
+    ("dtype_str", "expected"),
     [
         # PyTorch repr strings
         ("torch.float16", "f16"),
@@ -56,11 +56,9 @@ def test_debug_failure_logs_correctly(caplog):
         ("tensor(uint8)", "int8"),
         # Plain names
         ("float16", "f16"),
-        ("bfloat16", "bf16"),
+        ("bfloat16", "bf16"),  # must not match float16
         ("int8", "int8"),
         ("float32", "f32"),
-        # bfloat16 must not match float16
-        ("bfloat16", "bf16"),
         # Unknown
         ("float64", None),
         ("complex64", None),
@@ -101,7 +99,7 @@ def test_histogram_uniform_distribution():
     np = pytest.importorskip("numpy")
     # 500 pixels evenly spread [0, 0.2, 0.4, 0.6, 0.8, 1.0)
     flat = np.linspace(0.0, 1.0, 500, dtype=np.float32)
-    mean, std, buckets = image_brightness_histogram(flat)
+    mean, _std, buckets = image_brightness_histogram(flat)
     assert abs(mean - 0.5) < 0.01
     # Each bucket should have roughly equal counts
     for b in buckets:
@@ -139,7 +137,7 @@ def test_histogram_mean_and_std_rounded_to_4dp():
 
 
 @pytest.mark.parametrize(
-    "shape, expected",
+    ("shape", "expected"),
     [
         ((4, 3, 224, 224), "image"),  # NCHW image batch
         ((1, 3, 64, 64), "image"),  # single image
@@ -159,7 +157,7 @@ def test_infer_input_modality_from_shape(shape, expected):
 
 
 @pytest.mark.parametrize(
-    "names, expected",
+    ("names", "expected"),
     [
         (["input_ids", "attention_mask"], "text"),
         (["input_ids"], "text"),
@@ -185,7 +183,7 @@ def test_infer_input_modality_from_names(names, expected):
 
 
 @pytest.mark.parametrize(
-    "layer_types, expected",
+    ("layer_types", "expected"),
     [
         (["InputLayer", "Conv2D", "Dense"], "image"),
         (["InputLayer", "DepthwiseConv2D", "GlobalAveragePooling2D", "Dense"], "image"),
@@ -207,7 +205,7 @@ def test_infer_input_modality_from_layer_types(layer_types, expected):
 
 
 @pytest.mark.parametrize(
-    "shape, expected",
+    ("shape", "expected"),
     [
         ((None, 10), 10),  # standard classification head
         ((None, 1000), 1000),  # ImageNet
@@ -274,7 +272,7 @@ class APITimeoutError(APIConnectionError):
 
 
 @pytest.mark.parametrize(
-    "exc, expected",
+    ("exc", "expected"),
     [
         (APITimeoutError(), ErrorCode.INFERENCE_TIMEOUT),
         (TimeoutError(), ErrorCode.INFERENCE_TIMEOUT),
@@ -306,7 +304,7 @@ def test_provider_error_code_of():
 
 
 @pytest.mark.parametrize(
-    "exc, expected",
+    ("exc", "expected"),
     [
         # anthropic, at request time and mid-stream: type in the wrapped body.
         (

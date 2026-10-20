@@ -4,12 +4,12 @@ from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
 
 
 def make_info(**kwargs) -> ModelInfo:
-    defaults = dict(
-        model_name="test",
-        model_version="1.0",
-        model_source="local",
-        model_format="onnx",
-    )
+    defaults = {
+        "model_name": "test",
+        "model_version": "1.0",
+        "model_source": "local",
+        "model_format": "onnx",
+    }
     return ModelInfo(**{**defaults, **kwargs})
 
 

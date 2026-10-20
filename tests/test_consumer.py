@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wildedge import constants
+from wildedge.client import WildEdge
 from wildedge.consumer import Consumer
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.queue import EventQueue
@@ -42,7 +43,7 @@ class TestConsumerFlush:
             queue=queue,
             transmitter=transmitter,
             device=make_device(),
-            get_models=lambda: {},
+            get_models=dict,
             session_id="sess-1",
             **kwargs,
         )
@@ -359,7 +360,7 @@ class TestConsumerForkSafety:
             queue=queue,
             transmitter=transmitter,
             device=DeviceInfo(app_version="1.0", device_id="d", device_type="linux"),
-            get_models=lambda: {},
+            get_models=dict,
             session_id="sess-fork",
             **kwargs,
         )
@@ -449,7 +450,6 @@ class TestForkRegistration:
     )
     def test_register_at_fork_wires_pause_and_resume(self, monkeypatch):
         """WildEdge.__init__ registers _pause and _resume via os.register_at_fork."""
-        from wildedge.client import WildEdge
 
         registered = {}
 
@@ -475,7 +475,6 @@ class TestForkRegistration:
 
     def test_register_at_fork_noop_on_windows(self, monkeypatch):
         """When os.register_at_fork is absent (Windows), __init__ must not raise."""
-        from wildedge.client import WildEdge
 
         monkeypatch.delattr(os, "register_at_fork", raising=False)
 

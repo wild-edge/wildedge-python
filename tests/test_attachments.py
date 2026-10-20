@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from wildedge import constants
 from wildedge.attachments import (
     Attachment,
     AttachmentManager,
@@ -15,7 +16,8 @@ from wildedge.attachments import (
     PendingAttachment,
     UploadOutcome,
 )
-from wildedge.events.inference import InferenceEvent
+from wildedge.client import WildEdge
+from wildedge.events.inference import InferenceEvent, TextInputMeta
 from wildedge.model import ModelHandle, ModelInfo
 
 # --------------------------------------------------------------------------- #
@@ -41,7 +43,8 @@ def test_store_file_strategy_roundtrip(tmp_path):
     assert len(pending) == 1
     assert pending[0].attachment_id == "a1"
     assert pending[0].read_bytes() == b"hello"
-    assert pending[0].bin_path is not None and pending[0].bin_path.exists()
+    assert pending[0].bin_path is not None
+    assert pending[0].bin_path.exists()
 
 
 def test_store_inline_strategy_roundtrip(tmp_path):
@@ -158,7 +161,7 @@ def test_manager_drops_oversized(tmp_path):
 
 
 def test_manager_filter_hook(tmp_path):
-    store, mgr = _manager(
+    _store, mgr = _manager(
         tmp_path,
         attachment_filter=lambda atts: [a for a in atts if a.role == "input"],
     )
@@ -199,8 +202,6 @@ def test_inference_event_omits_attachments_when_absent():
 
 
 def test_text_input_meta_no_has_attachments():
-    from wildedge.events.inference import TextInputMeta
-
     assert not hasattr(TextInputMeta(char_count=1), "has_attachments")
 
 
@@ -435,9 +436,6 @@ def test_uploader_evicts_stale(tmp_path):
 
 
 def test_client_attachments_disabled_by_default(monkeypatch):
-    from wildedge import constants
-    from wildedge.client import WildEdge
-
     monkeypatch.delenv(constants.ENV_ATTACHMENTS_ENABLED, raising=False)
     client = WildEdge(dsn="https://test@test.com/key")
     try:
@@ -448,8 +446,6 @@ def test_client_attachments_disabled_by_default(monkeypatch):
 
 
 def test_client_attachments_enabled_wires_capture(monkeypatch, tmp_path):
-    from wildedge.client import WildEdge
-
     client = WildEdge(
         dsn="https://test@test.com/key",
         attachments_enabled=True,
@@ -465,9 +461,6 @@ def test_client_attachments_enabled_wires_capture(monkeypatch, tmp_path):
 
 
 def test_client_attachments_enabled_via_env(monkeypatch, tmp_path):
-    from wildedge import constants
-    from wildedge.client import WildEdge
-
     monkeypatch.setenv(constants.ENV_ATTACHMENTS_ENABLED, "1")
     client = WildEdge(
         dsn="https://test@test.com/key",
