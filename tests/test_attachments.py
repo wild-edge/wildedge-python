@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import time
+import types
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from wildedge import constants
+import pytest
+
+from wildedge import attachments, constants
 from wildedge.attachments import (
     Attachment,
     AttachmentManager,
@@ -487,6 +490,32 @@ def test_client_attachments_enabled_via_env(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 
 
+class FakeClock:
+    """Stands in for time.monotonic() in wildedge.attachments; tests move it."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch) -> FakeClock:
+    fake = FakeClock()
+    monkeypatch.setattr(
+        attachments,
+        "time",
+        types.SimpleNamespace(
+            monotonic=fake.monotonic, time=time.time, time_ns=time.time_ns
+        ),
+    )
+    return fake
+
+
 def test_transmit_past_deadline_is_transient_without_requests(monkeypatch, tmp_path):
     monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen([]))
     tx = AttachmentTransmitter(api_key="secret", host="https://ingest.example")
@@ -494,20 +523,21 @@ def test_transmit_past_deadline_is_transient_without_requests(monkeypatch, tmp_p
     assert outcome is UploadOutcome.TRANSIENT
 
 
-def test_transmit_caps_request_timeout_at_deadline(monkeypatch, tmp_path):
+def test_transmit_caps_request_timeout_at_deadline(monkeypatch, tmp_path, clock):
     timeouts: list[float] = []
     responses = iter([PRESIGN_OK, _Resp(200)])
 
     def opener(req, timeout=None):
         timeouts.append(timeout)
+        clock.advance(0.25)
         return next(responses)
 
     monkeypatch.setattr(urllib.request, "urlopen", opener)
     tx = AttachmentTransmitter(api_key="secret", host="https://ingest.example")
-    outcome = tx.transmit(_pending(tmp_path), deadline=time.monotonic() + 1.0)
+    outcome = tx.transmit(_pending(tmp_path), deadline=clock.now + 1.0)
     assert outcome is UploadOutcome.UPLOADED
-    assert len(timeouts) == 2
-    assert all(0 < t <= 1.0 for t in timeouts)
+    # Each request gets what is left of the deadline, below the 10 s default.
+    assert timeouts == [1.0, 0.75]
 
 
 def test_drain_uploads_more_than_one_batch(tmp_path):
@@ -528,24 +558,23 @@ def test_drain_stops_at_transient(tmp_path):
     assert [p.attachment_id for p in store.peek_many(10)] == ["a1", "a2"]
 
 
-def test_drain_respects_timeout(tmp_path):
+def test_drain_respects_timeout(tmp_path, clock):
     store = _filled_store(tmp_path, 3)
+    seen: list[str] = []
 
     class Slow:
-        seen = 0
-
         def transmit(self, pending, deadline=None):
-            Slow.seen += 1
-            time.sleep(0.1)
-            if deadline is not None and time.monotonic() >= deadline:
+            seen.append(pending.attachment_id)
+            clock.advance(0.1)
+            if deadline is not None and clock.now >= deadline:
                 return UploadOutcome.TRANSIENT
             return UploadOutcome.UPLOADED
 
     up = AttachmentUploader(store, Slow())
-    t0 = time.monotonic()
     up.drain(timeout=0.15)
-    assert time.monotonic() - t0 < 0.5
-    assert store.length() >= 1
+    # The first upload ends inside the deadline, the second past it.
+    assert seen == ["a0", "a1"]
+    assert [p.attachment_id for p in store.peek_many(10)] == ["a1", "a2"]
 
 
 def test_drain_waits_for_background_batch_within_timeout(tmp_path):
@@ -609,17 +638,19 @@ def test_flush_uploads_pending_attachments(tmp_path):
         client.close()
 
 
-def test_transmit_deadline_passing_after_presign_skips_put(monkeypatch, tmp_path):
+def test_transmit_deadline_passing_after_presign_skips_put(
+    monkeypatch, tmp_path, clock
+):
     calls: list[str] = []
 
     def opener(req, timeout=None):
         calls.append(req.get_method())
-        time.sleep(0.06)
+        clock.advance(0.06)
         return PRESIGN_OK
 
     monkeypatch.setattr(urllib.request, "urlopen", opener)
     tx = AttachmentTransmitter(api_key="secret", host="https://ingest.example")
-    outcome = tx.transmit(_pending(tmp_path), deadline=time.monotonic() + 0.05)
+    outcome = tx.transmit(_pending(tmp_path), deadline=clock.now + 0.05)
     assert outcome is UploadOutcome.TRANSIENT
     assert calls == ["POST"]
 
