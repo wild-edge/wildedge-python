@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from wildedge.events import common
 from wildedge.events.error import ErrorCode, ErrorEvent
 from wildedge.events.feedback import FeedbackEvent, FeedbackType
 from wildedge.events.inference import InferenceEvent, TextInputMeta
@@ -132,3 +133,78 @@ def test_error_event_to_dict_http_status():
         "duration_ms": 30_000,
     }
     assert "http_status" not in ErrorEvent("m1", "OOM").to_dict()["error"]
+
+
+def test_span_event_sends_non_scalar_attributes_as_json_strings():
+    event = SpanEvent(
+        kind="custom",
+        name="s",
+        duration_ms=1,
+        status="ok",
+        attributes={
+            "rejections": ["English", "too long"],
+            "scores": {"a": 1},
+            "count": 3,
+            "ratio": 0.5,
+            "ok": True,
+            "note": None,
+            "label": "x",
+        },
+    )
+    attrs = event.to_dict()["span"]["attributes"]
+    assert attrs == {
+        "rejections": '["English", "too long"]',
+        "scores": '{"a": 1}',
+        "count": 3,
+        "ratio": 0.5,
+        "ok": True,
+        "note": None,
+        "label": "x",
+    }
+    # The caller's dict is left as it was.
+    assert event.attributes["rejections"] == ["English", "too long"]
+
+
+def test_span_attribute_flattening_handles_unserializable_values():
+    class Thing:
+        def __str__(self):
+            return "thing"
+
+    event = SpanEvent(
+        kind="custom",
+        name="s",
+        duration_ms=1,
+        status="ok",
+        attributes={"obj": Thing(), "tags": ("a", Thing())},
+    )
+    attrs = event.to_dict()["span"]["attributes"]
+    assert attrs == {"obj": '"thing"', "tags": '["a", "thing"]'}
+
+
+def test_span_attribute_warning_is_logged_once_per_key(caplog):
+    common._warned_attribute_keys.discard("warn_once_tags")
+    with caplog.at_level("WARNING", logger="wildedge"):
+        for _ in range(3):
+            SpanEvent(
+                kind="custom",
+                name="s",
+                duration_ms=1,
+                status="ok",
+                attributes={"warn_once_tags": ["a"]},
+            ).to_dict()
+    warnings = [r for r in caplog.records if "warn_once_tags" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def test_span_attribute_falls_back_to_str_when_json_fails():
+    circular: list = []
+    circular.append(circular)
+    event = SpanEvent(
+        kind="custom",
+        name="s",
+        duration_ms=1,
+        status="ok",
+        attributes={"loop": circular, 7: "int key"},
+    )
+    attrs = event.to_dict()["span"]["attributes"]
+    assert attrs == {"loop": "[[...]]", "7": "int key"}
