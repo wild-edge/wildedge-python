@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import wildedge.integrations.ultralytics as ultralytics_mod
 from wildedge.integrations.ultralytics import (
     YOLO_FAMILY_RE,
     UltralyticsExtractor,
@@ -445,3 +447,20 @@ def test_extractor_install_hooks_batch_size_from_list_source(publish_spy):
     frames = [np.zeros((480, 640, 3), dtype=np.uint8)] * 3
     model(frames)
     assert publish_spy.events[0]["inference"]["batch_size"] == 3
+
+
+def test_unsupported_ultralytics_version_warns_and_does_not_patch(monkeypatch, caplog):
+    fake_yolo = type("YOLO", (), {"__init__": lambda self, *a, **k: None})
+    original_init = fake_yolo.__init__
+    monkeypatch.setattr(
+        ultralytics_mod, "_ultralytics", types.SimpleNamespace(YOLO=fake_yolo)
+    )
+    monkeypatch.setattr(ultralytics_mod, "_unsupported_ultralytics_version", "8.0.0")
+    monkeypatch.setattr(ultralytics_mod, "_ultralytics_patched", False)
+
+    with caplog.at_level("WARNING", logger="wildedge"):
+        UltralyticsExtractor.install_auto_load_patch(lambda: None)
+
+    assert fake_yolo.__init__ is original_init
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("ultralytics 8.0.0 is older than 8.0.200" in m for m in messages)

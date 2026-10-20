@@ -1,19 +1,8 @@
 from __future__ import annotations
 
-import importlib.util
-
 import pytest
 import ultralytics
 from PIL import Image
-
-# Early 8.0.x releases keep their helpers in ultralytics.yolo.utils. The
-# integration imports ultralytics.utils, so on those releases it is off.
-LEGACY_LAYOUT = importlib.util.find_spec("ultralytics.utils") is None
-legacy_xfail = pytest.mark.xfail(
-    LEGACY_LAYOUT,
-    strict=True,
-    reason="integration is disabled on ultralytics without ultralytics.utils (#71)",
-)
 
 
 @pytest.fixture
@@ -25,19 +14,17 @@ def yolo(compat_client):
 
 @pytest.fixture
 def image(tmp_path) -> str:
-    # A file path: ultralytics 8.0.0 can't take a numpy array as the source.
+    # A file path is a source every supported ultralytics release accepts.
     path = tmp_path / "blank.png"
     Image.new("RGB", (64, 64)).save(path)
     return str(path)
 
 
-@legacy_xfail
 def test_yolo_load_is_tracked(compat_client, yolo):
     compat_client.one("model_load")
     assert compat_client.of_type("model_download") == []
 
 
-@legacy_xfail
 def test_yolo_call_is_tracked(compat_client, yolo, image):
     results = yolo(image, imgsz=64, verbose=False)
     assert len(results) == 1
