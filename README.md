@@ -19,7 +19,12 @@ Transformers, OpenAI, and more.
 Instrument supported libraries with one command, or add tracking in your code.
 Prompts and outputs aren't uploaded unless you explicitly attach them.
 
-**[Get started](#install)** · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
+**[Get started](#install)** · [Explore the demo](https://wildedge.dev/demo) · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
+
+[![WildEdge demo showing a local summarizer's latency, time to first token, throughput, and model health](docs/images/demo-model-performance.jpg)](https://wildedge.dev/demo)
+
+*Spot performance changes in local models. [Explore the read-only demo](https://wildedge.dev/demo)
+with sample data. Pictured: News Reader → Models → Article Summarizer.*
 
 ## Install
 
