@@ -9,7 +9,7 @@ import time
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from wildedge import accelerators, constants
+from wildedge import accelerators, constants, quantizations
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     EmbeddingOutputMeta,
@@ -127,7 +127,7 @@ def detect_quantization(obj: object) -> str | None:
                 if quant_type:
                     return str(quant_type).lower()
                 if bits:
-                    return f"int{int(bits)}"
+                    return quantizations.int_bits(bits)
         # Fall back to model dtype
         model = getattr(obj, "model", obj)
         dtype = getattr(model, "dtype", None)

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import accelerators, constants
+from wildedge import accelerators, constants, quantizations
 from wildedge.attachments import Attachment
 from wildedge.events.inference import (
     GenerationConfig,
@@ -79,11 +79,64 @@ def detect_accelerator(obj: object) -> str:
     return accelerators.CPU
 
 
+# Filename suffixes that have a shared label under another name.
+_SUFFIX_LABELS = {"i8": quantizations.INT8}
+
+# llama.cpp file types (gguf-py's LlamaFileType) as stored in the model's
+# general.file_type metadata. Removed and unknown types are left out.
+GGUF_FILE_TYPES = {
+    0: quantizations.F32,
+    1: quantizations.F16,
+    2: "q4_0",
+    3: "q4_1",
+    7: "q8_0",
+    8: "q5_0",
+    9: "q5_1",
+    10: "q2_k",
+    11: "q3_k_s",
+    12: "q3_k_m",
+    13: "q3_k_l",
+    14: "q4_k_s",
+    15: "q4_k_m",
+    16: "q5_k_s",
+    17: "q5_k_m",
+    18: "q6_k",
+    19: "iq2_xxs",
+    20: "iq2_xs",
+    21: "q2_k_s",
+    22: "iq3_xs",
+    23: "iq3_xxs",
+    24: "iq1_s",
+    25: "iq4_nl",
+    26: "iq3_s",
+    27: "iq3_m",
+    28: "iq2_s",
+    29: "iq2_m",
+    30: "iq4_xs",
+    31: "iq1_m",
+    32: quantizations.BF16,
+    36: "tq1_0",
+    37: "tq2_0",
+    38: "mxfp4_moe",
+    39: "nvfp4",
+    40: "q1_0",
+}
+
+
 def parse_quantization(filename: str) -> str | None:
     match = _QUANT_RE.search(filename)
     if match:
-        return match.group(1).lower()
+        suffix = match.group(1).lower()
+        return _SUFFIX_LABELS.get(suffix, suffix)
     return None
+
+
+def file_type_quantization(file_type: object) -> str | None:
+    """Label for a general.file_type metadata value, such as "15" (q4_k_m)."""
+    try:
+        return GGUF_FILE_TYPES.get(int(str(file_type)))
+    except ValueError:
+        return None
 
 
 # Messages of the create_chat_completion call in progress, so the
@@ -388,8 +441,8 @@ class GgufExtractor(BaseExtractor):
             try:
                 metadata = getattr(obj, "metadata", {}) or {}
                 file_type = metadata.get("general.file_type")
-                if file_type:
-                    quantization = str(file_type).lower()
+                if file_type is not None:
+                    quantization = file_type_quantization(file_type)
             except Exception as exc:
                 debug_gguf_failure("quantization metadata read", exc)
         if quantization is None:

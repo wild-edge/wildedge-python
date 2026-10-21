@@ -7,7 +7,7 @@ import inspect
 import threading
 import time
 
-from wildedge import accelerators
+from wildedge import accelerators, quantizations
 from wildedge.instrumentation import bind_client_reference
 from wildedge.integrations.common import (
     SyncStreamWrapper,
@@ -30,6 +30,19 @@ _PATCH_LOCK = threading.Lock()
 
 # WhisperModel.__init__'s first parameter: a size name, hub repo or local path.
 MODEL_PATH_PARAM = "model_size_or_path"
+
+# CTranslate2 compute types, labelled by weight precision. The activation type
+# after "int8_" isn't reported. Unknown types pass through as they are.
+COMPUTE_TYPE_QUANTIZATION = {
+    "float32": quantizations.F32,
+    "float16": quantizations.F16,
+    "bfloat16": quantizations.BF16,
+    "int8": quantizations.INT8,
+    "int8_float32": quantizations.INT8,
+    "int8_float16": quantizations.INT8,
+    "int8_bfloat16": quantizations.INT8,
+    "int16": quantizations.int_bits(16),
+}
 
 # Outcome of a segment loop that stopped without reading to the end.
 OUTCOME_ABANDONED = "abandoned"
@@ -174,7 +187,7 @@ def _install(client_ref):
                     bound.arguments[MODEL_PATH_PARAM],
                     FASTER_WHISPER,
                     device,
-                    compute,
+                    COMPUTE_TYPE_QUANTIZATION.get(compute, compute),
                 ),
             )
             report_load(client, self, elapsed_ms(t0))

@@ -15,6 +15,16 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- Quantization labels are defined once in `wildedge.quantizations` and used
+  by every integration. Behaviour changes:
+  - MLX-LM reports N-bit weights as `int4`/`int8`, like Transformers, instead
+    of `q4`/`q8`.
+  - GGUF models labelled from `general.file_type` report the type name (for
+    example `q4_k_m`) instead of its number, and the `i8` filename suffix
+    reports `int8`.
+  - faster-whisper reports weight precision (`int8`, `f16`) instead of
+    CTranslate2 compute types such as `int8_float32`.
+
 - MLX-LM models now report the device they run on (`mps` for the Apple GPU)
   instead of always `cpu`. Accelerator names are defined once in
   `wildedge.accelerators`, and PyTorch, Transformers, Ultralytics,

@@ -7,10 +7,14 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from wildedge import constants
+from wildedge import constants, quantizations
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.integrations.common import debug_failure, mlx_accelerator
+from wildedge.integrations.common import (
+    debug_failure,
+    mlx_accelerator,
+    mlx_layer_quantization,
+)
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -64,7 +68,7 @@ def extract_model_args(obj: object) -> tuple[str | None, str | None]:
         quant = getattr(args, "quantization", None)
         if quant is not None:
             bits = getattr(quant, "bits", None)
-            q_str = f"q{int(bits)}" if bits else "quantized"
+            q_str = quantizations.int_bits(bits) if bits else quantizations.QUANTIZED
         else:
             q_str = detect_quantization_from_layers(obj)
         return model_type, q_str
@@ -74,15 +78,11 @@ def extract_model_args(obj: object) -> tuple[str | None, str | None]:
 
 
 def detect_quantization_from_layers(obj: object) -> str | None:
-    """Inspect layer class names for quantized linear layers."""
     try:
-        for _, module in obj.named_modules():  # type: ignore[union-attr]
-            cls_name = type(module).__name__
-            if "Quantized" in cls_name or "quantized" in cls_name:
-                return "quantized"
-    except Exception:
-        pass
-    return None
+        return mlx_layer_quantization(obj)
+    except Exception as exc:
+        debug_mlx_failure("quantization detection", exc)
+        return None
 
 
 def count_tokens(tokenizer: object, text: str) -> int | None:

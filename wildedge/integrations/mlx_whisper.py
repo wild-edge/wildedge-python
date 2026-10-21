@@ -9,10 +9,12 @@ import inspect
 import threading
 import time
 
+from wildedge import quantizations
 from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
     mlx_accelerator,
+    mlx_layer_quantization,
     track_api_error,
 )
 from wildedge.integrations.whisper import (
@@ -34,31 +36,29 @@ DEFAULT_REPO = "mlx-community/whisper-tiny"
 DEFAULT_FP16 = True
 
 
-def mlx_quantization(model: object, dtype: object) -> str | None:
-    """Bit width of quantized layers, else the weight dtype, if recognised."""
+def describe(
+    path: object, weights: str | None, model: object = None
+) -> WhisperDescriptor:
+    """Describe a model. ``weights`` is the weight dtype label, reported unless
+    the model's layers are quantized. Without ``model`` (when loading failed)
+    only ``weights`` is known."""
+    quantization = weights
     if model is not None:
         try:
-            for _, layer in model.named_modules():  # type: ignore[attr-defined]
-                bits = getattr(layer, "bits", None)
-                if isinstance(bits, int):
-                    return f"q{bits}"
+            quantization = mlx_layer_quantization(model) or weights
         except Exception as exc:
             debug_failure(MLX_WHISPER, "quantization detection", exc)
-    return dtype_to_quantization(str(dtype))
-
-
-def describe(path: object, dtype: object, model: object = None) -> WhisperDescriptor:
-    """Describe a model; without ``model`` (when loading failed) only the dtype
-    is known."""
     return WhisperDescriptor.from_path(
-        path, MLX_WHISPER, mlx_accelerator(), mlx_quantization(model, dtype)
+        path, MLX_WHISPER, mlx_accelerator(), quantization
     )
 
 
 def requested_model(kwargs: dict) -> tuple[str, str]:
-    """Model path and dtype that ``mlx_whisper.transcribe`` uses for these arguments."""
-    dtype = "float16" if kwargs.get("fp16", DEFAULT_FP16) else "float32"
-    return kwargs.get("path_or_hf_repo", DEFAULT_REPO), dtype
+    """Model path and weight dtype label that ``mlx_whisper.transcribe`` uses
+    for these arguments."""
+    fp16 = kwargs.get("fp16", DEFAULT_FP16)
+    weights = quantizations.F16 if fp16 else quantizations.F32
+    return kwargs.get("path_or_hf_repo", DEFAULT_REPO), weights
 
 
 def install_auto_load_patch(client_ref):
@@ -89,7 +89,7 @@ def _install(client_ref):
             bound.apply_defaults()
             info = describe(
                 bound.arguments["path_or_hf_repo"],
-                bound.arguments.get("dtype"),
+                dtype_to_quantization(str(bound.arguments.get("dtype"))),
                 model,
             )
             setattr(model, DESCRIPTOR_ATTR, info)

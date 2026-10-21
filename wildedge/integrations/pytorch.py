@@ -7,7 +7,7 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from wildedge import accelerators
+from wildedge import accelerators, quantizations
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     HistogramSummary,
@@ -72,10 +72,10 @@ def detect_quantization(obj: object) -> str | None:
         for module in obj.modules():  # type: ignore[union-attr]
             cls = type(module)
             if "quantized" in cls.__module__ or "quant" in cls.__name__.lower():
-                return "int8"
+                return quantizations.INT8
         for p in obj.parameters():  # type: ignore[union-attr]
             q = dtype_to_quantization(str(p.dtype))
-            if q and q != "f32":
+            if q and q != quantizations.F32:
                 return q
     except Exception as exc:
         debug_pytorch_failure("quantization detection", exc)
