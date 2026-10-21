@@ -59,7 +59,7 @@ To run the full matrix locally: `python scripts/run_compat_local.py`.
 | `tensorflow` | `current` (`py3.10` override) | `tensorflow==2.21.0`, `keras==3.12.4`, `numpy==2.2.6` | 3.10 |
 | `llama_cpp` | `min` | `llama-cpp-python==0.2.90`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13 |
 | `llama_cpp` | `current` | `llama-cpp-python==0.3.36`, `numpy==2.2.6` | 3.10, 3.11, 3.12, 3.13 |
-| `openai` | `min` | `openai==1.30.0` | 3.10, 3.11, 3.12, 3.13 |
+| `openai` | `min` | `openai==1.30.0`, `httpx==0.27.2` | 3.10, 3.11, 3.12, 3.13 |
 | `openai` | `current` | `openai==3.35.1` | 3.10, 3.11, 3.12, 3.13 |
 | `transformers` | `min` | `transformers==4.40.0`, `torch==2.4.1`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13 |
 | `transformers` | `min` (`py3.13` override) | `transformers==4.45.0`, `torch==2.5.0`, `numpy==2.1.3` | 3.13 |

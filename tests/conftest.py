@@ -131,4 +131,5 @@ def client_with_stubbed_runtime():
 def isolate_instrumentation_owner(monkeypatch):
     monkeypatch.setattr(instrumentation, "_owner", None)
     monkeypatch.setattr(instrumentation, "_enabled", set())
+    monkeypatch.setattr(instrumentation, "_strict_ownership", False)
     monkeypatch.setattr(huggingface, "_client_route", None)

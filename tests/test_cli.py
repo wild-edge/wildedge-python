@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from wildedge import cli, constants
+from wildedge import cli, constants, instrumentation
 from wildedge.defaults import peek_default_client
 from wildedge.integrations.registry import IntegrationSpec
 from wildedge.platforms.device_info import DeviceInfo
@@ -235,6 +235,36 @@ def test_install_runtime_strict_integrations_raises(monkeypatch):
 
     with pytest.raises(bootstrap.RuntimeStrictIntegrationError):
         bootstrap.install_runtime()
+
+
+@pytest.mark.parametrize("strict", ["0", "1"])
+def test_install_runtime_records_strict_ownership(monkeypatch, strict):
+    class FakeWildEdge:
+        SUPPORTED_INTEGRATIONS = {"onnx"}
+
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
+            pass
+
+        def instrument(self, name):  # type: ignore[no-untyped-def]
+            pass
+
+        def flush(self, timeout):  # type: ignore[no-untyped-def]
+            pass
+
+        def close(self):  # type: ignore[no-untyped-def]
+            pass
+
+    monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "onnx")
+    monkeypatch.setenv(constants.ENV_STRICT_INTEGRATIONS, strict)
+    monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: object())
+
+    context = bootstrap.install_runtime()
+    try:
+        assert instrumentation.strict_ownership() is (strict == "1")
+    finally:
+        context.shutdown()
 
 
 def test_doctor_reports_missing_dsn_and_unknown_integration(monkeypatch, capsys):

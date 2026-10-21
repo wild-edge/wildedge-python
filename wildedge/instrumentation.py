@@ -15,6 +15,21 @@ if TYPE_CHECKING:
 _lock = threading.Lock()
 _owner: weakref.ReferenceType[WildEdge] | None = None
 _enabled: set[str] = set()
+_strict_ownership = False
+
+
+class InstrumentationOwnedError(RuntimeError):
+    """Another live client already owns process-wide instrumentation."""
+
+
+def set_strict_ownership(strict: bool) -> None:
+    """Raise on ownership conflicts instead of warning (`--strict-integrations`)."""
+    global _strict_ownership
+    _strict_ownership = strict
+
+
+def strict_ownership() -> bool:
+    return _strict_ownership
 
 
 class ClientRoute:
@@ -67,7 +82,7 @@ def claim_instrumentation(client: WildEdge, integration: str) -> ClientRoute:
             raise RuntimeError("Cannot instrument with a closed WildEdge client")
         owner = _owner() if _owner is not None else None
         if owner is not None and not owner.closed and owner is not client:
-            raise RuntimeError(
+            raise InstrumentationOwnedError(
                 "Auto-instrumentation is owned by another live WildEdge client; "
                 "close that client before enabling instrumentation on its replacement"
             )

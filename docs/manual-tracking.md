@@ -26,8 +26,8 @@ with wildedge.trace(run_id="run-123"):
 The default client comes from wherever initialization happened first:
 
 - `wildedge run` installs one before your code loads. A later
-  `wildedge.init()` without `dsn` reuses it, so the same code works with or
-  without the CLI wrapper.
+  `wildedge.init()` without `dsn`, or with the same DSN, reuses it, so the
+  same code works with or without the CLI wrapper.
 - `wildedge.init(...)` creates one (or reuses the existing default) and
   registers it.
 - Any module-level call (`wildedge.span`, `wildedge.register_model`, ...)

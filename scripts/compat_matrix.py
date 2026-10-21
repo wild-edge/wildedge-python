@@ -44,7 +44,7 @@ MATRIX = {
         "current": ["llama-cpp-python==0.3.36", "numpy==2.2.6"],
     },
     "openai": {
-        "min": ["openai==1.30.0"],
+        "min": ["openai==1.30.0", "httpx==0.27.2"],
         "current": ["openai==3.35.1"],
     },
     "transformers": {

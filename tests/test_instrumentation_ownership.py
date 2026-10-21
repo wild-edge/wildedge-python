@@ -140,9 +140,32 @@ def test_close_is_idempotent(clients):
     client.consumer.close.assert_called_once()
 
 
-def test_init_conflict_cleans_up_new_client_without_stopping_owner_sampler(
+def test_init_with_other_dsn_warns_and_leaves_tracking_with_owner(
+    clients, monkeypatch, caplog
+):
+    caplog.set_level("WARNING", logger="wildedge")
+    first = clients()
+    route = claim_instrumentation(first, "onnx")
+    set_default_client(first)
+    second = clients()
+    monkeypatch.setattr(convenience, "WildEdge", lambda **kwargs: second)
+    with patch("wildedge.client.stop_sampler") as stop:
+        result = wildedge.init(
+            dsn="https://other@localhost/other", integrations=["onnx"]
+        )
+        stop.assert_not_called()
+    assert result is second
+    assert not second.closed
+    assert not first.closed
+    assert route() is first
+    assert convenience.peek_default_client() is second
+    assert [r for r in caplog.records if "already owns automatic tracking" in r.message]
+
+
+def test_strict_ownership_conflict_raises_and_cleans_up_new_client(
     clients, monkeypatch
 ):
+    instrumentation.set_strict_ownership(True)
     first = clients()
     claim_instrumentation(first, "onnx")
     set_default_client(first)
@@ -155,6 +178,50 @@ def test_init_conflict_cleans_up_new_client_without_stopping_owner_sampler(
     assert second.closed
     assert not first.closed
     assert convenience.peek_default_client() is first
+
+
+def test_init_with_owner_dsn_reuses_owner(clients, monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="wildedge")
+    first = clients()
+    first.instrument("onnx")
+    set_default_client(first)
+    monkeypatch.setattr(
+        convenience, "WildEdge", MagicMock(side_effect=AssertionError("new client"))
+    )
+    assert (
+        wildedge.init(dsn="https://test@localhost/test", integrations=["onnx"]) is first
+    )
+    assert not [r for r in caplog.records if "ignoring" in r.message]
+
+
+def test_init_with_dsn_none_reuses_owner_of_env_dsn(clients, monkeypatch):
+    first = clients()
+    set_default_client(first)
+    monkeypatch.setenv("WILDEDGE_DSN", "https://test@localhost/test")
+    monkeypatch.setattr(
+        convenience, "WildEdge", MagicMock(side_effect=AssertionError("new client"))
+    )
+    assert wildedge.init(dsn=None) is first
+
+
+def test_hub_conflict_warns_and_skips(clients, monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="wildedge")
+    installs = []
+
+    class Tracker:
+        def can_install(self):
+            return True
+
+        def install_patch(self, route):
+            installs.append(route)
+
+    monkeypatch.setitem(WildEdge.HUB_TRACKER_CLASSES, "huggingface", Tracker)
+    first, second = clients(), clients()
+    first.instrument(None, hubs=["huggingface"])
+    second.instrument(None, hubs=["huggingface"])
+    assert len(installs) == 1
+    assert "huggingface" not in second.hub_trackers
+    assert [r for r in caplog.records if "already owns automatic tracking" in r.message]
 
 
 @pytest.mark.parametrize("hub", ["huggingface", "torchhub"])

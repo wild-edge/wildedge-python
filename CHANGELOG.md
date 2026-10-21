@@ -5,17 +5,7 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
-### Changed
-
-- The llama.cpp Python integration is now named `llama_cpp` in Python, CLI,
-  and environment configuration. `gguf` remains a compatibility alias; `all`
-  selects the integration once under its new name. Model format metadata
-  remains `gguf`.
-
-- Automatic integrations no longer attach raw payloads, including GGUF prompts,
-  chat messages and replies. `attachments_enabled=True` enables uploads only for
-  attachments explicitly passed to `track_inference(attachments=[...])`.
-  Apps relying on automatic GGUF capture must supply attachments explicitly.
+## 0.3.0 - 2026-10-21
 
 ### Added
 
@@ -24,19 +14,42 @@ under Unreleased and move into a version section at release time.
   `BatchedInferencePipeline`. Transcriptions record duration, language, word
   count and audio metadata. Audio and transcript attachments must be supplied
   explicitly through the manual tracking API. See docs/whisper.md.
+- The OpenAI integration now tracks `responses.create()` for synchronous and
+  asynchronous clients, including streaming. Records input/output token usage,
+  cached and reasoning tokens, response status or incomplete reason, resolved
+  model metadata, and time to first output delta for streams. Older OpenAI SDKs
+  without Responses remain supported.
+- OpenAI sync and async `embeddings.create()` instrumentation records latency,
+  input token usage, batch size, vector dimensions, model metadata and errors.
+  Embedding vectors and raw inputs are never attached by this adapter.
+  `EmbeddingOutputMeta` now accepts optional `tokens_in` for analytics.
+- Anthropic native `messages.stream()` helpers are now instrumented for sync
+  and async clients, including event iteration, `text_stream`, and final-message
+  helpers, with the shared streaming lifecycle contract.
+- Process-wide integrations and hub patches now support sequential SDK client
+  replacement after the previous owner closes. Reinitialization replaces a
+  closed default. Existing models and provider clients keep their original
+  destination and must be recreated. Attempts to use a closed telemetry
+  destination warn once instead of silently dropping inference and error
+  events.
 
-### Fixed
+### Changed
 
-- Changing a model's metadata (for example `register_model(..., version="v2")`)
-  now takes effect after a restart. With offline persistence on (the default),
-  the model registry saved by an earlier process kept the first metadata ever
-  registered for each model on that machine, so later changes were ignored.
-  This includes anthropic models already saved as `"unknown"`.
-
-- `import wildedge` no longer imports every installed ML framework and API
-  client. Each library is imported when its integration is activated or a
-  model from it is registered, so SDK import is faster and a broken unrelated
-  package no longer stops the SDK from starting.
+- The llama.cpp Python integration is now named `llama_cpp` in Python, CLI,
+  and environment configuration. `gguf` remains a compatibility alias; `all`
+  selects the integration once under its new name. Model format metadata
+  remains `gguf`.
+- Automatic integrations no longer attach raw payloads, including GGUF prompts,
+  chat messages and replies. `attachments_enabled=True` enables uploads only for
+  attachments explicitly passed to `track_inference(attachments=[...])`.
+  Apps relying on automatic GGUF capture must supply attachments explicitly.
+- `wildedge.init(dsn=...)` reuses the existing default client when the DSN
+  points to the same project, for example `dsn=os.environ["WILDEDGE_DSN"]`
+  under `wildedge run`. It used to create a second client.
+- Enabling an integration or hub on a second client while another live client
+  owns process-wide instrumentation now logs a warning. Automatic events keep
+  going to the owner's project, as before, but this used to happen without a
+  word. With `wildedge run --strict-integrations` it raises `RuntimeError`.
 - Quantization labels are defined once in `wildedge.quantizations` and used
   by every integration. Behaviour changes:
   - MLX-LM reports N-bit weights as `int4`/`int8`, like Transformers, instead
@@ -46,54 +59,6 @@ under Unreleased and move into a version section at release time.
     reports `int8`.
   - faster-whisper reports weight precision (`int8`, `f16`) instead of
     CTranslate2 compute types such as `int8_float32`.
-
-- MLX-LM models now report the device they run on (`mps` for the Apple GPU)
-  instead of always `cpu`. Accelerator names are defined once in
-  `wildedge.accelerators`, and PyTorch, Transformers, Ultralytics,
-  TensorFlow and Keras share their device detection.
-
-- Process-wide integrations and hub patches now support sequential SDK client
-  replacement after the previous owner closes. Reinitialization replaces a closed
-  default; live ownership conflicts raise explicitly. Existing models/provider
-  clients retain their original destination and must be recreated. Attempts to
-  use a closed telemetry destination warn once instead of silently dropping
-  inference/error events.
-
-- timm models now use the requested architecture/variant name for model identity
-  instead of the Python class name, so models such as resnet18 and resnet50 no
-  longer share telemetry. Manual registration falls back to timm architecture
-  metadata, and explicit model IDs retain priority.
-
-- Ultralytics `model.predict()` now records inference telemetry. Instrumentation
-  patches `predict`, which `model(...)` delegates to, so both entry points are
-  tracked exactly once.
-
-- Streaming wrappers now finalize once across exhaustion, explicit closure,
-  cancellation, and iterator errors. Early closure/cancellation records an
-  unsuccessful inference with partial metadata when available. TTFT ignores
-  lifecycle/role-only chunks; telemetry callbacks cannot break iteration and
-  retain the trace context captured at stream creation. Remote API streams
-  ending without their completion marker record `STREAM_INCOMPLETE`.
-
-### Added
-
-- Anthropic native `messages.stream()` helpers are now instrumented for sync
-  and async clients, including event iteration, `text_stream`, and final-message
-  helpers, with the shared streaming lifecycle contract.
-
-- OpenAI sync and async `embeddings.create()` instrumentation records latency,
-  input token usage, batch size, vector dimensions, model metadata and errors.
-  Embedding vectors and raw inputs are never attached by this adapter.
-  `EmbeddingOutputMeta` now accepts optional `tokens_in` for analytics.
-
-- The OpenAI integration now tracks `responses.create()` for synchronous and
-  asynchronous clients, including streaming. Records input/output token usage,
-  cached and reasoning tokens, response status or incomplete reason, resolved
-  model metadata, and time to first output delta for streams. Older OpenAI SDKs
-  without Responses remain supported.
-
-### Changed
-
 - The ultralytics integration now requires ultralytics 8.0.200 or later
   (was 8.0.0). Earlier 8.0.x releases keep their helpers under
   `ultralytics.yolo.utils`, and the integration turned itself off on them
@@ -102,17 +67,42 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
-- The gguf integration now tracks `Llama.create_chat_completion()` and
+- The llama.cpp integration now tracks `Llama.create_chat_completion()` and
   `Llama.create_completion()`, streaming or not. It used to patch only
   `Llama.__call__`, so chat apps on llama-cpp-python reported model loads but
   no inference events. It now patches `create_completion`, which every entry
   point runs, so each call is tracked once.
-- gguf inference events now include the stop reason for non-streamed calls,
-  the generation config (`temperature`, `top_p`, `top_k`, `max_tokens`,
+- llama.cpp inference events now include the stop reason for non-streamed
+  calls, the generation config (`temperature`, `top_p`, `top_k`, `max_tokens`,
   `repeat_penalty`, penalties, `seed`, stop sequence count), and, for chat
   calls, `prompt_type="chat"` and `turn_index` measured on the last user
-  message. With attachments enabled, the prompt or chat messages and the reply
-  are attached.
+  message.
+- `import wildedge` no longer imports every installed ML framework and API
+  client. Each library is imported when its integration is activated or a
+  model from it is registered, so SDK import is faster and a broken unrelated
+  package no longer stops the SDK from starting.
+- Changing a model's metadata (for example `register_model(..., version="v2")`)
+  now takes effect after a restart. With offline persistence on (the default),
+  the model registry saved by an earlier process kept the first metadata ever
+  registered for each model on that machine, so later changes were ignored.
+  This includes anthropic models already saved as `"unknown"`.
+- MLX-LM models now report the device they run on (`mps` for the Apple GPU)
+  instead of always `cpu`. Accelerator names are defined once in
+  `wildedge.accelerators`, and PyTorch, Transformers, Ultralytics,
+  TensorFlow and Keras share their device detection.
+- timm models now use the requested architecture/variant name for model identity
+  instead of the Python class name, so models such as resnet18 and resnet50 no
+  longer share telemetry. Manual registration falls back to timm architecture
+  metadata, and explicit model IDs retain priority.
+- Ultralytics `model.predict()` now records inference telemetry. Instrumentation
+  patches `predict`, which `model(...)` delegates to, so both entry points are
+  tracked exactly once.
+- Streaming wrappers now finalize once across exhaustion, explicit closure,
+  cancellation, and iterator errors. Early closure/cancellation records an
+  unsuccessful inference with partial metadata when available. TTFT ignores
+  lifecycle/role-only chunks; telemetry callbacks cannot break iteration and
+  retain the trace context captured at stream creation. Remote API streams
+  ending without their completion marker record `STREAM_INCOMPLETE`.
 - A span attribute whose value is a list, dict or other non-scalar no longer
   gets the whole event batch rejected. Ingest only accepts scalar attribute
   values and answered 422 for the batch, dropping unrelated loads, inferences
@@ -138,6 +128,11 @@ under Unreleased and move into a version section at release time.
   tracked call of its pipeline; other models the pipeline runs, and direct
   calls to the model, are still tracked. Generator and dataset inputs, which
   run lazily, are not covered yet (#78).
+- `flush()` no longer sends a batch the background sender is already sending.
+  Both used to send the same events and then each removed a batch from the
+  queue, so events were duplicated and, depending on timing, later events
+  could be removed without being sent. This showed up when a process started
+  with events saved by an earlier run and flushed soon after.
 
 ## 0.2.2 - 2026-09-30
 
