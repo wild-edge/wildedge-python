@@ -217,7 +217,7 @@ def test_instrument_hubs_activates_requested_trackers(stub_client):
     activated = []
     with (
         patch.object(stub_client, "_activate_hub", side_effect=activated.append),
-        patch.dict(stub_client.PATCH_INSTALLERS, {"gguf": lambda ref: None}),
+        patch.dict(stub_client.PATCH_INSTALLERS, {"llama_cpp": lambda ref: None}),
     ):
         stub_client.instrument("gguf", hubs=["huggingface"])
 
@@ -244,3 +244,24 @@ def test_instrument_none_activates_hub(stub_client):
     with patch.object(stub_client, "_activate_hub", side_effect=activated.append):
         stub_client.instrument(None, hubs=["huggingface"])
     assert activated == ["huggingface"]
+
+
+@pytest.mark.parametrize("names", [("gguf", "llama_cpp"), ("llama_cpp", "gguf")])
+def test_llama_cpp_aliases_share_patch_and_client_route(
+    stub_client, monkeypatch, names
+):
+    class FakeLlama:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    runtime = types.SimpleNamespace(Llama=FakeLlama)
+    monkeypatch.setattr(gguf_mod, "_llama_cpp", runtime)
+    monkeypatch.setattr(gguf_mod, "_llama_patched", False)
+    stub_client.instrument(names[0])
+    first = runtime.Llama.__init__
+    stub_client.instrument(names[1])
+    assert runtime.Llama.__init__ is first
+    with patch.object(stub_client, "_on_model_auto_loaded") as loaded:
+        model = runtime.Llama("model.gguf")
+    loaded.assert_called_once()
+    assert loaded.call_args.args[0] is model

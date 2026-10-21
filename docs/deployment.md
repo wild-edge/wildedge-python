@@ -35,6 +35,22 @@ Under `wildedge run`, a missing DSN warns on stderr and your program runs
 untracked. Telemetry failing must not take production down; that is the
 default policy.
 
+## CLI options
+
+| Flag | Description |
+|---|---|
+| `--integrations` | Comma-separated runtime integrations, such as `llama_cpp`, `onnx`, or `openai`; default: `all` |
+| `--hubs` | Download tracking via `huggingface` or `torchhub` |
+| `--print-startup-report` | Print activation status for each integration |
+| `--strict-integrations` | Exit with 121 if a requested integration cannot be instrumented |
+| `--strict` | Exit on bootstrap failure; see the exit codes below |
+| `--attachments` | Enable upload of explicitly supplied attachments |
+| `--no-propagate` | Scrub run-scoped environment variables after initialization |
+
+Use `llama_cpp` for the `llama-cpp-python` runtime. The older name `gguf` is
+accepted as a compatibility alias in Python, CLI, and environment settings.
+The recorded model format remains `gguf`.
+
 ## Strict mode
 
 `wildedge run --strict` inverts the failure policy for deployments where

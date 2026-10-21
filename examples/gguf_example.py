@@ -7,7 +7,7 @@
 # ///
 """GGUF / llama.cpp integration example. Run with: uv run gguf_example.py
 
-The gguf integration tracks every llama-cpp-python entry point, once per
+The llama_cpp integration tracks every llama-cpp-python entry point, once per
 call: create_chat_completion (streamed or not), create_completion and
 llm(...). Each inference event carries token counts, tokens per second,
 the stop reason and the sampling settings; chat calls also record
@@ -21,7 +21,7 @@ import wildedge
 
 wildedge.init(
     app_version="1.0.0",  # uses WILDEDGE_DSN if set; otherwise no-op
-    integrations="gguf",
+    integrations="llama_cpp",
     hubs=["huggingface"],
 )
 

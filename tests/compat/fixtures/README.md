@@ -5,5 +5,5 @@
 Larger models are downloaded on first use and checked against a sha256 (see
 `downloaded_fixture` in `../conftest.py`). They are cached in
 `tests/compat/.cache`, or in `$WILDEDGE_COMPAT_CACHE` when set, which CI
-keeps between runs. The gguf test declares its model's URL and checksum at
-the top of `test_gguf_compat.py`.
+keeps between runs. The llama_cpp test declares its model's URL and checksum at
+the top of `test_llama_cpp_compat.py`.

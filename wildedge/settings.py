@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from wildedge import constants
+from wildedge.integrations.registry import canonical_integration
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -46,7 +47,13 @@ def parse_integration_list(value: str | None, all_values: list[str]) -> list[str
     """Parse ``--integrations`` value; defaults to all when unset."""
     if not value or value == "all":
         return sorted(all_values)
-    return [item.strip() for item in value.split(",") if item.strip()]
+    return list(
+        dict.fromkeys(
+            canonical_integration(item.strip())
+            for item in value.split(",")
+            if item.strip()
+        )
+    )
 
 
 def parse_hub_list(value: str | None, all_values: list[str]) -> list[str]:

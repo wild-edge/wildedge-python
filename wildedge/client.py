@@ -27,6 +27,7 @@ from wildedge.instrumentation import claim_instrumentation, has_other_live_owner
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.registry import (
     INTEGRATION_SPECS,
+    canonical_integration,
     find_extractor,
     noop_integrations,
     supported_integrations,
@@ -739,7 +740,7 @@ class WildEdge:
         Pass ``hubs=`` alongside a framework name to activate download provenance
         tracking for the hub(s) your code downloads from::
 
-            client.instrument("gguf", hubs=["huggingface"])
+            client.instrument("llama_cpp", hubs=["huggingface"])
             client.instrument("onnx", hubs=["huggingface"])
             client.instrument("timm", hubs=["huggingface", "torchhub"])
 
@@ -753,7 +754,7 @@ class WildEdge:
 
         Supported framework integrations
         ---------------------------------
-        ``"gguf"``
+        ``"llama_cpp"`` (``"gguf"`` remains a compatibility alias)
             Patches ``llama_cpp.Llama.__init__``. Requires ``llama-cpp-python``.
         ``"onnx"``
             Replaces ``ort.InferenceSession`` with a timed subclass.
@@ -816,6 +817,7 @@ class WildEdge:
                 self._activate_hub(hub_name)
             return
 
+        integration = canonical_integration(integration)
         if integration in self.SUPPORTED_HUBS:
             raise ValueError(
                 f"{integration!r} is a hub, not a framework integration. "

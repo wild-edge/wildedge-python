@@ -11,6 +11,7 @@ from wildedge.defaults import peek_default_client
 from wildedge.integrations.registry import IntegrationSpec
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.runtime import bootstrap
+from wildedge.settings import parse_integration_list
 from wildedge.transmitter import IngestResponse, TransmitError
 
 
@@ -578,3 +579,12 @@ def test_doctor_json_includes_environment_and_statuses(monkeypatch, capsys):
     assert data["environment"]["autoload_on_pythonpath"] is False
     assert data["config_status"] == "PASS"
     assert data["connectivity_status"] == "SKIP"
+
+
+@pytest.mark.parametrize("names", ["gguf", "llama_cpp", "gguf,llama_cpp"])
+def test_llama_cpp_names_resolve_once_in_cli_and_environment(names):
+    assert cli.integration_list(names) == ["llama_cpp"]
+    assert parse_integration_list(names, []) == ["llama_cpp"]
+    assert cli.INTEGRATIONS_BY_NAME["gguf"] is cli.INTEGRATIONS_BY_NAME["llama_cpp"]
+    assert "llama_cpp" in cli.integration_list("all")
+    assert "gguf" not in cli.integration_list("all")

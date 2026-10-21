@@ -1,6 +1,6 @@
 """Gemma inference view.
 
-The Llama constructor is patched automatically by `wildedge run --integrations gguf`
+The Llama constructor is patched automatically by `wildedge run --integrations llama_cpp`
 via sitecustomize.py; load/unload/inference events are tracked without any
 wildedge imports here.
 

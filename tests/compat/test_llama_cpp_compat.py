@@ -16,7 +16,7 @@ MODEL_SHA256 = "270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d
 @pytest.fixture
 def llm(compat_client):
     model = downloaded_fixture("stories260K-f32.gguf", MODEL_URL, MODEL_SHA256)
-    compat_client.instrument("gguf")
+    compat_client.instrument("llama_cpp")
     return llama_cpp.Llama(model_path=str(model), n_ctx=128, seed=1, verbose=False)
 
 
