@@ -277,3 +277,7 @@ class TensorflowExtractor(BaseExtractor):
                 saved_model.load = build_load_patch(client_ref, saved_model_load)
 
             _tf_auto_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = TensorflowExtractor.install_auto_load_patch

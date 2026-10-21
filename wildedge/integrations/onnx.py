@@ -391,3 +391,7 @@ class OnnxExtractor(BaseExtractor):
             )
             ort.InferenceSession = patched_cls
             _ort_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = OnnxExtractor.install_auto_load_patch

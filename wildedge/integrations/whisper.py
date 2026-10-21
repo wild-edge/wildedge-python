@@ -115,7 +115,7 @@ def report_cached_load(client, model: object) -> None:
 
 
 class WhisperExtractor(BaseExtractor):
-    """Must come before MlxExtractor in the client's extractor order, which
+    """Must come before MlxExtractor in ``EXTRACTOR_SPECS``, which
     would otherwise claim MLX Whisper models as plain MLX models."""
 
     def can_handle(self, obj: object) -> bool:

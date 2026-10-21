@@ -307,3 +307,7 @@ class MlxExtractor(BaseExtractor):
         patched_generate.__wildedge_patch_name__ = MLX_GENERATE_PATCH_NAME  # type: ignore[attr-defined]
         patched_generate.__wildedge_original_call__ = original_generate  # type: ignore[attr-defined]
         _mlx_lm.generate = patched_generate
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = MlxExtractor.install_auto_load_patch
