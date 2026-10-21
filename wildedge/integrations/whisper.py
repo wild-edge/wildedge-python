@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 import mimetypes
 import wave
 from dataclasses import dataclass
@@ -17,23 +16,57 @@ from wildedge.model import ModelHandle, ModelInfo
 
 DESCRIPTOR_ATTR = "__wildedge_whisper_descriptor__"
 HANDLE_ATTR = "__wildedge_whisper_handle__"
+CLIENT_ATTR = "__wildedge_whisper_client__"
 SAMPLE_RATE = 16000
+
+# Upper bound for each captured audio or transcript attachment. The attachment
+# manager may apply a stricter limit of its own.
+MAX_CAPTURE_BYTES = 10 * 1024 * 1024
+
+# Languages written without spaces between words, where splitting on
+# whitespace does not give a word count.
+UNSPACED_LANGUAGES = frozenset({"bo", "ja", "km", "lo", "my", "th", "yue", "zh"})
 
 
 @dataclass
 class WhisperDescriptor:
-    path: str
+    """Model identity, worked out once when the model is loaded."""
+
+    name: str
+    source: str  # "local" or "huggingface"
     backend: str
     accelerator: str
     quantization: str | None = None
 
-    @property
-    def name(self) -> str:
-        return Path(self.path).name if Path(self.path).exists() else self.path
+    @classmethod
+    def from_path(
+        cls,
+        path: object,
+        backend: str,
+        accelerator: str,
+        quantization: str | None = None,
+    ) -> WhisperDescriptor:
+        name, source = model_name_and_source(str(path))
+        return cls(name, source, backend, accelerator, quantization)
 
     @property
     def model_id(self) -> str:
         return f"{self.backend}:{self.name}"
+
+
+def model_name_and_source(path: str) -> tuple[str, str]:
+    """Name a model by its hub repo, its local folder, or the ID as given.
+
+    A Hugging Face cache path (``.../models--org--name/snapshots/<sha>``) is
+    named ``org/name`` rather than after the snapshot hash.
+    """
+    for part in path.replace("\\", "/").split("/"):
+        if part.startswith("models--"):
+            return part[len("models--") :].replace("--", "/", 1), "huggingface"
+    local = Path(path).expanduser()
+    if local.exists():
+        return local.resolve().name, "local"
+    return path, "huggingface"
 
 
 def descriptor(obj: object) -> WhisperDescriptor | None:
@@ -42,6 +75,19 @@ def descriptor(obj: object) -> WhisperDescriptor | None:
         if isinstance(obj, WhisperDescriptor)
         else getattr(obj, DESCRIPTOR_ATTR, None)
     )
+
+
+def report_load(client, model: object, load_ms: int, **kwargs) -> None:
+    """Record a model load, including a reload of a model ID seen before.
+
+    The client skips the load event for an ID it already knows, which suits
+    wrappers around an already loaded model. Whisper loads always read the
+    weights again, for example when MLX switches back to an earlier model.
+    """
+    info = descriptor(model)
+    if info is not None:
+        client.auto_loaded.discard(info.model_id)
+    client._on_model_auto_loaded(model, load_ms=load_ms, **kwargs)
 
 
 class WhisperExtractor(BaseExtractor):
@@ -54,9 +100,7 @@ class WhisperExtractor(BaseExtractor):
         return overrides.pop("id", None) or info.model_id, ModelInfo(
             model_name=info.name,
             model_version=overrides.pop("version", "unknown"),
-            model_source=overrides.pop(
-                "source", "local" if Path(info.path).exists() else "huggingface"
-            ),
+            model_source=overrides.pop("source", info.source),
             model_format=overrides.pop(
                 "format", "mlx" if info.backend == "mlx_whisper" else "ctranslate2"
             ),
@@ -70,20 +114,7 @@ class WhisperExtractor(BaseExtractor):
         handle.detected_accelerator = info.accelerator
 
 
-def mlx_descriptor(path: object, dtype: object = "float16") -> WhisperDescriptor:
-    quantization = "fp16" if "16" in str(dtype) else "fp32"
-    try:
-        config = Path(str(path)) / "config.json"
-        if config.is_file():
-            quant = json.loads(config.read_text()).get("quantization") or {}
-            if isinstance(quant.get("bits"), int):
-                quantization = f"q{quant['bits']}"
-    except Exception as exc:
-        debug_failure("mlx_whisper", "quantization extraction", exc)
-    return WhisperDescriptor(str(path), "mlx_whisper", "gpu", quantization)
-
-
-def audio_meta(audio: object, duration: float | None = None) -> AudioInputMeta:
+def audio_meta(audio: object, audio_duration_s: float | None = None) -> AudioInputMeta:
     meta = AudioInputMeta()
     if isinstance(audio, (str, Path)):
         try:
@@ -99,15 +130,15 @@ def audio_meta(audio: object, duration: float | None = None) -> AudioInputMeta:
         meta.duration_ms = round(audio.shape[0] / SAMPLE_RATE * 1000)
         meta.sample_rate = SAMPLE_RATE
         meta.channels = 1
-    if duration is not None:
-        meta.duration_ms = round(duration * 1000)
+    if audio_duration_s is not None:
+        meta.duration_ms = round(audio_duration_s * 1000)
     return meta
 
 
-def audio_attachments(audio: object, limit: int) -> list[Attachment]:
+def audio_attachments(audio: object) -> list[Attachment]:
     if isinstance(audio, (str, Path)):
         path = Path(audio)
-        if path.is_file() and path.stat().st_size <= limit:
+        if path.is_file() and path.stat().st_size <= MAX_CAPTURE_BYTES:
             content_type = (
                 mimetypes.guess_type(str(path))[0] or "application/octet-stream"
             )
@@ -119,7 +150,10 @@ def audio_attachments(audio: object, limit: int) -> list[Attachment]:
                     name=path.name,
                 )
             ]
-    elif getattr(audio, "ndim", None) == 1 and audio.shape[0] * 2 + 44 <= limit:
+    elif (
+        getattr(audio, "ndim", None) == 1
+        and audio.shape[0] * 2 + 44 <= MAX_CAPTURE_BYTES
+    ):
         import numpy as np  # noqa: PLC0415 -- optional; provided by the active Whisper runtime
 
         pcm = (np.clip(np.asarray(audio), -1, 1) * 32767).astype("<i2")
@@ -140,45 +174,61 @@ def audio_attachments(audio: object, limit: int) -> list[Attachment]:
     return []
 
 
+def capture(audio: object, text: str) -> list[Attachment]:
+    attachments = audio_attachments(audio)
+    encoded = text.encode()
+    if encoded and len(encoded) <= MAX_CAPTURE_BYTES:
+        attachments.append(
+            Attachment(
+                content_type="text/plain",
+                role="output",
+                data=encoded,
+                name="transcript.txt",
+            )
+        )
+    return attachments
+
+
 def track_transcription(
     handle: ModelHandle,
     audio: object,
     text: str,
-    language: str | None,
-    duration_ms: int,
     *,
-    probability: float | None = None,
-    duration: float | None = None,
+    duration_ms: int,
+    language: str | None = None,
+    language_probability: float | None = None,
+    audio_duration_s: float | None = None,
+    word_count: int | None = None,
+    first_segment_ms: int | None = None,
     outcome: str = "completed",
-    words: int | None = None,
 ) -> None:
-    context = {"transcript_word_count": len(text.split()) if words is None else words}
+    """Record one transcription.
+
+    ``duration_ms`` is how long the transcription took; ``audio_duration_s``
+    is the length of the audio when the runtime reports it.
+    """
+    context: dict = {}
+    if language not in UNSPACED_LANGUAGES:
+        context["transcript_word_count"] = (
+            len(text.split()) if word_count is None else word_count
+        )
     if language is not None:
         context["language"] = language
-    if probability is not None:
-        context["language_confidence"] = probability
+    if language_probability is not None:
+        context["language_confidence"] = language_probability
+    if first_segment_ms is not None:
+        context["time_to_first_segment_ms"] = first_segment_ms
     attachments = None
     if handle.capture_attachments is not None:
         try:
-            # The manager enforces its own configured size/count limits as well.
-            limit = 10 * 1024 * 1024
-            attachments = audio_attachments(audio, limit)
-            if text and len(text.encode()) <= limit:
-                attachments.append(
-                    Attachment(
-                        content_type="text/plain",
-                        role="output",
-                        data=text.encode(),
-                        name="transcript.txt",
-                    )
-                )
+            attachments = capture(audio, text)
         except Exception as exc:
             debug_failure("whisper", "attachment capture", exc)
     handle.track_inference(
         duration_ms=duration_ms,
         input_modality="audio",
         output_modality="text",
-        input_meta=audio_meta(audio, duration),
+        input_meta=audio_meta(audio, audio_duration_s),
         context=context,
         attachments=attachments,
         success=outcome == "completed",

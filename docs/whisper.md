@@ -1,35 +1,105 @@
 # Local Whisper speech recognition
 
-Enable `mlx_whisper` on Apple Silicon or `faster_whisper` for CTranslate2 before loading the model or importing a transcription function by name:
+WildEdge tracks local Whisper transcription with two integrations:
+
+- `mlx_whisper` for [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) on Apple Silicon
+- `faster_whisper` for [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2)
+
+Initialize the SDK before loading a model or importing `transcribe` by name:
 
 ```python
 import wildedge
 
-client = wildedge.init(integrations=["mlx_whisper"], attachments_enabled=False)
+client = wildedge.init(integrations=["mlx_whisper"])
 import mlx_whisper
 
 result = mlx_whisper.transcribe("speech.wav", path_or_hf_repo="/models/whisper")
 ```
 
-For faster-whisper, consume the returned segments to finish the inference:
+faster-whisper decodes lazily, so the transcription is recorded once you have
+read all of its segments:
 
 ```python
-client = wildedge.init(integrations=["faster_whisper"], attachments_enabled=False)
+client = wildedge.init(integrations=["faster_whisper"])
 from faster_whisper import WhisperModel
 
 model = WhisperModel("/models/whisper", device="cpu", compute_type="int8")
 segments, info = model.transcribe("speech.wav")
 text = "".join(segment.text for segment in segments)
-client.flush()
-client.close()
 ```
 
-The SDK records model load time, backend-specific model identity, format (`mlx` or `ctranslate2`), family (`whisper`), accelerator and compute type/quantization. MLX's internal model cache produces one load per SDK owner; an already cached model is reported with zero load time and `model_cache_hit=true`. Warm-up transcriptions are tracked too.
+`BatchedInferencePipeline(model).transcribe(...)` is tracked the same way.
 
-Transcriptions include wall-clock duration, audio metadata, `transcript_word_count` and detected `language` attributes. `language_confidence` is included when faster-whisper supplies it; MLX does not expose it. WAV paths provide original duration, sample rate, channels and bit depth. One-dimensional arrays are treated as 16 kHz mono, as required by these APIs. Other file formats retain the duration supplied by faster-whisper when available; the SDK does not decode files a second time to inspect them. These APIs do not supply text token usage or token-level TTFT, so the SDK does not invent those values.
+## What's recorded
 
-faster-whisper timing runs from `transcribe()` through segment exhaustion, including time between iterator pulls. Keep consuming within the trace/span that should own the operation. Explicit `segments.close()` emits one unsuccessful inference with `STREAM_CLOSED` and the word count consumed so far. Decoder failures emit one error event and propagate unchanged. Merely abandoning an iterator does not imply completion; explicitly close it when stopping early. Existing faster-whisper model objects stay bound to their original SDK client after replacement; recreate them for a new client.
+**Model loads**
 
-Audio and transcript attachments require `attachments_enabled=True`. Capture is off by default. The adapter caps retained transcript/audio attachment size at 10 MiB, and the configured attachment manager may apply stricter limits or a filter. No transcript text enters scalar event attributes. Use an `attachment_filter` when an application allows transcript capture but forbids audio upload. Raw audio file attachments must still exist when the transcription finishes.
+- Load time, format (`mlx` or `ctranslate2`), family (`whisper`), accelerator
+  and compute type or quantization.
+- The model ID is the backend plus the model name, for example
+  `faster_whisper:Systran/faster-whisper-tiny`. A Hugging Face repo keeps its
+  repo name, also when loaded from a cache path. A local folder is named after
+  the folder.
+- Every load is recorded, including a second `WhisperModel` for the same model.
+- mlx-whisper caches one model at a time and reloads when you switch models.
+  Each reload is recorded. A model that was already cached before the SDK
+  started is recorded once, with zero load time and `model_cache_hit=true`.
 
-See [the runnable example](../examples/whisper_example.py). Compatibility CI tests real decoding with random-weight MLX Whisper and the pinned public faster-whisper tiny model. Offline faster-whisper tests can use `WILDEDGE_FASTER_WHISPER_MODEL=/path/to/model`.
+**Transcriptions**
+
+- Wall-clock duration and `language`.
+- `language_confidence` (faster-whisper only; mlx-whisper doesn't report it).
+- `transcript_word_count`, except for languages written without spaces between
+  words, such as Chinese, Japanese and Thai.
+- `time_to_first_segment_ms` (faster-whisper only).
+- Audio metadata:
+  - WAV files: duration, sample rate, channels and bit depth.
+  - 1-D arrays: treated as 16 kHz mono, as both libraries expect.
+  - Other formats: duration only, when faster-whisper reports it. The SDK
+    doesn't decode the audio a second time.
+
+Token counts aren't reported; neither library exposes them.
+
+## faster-whisper segment lifecycle
+
+Timing runs from `transcribe()` until the last segment is read, including time
+your code spends between segments. Read the segments inside the trace or span
+that should own the transcription.
+
+| How the segments end | Recorded as |
+| --- | --- |
+| All segments read | One successful transcription |
+| `segments.close()` | One unsuccessful transcription, `STREAM_CLOSED` |
+| Loop exits early without `close()` | One unsuccessful transcription, `STREAM_ABANDONED`, sent when the iterator is garbage collected and timed up to the last segment read |
+| Never iterated (for example, only `info.language` was used) | Nothing |
+| Decoder error | One error event; the exception reaches your code unchanged |
+
+A `WhisperModel` stays with the SDK client that was active when it was created.
+After you replace the client, create the model again; until then, it isn't
+tracked and the SDK warns once.
+
+## Capturing audio and transcripts
+
+Capture is off by default. With `attachments_enabled=True`, each transcription
+uploads:
+
+- the input audio: the original file for a path, or a 16-bit WAV for an array
+- the transcript as `transcript.txt`
+
+Keep in mind:
+
+- Each attachment is capped at 10 MiB, and the client's own attachment limits
+  also apply. A transcript over the cap isn't uploaded at all.
+- Audio passed as a file-like object isn't captured.
+- An audio file must still exist when the transcription finishes.
+- To upload transcripts but not audio, pass an `attachment_filter` that keeps
+  only output attachments:
+  `attachment_filter=lambda items: [a for a in items if a.role == "output"]`.
+- Transcript text is never added to event attributes.
+
+## Examples and tests
+
+See [the runnable example](../examples/whisper_example.py). Compatibility CI
+decodes real audio with a random-weight MLX Whisper model and the pinned public
+faster-whisper tiny model. To run the faster-whisper tests offline, set
+`WILDEDGE_FASTER_WHISPER_MODEL=/path/to/model`.

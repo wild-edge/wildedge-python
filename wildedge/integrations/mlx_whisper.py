@@ -8,16 +8,58 @@ import importlib
 import threading
 import time
 
-from wildedge.integrations.common import debug_failure, track_api_error
+from wildedge.integrations.common import (
+    debug_failure,
+    dtype_to_quantization,
+    track_api_error,
+)
 from wildedge.integrations.whisper import (
     DESCRIPTOR_ATTR,
+    WhisperDescriptor,
     descriptor,
-    mlx_descriptor,
+    report_load,
     track_transcription,
 )
 from wildedge.timing import elapsed_ms
 
 _PATCH_LOCK = threading.Lock()
+
+# mlx_whisper.transcribe's default for path_or_hf_repo.
+DEFAULT_REPO = "mlx-community/whisper-tiny"
+
+
+def mlx_accelerator() -> str:
+    try:
+        import mlx.core as mx  # noqa: PLC0415 -- optional runtime
+
+        return "cpu" if "cpu" in str(mx.default_device()) else "gpu"
+    except Exception as exc:
+        debug_failure("mlx_whisper", "device detection", exc)
+        return "gpu"
+
+
+def mlx_quantization(model: object, dtype: object) -> str:
+    """Bit width of quantized layers, else the weight dtype."""
+    try:
+        for _, layer in model.named_modules():  # type: ignore[union-attr]
+            bits = getattr(layer, "bits", None)
+            if isinstance(bits, int):
+                return f"q{bits}"
+    except Exception as exc:
+        debug_failure("mlx_whisper", "quantization detection", exc)
+    return dtype_to_quantization(str(dtype)) or "f32"
+
+
+def describe(model: object, path: object, dtype: object) -> WhisperDescriptor:
+    return WhisperDescriptor.from_path(
+        path, "mlx_whisper", mlx_accelerator(), mlx_quantization(model, dtype)
+    )
+
+
+def requested_model(kwargs: dict) -> tuple[str, str]:
+    """Model path and dtype that ``mlx_whisper.transcribe`` uses for these arguments."""
+    dtype = "float16" if kwargs.get("fp16", True) else "float32"
+    return kwargs.get("path_or_hf_repo", DEFAULT_REPO), dtype
 
 
 def install_auto_load_patch(client_ref):
@@ -33,6 +75,8 @@ def _install(client_ref):
     if getattr(original, "__wildedge_patch_name__", None) == "mlx_whisper":
         return
     original_load = module.load_model
+    # The client that owns the transcription in progress, so a load inside it
+    # reports to the same client even if the default changes meanwhile.
     active_client = contextvars.ContextVar("wildedge_mlx_whisper_client", default=None)
 
     @functools.wraps(original_load)
@@ -42,15 +86,9 @@ def _install(client_ref):
         model = original_load(path_or_hf_repo, *args, **kwargs)
         try:
             dtype = kwargs.get("dtype", args[0] if args else "float32")
-            info = mlx_descriptor(path_or_hf_repo, dtype)
-            for _, layer in model.named_modules():
-                bits = getattr(layer, "bits", None)
-                if isinstance(bits, int):
-                    info.quantization = f"q{bits}"
-                    break
-            setattr(model, DESCRIPTOR_ATTR, info)
+            setattr(model, DESCRIPTOR_ATTR, describe(model, path_or_hf_repo, dtype))
             if client is not None and not client.closed:
-                client._on_model_auto_loaded(model, load_ms=elapsed_ms(t0))
+                report_load(client, model, elapsed_ms(t0))
         except Exception as exc:
             debug_failure("mlx_whisper", "model registration", exc)
         return model
@@ -66,41 +104,43 @@ def _install(client_ref):
             result = original(audio, *args, **kwargs)
         except Exception as exc:
             try:
-                info = mlx_descriptor(
-                    kwargs.get("path_or_hf_repo", "mlx-community/whisper-tiny"),
-                    "float16" if kwargs.get("fp16", True) else "float32",
-                )
-                track_api_error(client.register_model(info), exc, elapsed_ms(t0))
+                if not client.closed:
+                    path, dtype = requested_model(kwargs)
+                    handle = client.register_model(describe(None, path, dtype))
+                    track_api_error(handle, exc, elapsed_ms(t0))
             except Exception as telemetry_exc:
                 debug_failure("mlx_whisper", "error tracking", telemetry_exc)
             raise
         finally:
             active_client.reset(token)
-        if not client.closed:
-            try:
-                model = module.ModelHolder.model
-                info = descriptor(model) or mlx_descriptor(
-                    kwargs.get("path_or_hf_repo", "mlx-community/whisper-tiny"),
-                    "float16" if kwargs.get("fp16", True) else "float32",
+        if client.closed:
+            return result
+        try:
+            # mlx_whisper keeps the last model in ModelHolder. It was either
+            # loaded by this call (and reported by load above) or reused.
+            model = module.ModelHolder.model
+            info = descriptor(model)
+            if info is None:
+                # Loaded before instrumentation started.
+                info = describe(model, *requested_model(kwargs))
+                setattr(model, DESCRIPTOR_ATTR, info)
+            if info.model_id not in client.auto_loaded:
+                # Cached before this client existed: report it once, with no
+                # load time of its own.
+                client._on_model_auto_loaded(
+                    model,
+                    load_ms=0,
+                    load_kwargs={"context": {"model_cache_hit": True}},
                 )
-                if model is not None:
-                    setattr(model, DESCRIPTOR_ATTR, info)
-                    if info.model_id not in client.auto_loaded:
-                        client._on_model_auto_loaded(
-                            model,
-                            load_ms=0,
-                            load_kwargs={"context": {"model_cache_hit": True}},
-                        )
-                handle = client.register_model(model if model is not None else info)
-                track_transcription(
-                    handle,
-                    audio,
-                    result.get("text", ""),
-                    result.get("language"),
-                    elapsed_ms(t0),
-                )
-            except Exception as exc:
-                debug_failure("mlx_whisper", "transcription tracking", exc)
+            track_transcription(
+                client.register_model(model),
+                audio,
+                result.get("text", ""),
+                duration_ms=elapsed_ms(t0),
+                language=result.get("language"),
+            )
+        except Exception as exc:
+            debug_failure("mlx_whisper", "transcription tracking", exc)
         return result
 
     transcribe.__wildedge_patch_name__ = "mlx_whisper"

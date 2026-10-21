@@ -38,8 +38,9 @@ with client.chat.completions.create(model=model, messages=messages, stream=True)
 Async streams support `async with`, `await stream.close()`, and
 `await stream.aclose()`. A bare `break` without closing, or simply abandoning an
 unconsumed stream, does not provide an observable end of the operation. There is
-no garbage-collection finalizer. Keep stream consumption within the lifetime of
-the SDK client and do not consume one iterator concurrently from multiple tasks.
+no garbage-collection finalizer, except for faster-whisper segments (see
+[whisper.md](whisper.md)). Keep stream consumption within the lifetime of the
+SDK client and do not consume one iterator concurrently from multiple tasks.
 
 ## Audit findings outside these wrappers
 
