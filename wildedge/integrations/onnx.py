@@ -20,6 +20,7 @@ from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
+    hf_repo_from_cache_path,
     image_brightness_histogram,
     infer_input_modality_from_names,
 )
@@ -69,10 +70,7 @@ def model_id_from_path(path: str) -> str | None:
     - HF Hub cache path (``models--org--name/...``): returns ``org/name``
     - Plain file path: returns the stem if it's not a generic name
     """
-    for part in path.replace("\\", "/").split("/"):
-        if part.startswith("models--"):
-            return part[len("models--") :].replace("--", "/", 1)
-    return model_file_stem(path)
+    return hf_repo_from_cache_path(path) or model_file_stem(path)
 
 
 def model_file_stem(path: object) -> str | None:

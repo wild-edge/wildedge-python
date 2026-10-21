@@ -5,6 +5,14 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Added
+
+- `mlx_whisper` and `faster_whisper` integrations track local Whisper model
+  loads and transcriptions, including faster-whisper's
+  `BatchedInferencePipeline`. Transcriptions record duration, language, word
+  count and audio metadata. With `attachments_enabled=True` they also upload
+  the input audio and transcript. See docs/whisper.md.
+
 ### Fixed
 
 - Process-wide integrations and hub patches now support sequential SDK client

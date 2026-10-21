@@ -71,10 +71,12 @@ jobs:
             --version-set "${{ matrix.version-set }}" \
             --python-version "${{ matrix.python-version }}"
       - name: Cache downloaded test models
-        if: matrix.integration == 'gguf'
+        if: matrix.integration == 'gguf' || matrix.integration == 'faster_whisper'
         uses: actions/cache@v4
         with:
-          path: tests/compat/.cache
+          path: |
+            tests/compat/.cache
+            ~/.cache/huggingface/hub
           key: compat-models-${{ matrix.integration }}-${{ hashFiles(format('tests/compat/test_{0}_compat.py', matrix.integration)) }}
       - name: Run compatibility tests
         run: python -m pytest "tests/compat/test_${{ matrix.integration }}_compat.py" -q -rxX

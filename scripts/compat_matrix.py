@@ -58,6 +58,10 @@ MATRIX = {
     "mlx": {
         "current": ["mlx==0.32.4", "mlx-lm==0.32.2"],
     },
+    "faster_whisper": {
+        "current": ["faster-whisper==1.2.1", "ctranslate2==4.8.2", "numpy==2.2.6"]
+    },
+    "mlx_whisper": {"current": ["mlx-whisper==0.4.3", "mlx==0.32.3", "numpy==2.2.6"]},
 }
 
 SUPPORTED_PYTHON = {
@@ -71,6 +75,8 @@ SUPPORTED_PYTHON = {
     "transformers": ["3.10", "3.11", "3.12", "3.13"],
     "ultralytics": ["3.10", "3.11", "3.12", "3.13"],
     "mlx": ["3.12", "3.13"],
+    "faster_whisper": ["3.12", "3.13"],
+    "mlx_whisper": ["3.12", "3.13"],
 }
 
 # Integrations without a row of their own, and the row that exercises them.
@@ -81,6 +87,7 @@ COVERED_BY = {
 # Integrations that need a specific runner; everything else runs on Linux.
 RUNNER = {
     "mlx": "macos-14",
+    "mlx_whisper": "macos-14",
 }
 
 # Python versions run as non-blocking canaries, and only with current pins.

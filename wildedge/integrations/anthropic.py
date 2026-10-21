@@ -15,6 +15,7 @@ from wildedge.integrations.common import (
     AsyncStreamWrapper,
     SyncStreamWrapper,
     debug_failure,
+    stream_error_code,
     track_api_error,
 )
 from wildedge.model import ModelInfo
@@ -203,7 +204,7 @@ def make_anthropic_stream_callbacks(
             input_modality="text",
             output_modality="generation",
             success=outcome == "completed",
-            error_code=None if outcome == "completed" else "STREAM_" + outcome.upper(),
+            error_code=stream_error_code(outcome),
             input_meta=build_input_meta(messages, ti),
             output_meta=GenerationOutputMeta(
                 task="generation",

@@ -28,9 +28,15 @@ from wildedge.hubs.torchhub import TorchHubTracker
 from wildedge.instrumentation import claim_instrumentation, has_other_live_owner
 from wildedge.integrations.anthropic import AnthropicExtractor
 from wildedge.integrations.base import BaseExtractor
+from wildedge.integrations.faster_whisper import (
+    install_auto_load_patch as install_faster_whisper,
+)
 from wildedge.integrations.gguf import GgufExtractor
 from wildedge.integrations.keras import KerasExtractor
 from wildedge.integrations.mlx import MlxExtractor
+from wildedge.integrations.mlx_whisper import (
+    install_auto_load_patch as install_mlx_whisper,
+)
 from wildedge.integrations.onnx import OnnxExtractor
 from wildedge.integrations.openai import OpenAIExtractor
 from wildedge.integrations.pytorch import PytorchExtractor
@@ -38,6 +44,7 @@ from wildedge.integrations.registry import noop_integrations, supported_integrat
 from wildedge.integrations.tensorflow import TensorflowExtractor
 from wildedge.integrations.transformers import TransformersExtractor
 from wildedge.integrations.ultralytics import UltralyticsExtractor
+from wildedge.integrations.whisper import WhisperExtractor
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
 from wildedge.paths import (
@@ -120,6 +127,7 @@ DEFAULT_EXTRACTORS: list[BaseExtractor] = [
     AnthropicExtractor(),
     UltralyticsExtractor(),
     TransformersExtractor(),
+    WhisperExtractor(),
     MlxExtractor(),
     PytorchExtractor(),
     TensorflowExtractor(),
@@ -253,6 +261,8 @@ class WildEdge:
         "anthropic": AnthropicExtractor.install_auto_load_patch,
         "gguf": GgufExtractor.install_auto_load_patch,
         "mlx": MlxExtractor.install_auto_load_patch,
+        "mlx_whisper": install_mlx_whisper,
+        "faster_whisper": install_faster_whisper,
         "onnx": OnnxExtractor.install_auto_load_patch,
         "openai": OpenAIExtractor.install_auto_load_patch,
         "timm": PytorchExtractor.install_timm_patch,
@@ -787,6 +797,8 @@ class WildEdge:
         ``"onnx"``
             Replaces ``ort.InferenceSession`` with a timed subclass.
             Requires ``onnxruntime``.
+        ``"mlx_whisper"`` / ``"faster_whisper"``
+            Tracks local speech recognition, including lazy segment consumption.
         ``"timm"``
             Patches ``timm.create_model``. Requires ``timm``.
         ``"tensorflow"``
@@ -883,8 +895,14 @@ class WildEdge:
         downloads: list[dict] | None = None,
         model_id: str | None = None,
         load_kwargs: dict | None = None,
+        reload: bool = False,
     ) -> None:
-        """Callback invoked by auto-patches after a model is constructed."""
+        """Callback invoked by auto-patches after a model is constructed.
+
+        A model ID seen before normally means a wrapper around a model that is
+        already loaded, so no second load event is sent. ``reload=True`` says
+        the weights were loaded again and records the load anyway.
+        """
         if self.closed:
             return
         # Always drain thread-local hub buffers to keep them clean.
@@ -896,7 +914,7 @@ class WildEdge:
             downloads = thread_records
 
         handle = self.register_model(obj, model_id=model_id)
-        already_tracked = handle.model_id in self.auto_loaded
+        already_tracked = handle.model_id in self.auto_loaded and not reload
         self.auto_loaded.add(handle.model_id)
 
         if already_tracked:
