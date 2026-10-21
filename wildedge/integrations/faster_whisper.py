@@ -7,7 +7,7 @@ import inspect
 import threading
 import time
 
-from wildedge import accelerators, modalities, quantizations
+from wildedge import accelerators, quantizations
 from wildedge.instrumentation import bind_client_reference
 from wildedge.integrations.common import (
     SyncStreamWrapper,
@@ -24,6 +24,7 @@ from wildedge.integrations.whisper import (
     report_load,
     track_transcription,
 )
+from wildedge.modalities import Modality
 from wildedge.timing import elapsed_ms
 
 _PATCH_LOCK = threading.Lock()
@@ -125,7 +126,7 @@ def wrap_transcribe(original, model_of=lambda owner: owner):
                 debug_failure(FASTER_WHISPER, "error tracking", telemetry_exc)
             raise
         collector = TranscriptCollector(
-            t0, capture=handle.wants_attachment(modalities.TEXT)
+            t0, capture=handle.wants_attachment(Modality.TEXT)
         )
 
         def done(duration_ms, first_segment_ms, *, outcome="completed"):

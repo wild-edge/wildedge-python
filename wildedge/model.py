@@ -29,6 +29,7 @@ from wildedge.events import (
     TextInputMeta,
 )
 from wildedge.logging import logger
+from wildedge.modalities import Modality
 from wildedge.platforms import capture_hardware, is_sampling
 from wildedge.platforms.hardware import HardwareContext
 from wildedge.tracing import _merge_correlation_fields
@@ -64,7 +65,7 @@ class ModelHandle:
         publish: Callable[[dict], None],
         capture_attachments: Callable[[list[Attachment], str, datetime], list[dict]]
         | None = None,
-        accepts_attachment: Callable[[str], bool] | None = None,
+        accepts_attachment: Callable[[Modality | str], bool] | None = None,
     ):
         self.model_id = model_id
         self.info = info
@@ -74,7 +75,7 @@ class ModelHandle:
         self.detected_accelerator: str = accelerators.CPU
         self.last_inference_id: str | None = None
 
-    def wants_attachment(self, modality: str) -> bool:
+    def wants_attachment(self, modality: Modality | str) -> bool:
         """Whether an attachment of this modality would be uploaded.
 
         Integrations check this before building an attachment, so a blocked

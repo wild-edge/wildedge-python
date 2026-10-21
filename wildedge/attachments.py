@@ -45,7 +45,7 @@ class Attachment:
     disk). ``content_type`` is the MIME type baked into the presigned URL and
     echoed in the inference event reference. ``modality`` (see
     ``wildedge.modalities``) decides whether the client's
-    ``attachment_modalities`` allow the upload; it defaults to the one
+    ``attachment_modalities`` allow the upload. It defaults to the one
     ``content_type`` belongs to.
     """
 
@@ -54,11 +54,14 @@ class Attachment:
     data: bytes | None = None
     path: str | None = None
     name: str | None = None
-    modality: str | None = None
+    modality: modalities.Modality | str | None = None
 
     def __post_init__(self) -> None:
-        if self.modality is None:
-            self.modality = modalities.from_content_type(self.content_type)
+        self.modality = (
+            modalities.from_content_type(self.content_type)
+            if self.modality is None
+            else modalities.normalize(self.modality)
+        )
 
     def resolve_bytes(self) -> bytes:
         if self.data is not None:
@@ -267,14 +270,14 @@ class AttachmentManager:
         max_per_inference: int = constants.DEFAULT_MAX_ATTACHMENTS_PER_INFERENCE,
         max_size_bytes: int = constants.DEFAULT_MAX_ATTACHMENT_SIZE_BYTES,
         attachment_filter: Callable[[list[Attachment]], list[Attachment]] | None = None,
-        allowed_modalities: Iterable[str] | None = None,
+        allowed_modalities: Iterable[modalities.Modality | str] | None = None,
         debug: bool = False,
     ) -> None:
         self.store = store
         # None means the default. Then a blocked modality is logged as a
-        # warning, since the app may not know about the setting; an explicit
+        # warning, since the app may not know about the setting. An explicit
         # choice is only logged in debug mode.
-        self.allowed_modalities = frozenset(
+        self.allowed_modalities = modalities.parse(
             modalities.DEFAULT if allowed_modalities is None else allowed_modalities
         )
         self.blocked_log_level = (
@@ -292,15 +295,16 @@ class AttachmentManager:
         """Stop accepting attachments (e.g. the project has the feature off)."""
         self.enabled = False
 
-    def accepts(self, modality: str) -> bool:
+    def accepts(self, modality: modalities.Modality | str) -> bool:
         """Whether attachments of this modality may be uploaded."""
+        modality = modalities.normalize(modality)
         if modality in self.allowed_modalities:
             return True
         if modality not in self.blocked_reported:
             self.blocked_reported.add(modality)
             logger.log(
                 self.blocked_log_level,
-                "wildedge: not uploading %s attachments; add %r to "
+                "wildedge: not uploading %s attachments. Add %r to "
                 "attachment_modalities to allow them",
                 modality,
                 modality,

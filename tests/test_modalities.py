@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from wildedge import constants, modalities
+from wildedge import Modality, constants, modalities
 from wildedge.attachments import Attachment, AttachmentManager, AttachmentStore
 from wildedge.client import WildEdge
 from wildedge.model import ModelHandle, ModelInfo
@@ -195,3 +195,21 @@ def test_enabled_attachments_with_modalities_do_not_warn(tmp_path, caplog):
         assert not any("attachments_enabled" in r.message for r in caplog.records)
     finally:
         wildedge.close()
+
+
+def test_enum_members_and_strings_are_interchangeable(tmp_path):
+    manager = AttachmentManager(
+        AttachmentStore(str(tmp_path)), allowed_modalities=[Modality.AUDIO, "text"]
+    )
+    assert manager.allowed_modalities == {"audio", "text"}
+    assert manager.accepts(Modality.TEXT)
+    assert manager.accepts("audio")
+    attachment = Attachment(
+        content_type="application/octet-stream", data=b"x", modality=Modality.AUDIO
+    )
+    assert attachment.modality == "audio"
+
+
+def test_unknown_attachment_modality_is_rejected():
+    with pytest.raises(ValueError, match="sound"):
+        Attachment(content_type="text/plain", data=b"x", modality="sound")

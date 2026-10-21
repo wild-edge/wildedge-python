@@ -51,13 +51,19 @@ transcripts. Voice recordings, images and video can identify a person, so they
 are uploaded only when you list them:
 
 ```python
-wildedge.init(attachments_enabled=True, attachment_modalities=["text", "audio"])
+from wildedge import Modality
+
+wildedge.init(
+    attachments_enabled=True,
+    attachment_modalities=[Modality.TEXT, Modality.AUDIO],
+)
 ```
 
-From the CLI: `wildedge run --attachments --attachment-modalities text,audio`.
+Plain strings work too (`["text", "audio"]`), and `"all"` allows every
+modality. From the CLI: `wildedge run --attachments --attachment-modalities text,audio`.
 
 Each attachment's modality comes from its content type (`audio/wav` is
-`audio`, `application/json` is `text`); anything else, such as raw tensors,
+`audio`, `application/json` is `text`). Anything else, such as raw tensors,
 is `other`. The first time an attachment is dropped this way, the SDK logs a
 warning naming the setting to change (only a debug message if you set
 `attachment_modalities` yourself). Blocked attachments are dropped before

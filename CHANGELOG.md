@@ -13,8 +13,8 @@ under Unreleased and move into a version section at release time.
   `text`, `image`, `audio`, `video` or `other`. It applies to manual and
   automatic attachments alike. **Apps that upload images or other non-text
   attachments must now allow them**, for example
-  `attachment_modalities=["text", "image"]`. The SDK warns once per blocked
-  modality. `Attachment` gains an optional `modality` field for content types
+  `attachment_modalities=["text", "image"]` or the new `wildedge.Modality`
+  enum. The SDK warns once per blocked modality. `Attachment` gains an optional `modality` field for content types
   that don't identify the data. Whisper uploads the input audio only when
   `audio` is allowed.
 

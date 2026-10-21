@@ -274,7 +274,7 @@ class WildEdge:
         ),
         attachment_filter: Callable[[list[Attachment]], list[Attachment]] | None = None,
         attachment_dir: str | None = None,
-        attachment_modalities: str | Iterable[str] | None = None,
+        attachment_modalities: str | Iterable[modalities.Modality | str] | None = None,
     ):
         env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
         dsn = env.dsn
@@ -380,10 +380,10 @@ class WildEdge:
             else modalities.parse(attachment_modalities)
         )
         if allowed_modalities is not None and not attachments_enabled:
-            # The list only says what may be uploaded; it doesn't turn uploads on.
+            # The list only says what may be uploaded. It doesn't turn uploads on.
             logger.warning(
                 "wildedge: attachment_modalities is set but attachments are "
-                "disabled; set attachments_enabled=True to upload them"
+                "disabled. Set attachments_enabled=True to upload them"
             )
         self.attachment_manager: AttachmentManager | None = None
         self.attachment_uploader: AttachmentUploader | None = None

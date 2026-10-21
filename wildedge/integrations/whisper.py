@@ -8,7 +8,6 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-from wildedge import modalities
 from wildedge.attachments import Attachment
 from wildedge.events.inference import AudioInputMeta
 from wildedge.integrations.base import BaseExtractor
@@ -17,6 +16,7 @@ from wildedge.integrations.common import (
     hf_repo_from_cache_path,
     stream_error_code,
 )
+from wildedge.modalities import Modality
 from wildedge.model import ModelHandle, ModelInfo
 
 # Backends, used in model IDs and as the integration names.
@@ -196,7 +196,7 @@ def audio_attachments(audio: object) -> list[Attachment]:
                     role="input",
                     path=str(path),
                     name=path.name,
-                    modality=modalities.AUDIO,
+                    modality=Modality.AUDIO,
                 )
             ]
     elif is_sample_array(audio) and pcm16_wav_size(audio.shape[0]) <= MAX_CAPTURE_BYTES:
@@ -216,13 +216,13 @@ def transcription_attachments(
 ) -> list[Attachment]:
     """The input audio and the transcript, each if the client allows it."""
     attachments = []
-    if handle.wants_attachment(modalities.AUDIO):
+    if handle.wants_attachment(Modality.AUDIO):
         attachments.extend(audio_attachments(audio))
     encoded = text.encode()
     if (
         encoded
         and len(encoded) <= MAX_CAPTURE_BYTES
-        and handle.wants_attachment(modalities.TEXT)
+        and handle.wants_attachment(Modality.TEXT)
     ):
         attachments.append(
             Attachment(
