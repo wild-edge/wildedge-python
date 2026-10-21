@@ -47,31 +47,53 @@ environment validation, and production configuration.
 
 ## SDK
 
-Use the SDK when you can't wrap the process, or when you want traces and spans
-around your own code. `wildedge run` covers everything else.
+To try tracking in your code, run one local text-generation model on CPU.
+Install the model's dependencies:
+
+```bash
+uv add transformers torch
+```
+
+Save this as `app.py`. The first run downloads the model from Hugging Face;
+no model-provider API key is needed.
 
 ```python
 import wildedge
-from openai import OpenAI
 from transformers import pipeline
 
-wildedge.init(integrations=["transformers", "openai"])  # optional under `wildedge run`
-
-local = pipeline("text-generation", model="HuggingFaceTB/SmolLM2-360M-Instruct")
-remote = OpenAI()
-
-with wildedge.trace(run_id="run-1"):
-    with wildedge.span(kind="agent_step", name="draft"):
-        draft = local(prompt)[0]["generated_text"]
-    with wildedge.span(kind="agent_step", name="refine"):
-        remote.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": draft}],
-        )
+client = wildedge.init(integrations=["transformers"])
+try:
+    model = pipeline(
+        "text-generation",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct",
+        device=-1,  # CPU
+    )
+    result = model(
+        "Explain how rain forms in one sentence.",
+        max_new_tokens=32,
+        do_sample=False,
+        return_full_text=False,
+    )
+    print(result[0]["generated_text"])
+finally:
+    client.close(timeout=10)
 ```
 
-See [Deployment](https://github.com/wild-edge/wildedge-python/blob/main/docs/deployment.md)
-for client lifecycle and the full contract.
+Set the DSN from your WildEdge project and run it:
+
+```bash
+export WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>"
+uv run python app.py
+```
+
+Open your project at [app.wildedge.dev](https://app.wildedge.dev) to inspect the
+model load and inference events, including duration and model metadata. The
+generated text is printed locally; it isn't uploaded.
+
+Already have an application? Initialize WildEdge before creating your model or
+API client. See [examples for each integration](#supported-integrations),
+[traces and spans](docs/manual-tracking.md#track-spans-for-agentic-workflows),
+and the [deployment guide](docs/deployment.md) for lifecycle details.
 
 ## Supported integrations
 
