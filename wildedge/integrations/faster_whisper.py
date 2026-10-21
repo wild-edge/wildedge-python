@@ -7,6 +7,7 @@ import inspect
 import threading
 import time
 
+from wildedge import accelerators
 from wildedge.instrumentation import bind_client_reference
 from wildedge.integrations.common import (
     SyncStreamWrapper,
@@ -32,14 +33,6 @@ MODEL_PATH_PARAM = "model_size_or_path"
 
 # Outcome of a segment loop that stopped without reading to the end.
 OUTCOME_ABANDONED = "abandoned"
-
-
-def accelerator_for(device: str) -> str:
-    """WildEdge accelerator for a CTranslate2 device ("cuda" or "cpu").
-
-    The runtime reports the resolved device, so "auto" doesn't reach here.
-    """
-    return "gpu" if device == "cuda" else "cpu"
 
 
 class TranscriptCollector:
@@ -167,8 +160,10 @@ def _install(client_ref):
         try:
             bound = signature.bind(self, *args, **kwargs)
             bound.apply_defaults()
-            runtime = self.model  # the ctranslate2.models.Whisper instance
-            device = getattr(runtime, "device", bound.arguments.get("device", "cpu"))
+            # The ctranslate2.models.Whisper instance. Its device is the
+            # resolved one ("cpu" or "cuda"), already an accelerator name.
+            runtime = self.model
+            device = getattr(runtime, "device", None) or accelerators.CPU
             compute = getattr(
                 runtime, "compute_type", bound.arguments.get("compute_type")
             )
@@ -178,7 +173,7 @@ def _install(client_ref):
                 WhisperDescriptor.from_path(
                     bound.arguments[MODEL_PATH_PARAM],
                     FASTER_WHISPER,
-                    accelerator_for(device),
+                    device,
                     compute,
                 ),
             )

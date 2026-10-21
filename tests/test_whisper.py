@@ -309,7 +309,7 @@ def test_faster_constructor_describes_the_runtime(
     )
     info = getattr(model, DESCRIPTOR_ATTR)
     assert info.model_id == "faster_whisper:small"
-    assert info.accelerator == "gpu"
+    assert info.accelerator == "cuda"
     assert info.quantization == "float16"
     assert len(events_of(instrumented_client.events, "model_load")) == 1
 
@@ -421,7 +421,8 @@ def test_mlx_load_reads_quantization(fake_mlx_whisper, instrumented_client):
     install_mlx(claim_instrumentation(instrumented_client, "mlx_whisper"))
     fake_mlx_whisper.transcribe("audio.wav", path_or_hf_repo="org/model-q4")
     fake_mlx_whisper.transcribe("audio.wav", path_or_hf_repo="org/model-q4")
-    assert len(events_of(instrumented_client.events, "model_load")) == 1
+    (load,) = events_of(instrumented_client.events, "model_load")
+    assert load["load"]["accelerator"] == "mps"
     assert len(events_of(instrumented_client.events, "inference")) == 2
     registered = instrumented_client.registry.models["mlx_whisper:org/model-q4"]
     assert registered.quantization == "q4"

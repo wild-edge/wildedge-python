@@ -9,6 +9,7 @@ import inspect
 import threading
 import time
 
+from wildedge import accelerators
 from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
@@ -34,13 +35,14 @@ DEFAULT_FP16 = True
 
 
 def mlx_accelerator() -> str:
+    """MLX runs on the Apple GPU unless the app switched its default to CPU."""
     try:
         import mlx.core as mx  # noqa: PLC0415 -- optional runtime
 
-        return "cpu" if mx.default_device() == mx.cpu else "gpu"
+        return accelerators.CPU if mx.default_device() == mx.cpu else accelerators.MPS
     except Exception as exc:
         debug_failure(MLX_WHISPER, "device detection", exc)
-        return "gpu"
+        return accelerators.MPS
 
 
 def mlx_quantization(model: object, dtype: object) -> str | None:
