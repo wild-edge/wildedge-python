@@ -85,7 +85,12 @@ uploads the transcript as `transcript.txt`. The input audio is a voice
 recording, so it is uploaded only when you also allow audio:
 
 ```python
-wildedge.init(attachments_enabled=True, attachment_modalities=["text", "audio"])
+from wildedge import Modality
+
+wildedge.init(
+    attachments_enabled=True,
+    attachment_modalities=[Modality.TEXT, Modality.AUDIO],
+)
 ```
 
 The audio is the original file for a path, or a 16-bit WAV for an array.
@@ -96,7 +101,7 @@ Keep in mind:
   also apply. A transcript over the cap isn't uploaded at all.
 - Audio passed as a file-like object isn't captured.
 - An audio file must still exist when the transcription finishes.
-- To upload audio but not transcripts, use `attachment_modalities=["audio"]`.
+- To upload audio but not transcripts, use `attachment_modalities=[Modality.AUDIO]`.
 - Transcript text is never added to event attributes.
 
 ## Examples and tests

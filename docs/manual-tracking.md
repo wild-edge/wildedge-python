@@ -265,9 +265,12 @@ Enable it at init, then pass `attachments=` to `track_inference`:
 
 ```python
 import wildedge
-from wildedge import Attachment
+from wildedge import Attachment, Modality
 
-client = wildedge.init(attachments_enabled=True, attachment_modalities=["text", "image"])
+client = wildedge.init(
+    attachments_enabled=True,
+    attachment_modalities=[Modality.TEXT, Modality.IMAGE],
+)
 handle = client.register_model(model, model_id="doc-classifier-v1")
 
 handle.track_inference(
@@ -284,8 +287,9 @@ handle.track_inference(
 An `Attachment` carries either in-memory `data` or a file `path`, plus a
 `role` (`"input"` or `"output"`) and `content_type`. Only text is uploaded
 unless `attachment_modalities` allows more, which is why the example lists
-`"image"`. The modality comes from `content_type`. Pass `modality=` when the
-content type doesn't say, such as audio in `application/octet-stream`. The SDK writes a reference
+`Modality.IMAGE`. The modality comes from `content_type`. Pass `modality=` when the
+content type doesn't say, such as `modality=Modality.AUDIO` for audio in
+`application/octet-stream`. The SDK writes a reference
 into the inference event immediately and uploads the bytes in the background via
 a presigned URL. A failed or disabled upload never blocks telemetry.
 

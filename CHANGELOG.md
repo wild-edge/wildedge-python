@@ -9,14 +9,15 @@ under Unreleased and move into a version section at release time.
 
 - Attachments only upload text by default. The new `attachment_modalities`
   setting (`WILDEDGE_ATTACHMENT_MODALITIES`, `wildedge run
-  --attachment-modalities`) lists the kinds of data that may be uploaded:
-  `text`, `image`, `audio`, `video` or `other`. It applies to manual and
-  automatic attachments alike. **Apps that upload images or other non-text
-  attachments must now allow them**, for example
-  `attachment_modalities=["text", "image"]` or the new `wildedge.Modality`
-  enum. The SDK warns once per blocked modality. `Attachment` gains an optional `modality` field for content types
-  that don't identify the data. Whisper uploads the input audio only when
-  `audio` is allowed.
+  --attachment-modalities`) lists the kinds of data that may be uploaded, as
+  members of the new `wildedge.Modality` enum: `TEXT`, `IMAGE`, `AUDIO`,
+  `VIDEO` or `OTHER`. It applies to manual and automatic attachments alike.
+  **Apps that upload images or other non-text attachments must now allow
+  them**, for example
+  `attachment_modalities=[Modality.TEXT, Modality.IMAGE]`. The SDK warns once
+  per blocked modality. `Attachment` gains an optional `modality` field for
+  content types that don't identify the data. Whisper uploads the input audio
+  only when `Modality.AUDIO` is allowed.
 
 ### Added
 
@@ -24,7 +25,7 @@ under Unreleased and move into a version section at release time.
   loads and transcriptions, including faster-whisper's
   `BatchedInferencePipeline`. Transcriptions record duration, language, word
   count and audio metadata. With `attachments_enabled=True` they also upload
-  the transcript, and the input audio when `audio` is in
+  the transcript, and the input audio when `Modality.AUDIO` is in
   `attachment_modalities`. See docs/whisper.md.
 
 ### Fixed
