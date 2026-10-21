@@ -21,12 +21,12 @@ Prompts and outputs aren't uploaded unless you explicitly attach them.
 
 **[Get started](#install)** · [Explore the demo](https://wildedge.dev/demo) · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
 
-<a href="https://wildedge.dev/demo">
-  <img src="docs/images/demo-model-performance.jpg" alt="WildEdge demo showing a local summarizer's latency, time to first token, throughput, and model health" width="640">
-</a>
+| Model performance | Events | Hardware |
+|:---:|:---:|:---:|
+| <a href="docs/images/demo-model-performance.jpg"><img src="docs/images/demo-model-performance.jpg" alt="Model health, latency, time to first token, and throughput" width="180"></a> | <a href="docs/images/demo-events.jpg"><img src="docs/images/demo-events.jpg" alt="Inference and error events with model and device metadata" width="180"></a> | <a href="docs/images/demo-hardware.jpg"><img src="docs/images/demo-hardware.jpg" alt="Thermal state, accelerator usage, and CPU throttling" width="180"></a> |
 
-*Spot performance changes in local models. [Explore the read-only demo](https://wildedge.dev/demo)
-with sample data. Pictured: News Reader → Models → Article Summarizer.*
+*Demo sample data across WildEdge SDKs. Click a thumbnail for the full-size image,
+or [explore the read-only demo](https://wildedge.dev/demo).*
 
 ## Install
 
