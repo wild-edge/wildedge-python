@@ -196,19 +196,8 @@ work through the `openai` integration — pass their `base_url`. See
 [Providers](https://github.com/wild-edge/wildedge-python/blob/main/docs/providers.md)
 for every recognized endpoint.
 
-Using httpx, requests or urllib directly instead of the `openai` / `anthropic`
-client libraries? Wrap the call in
-[`wildedge.llm_api()`](https://github.com/wild-edge/wildedge-python/blob/main/docs/llm_api.md)
-to get the same events:
-[llm_api_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/llm_api_example.py).
-
-The `openai` integration also tracks `client.responses.create(...)`, including
-async clients and `stream=True`. See [Responses tracking](docs/providers.md#responses-api)
-for coverage and streaming behavior.
-
-The `openai` integration also tracks sync and async `embeddings.create()` calls.
-See [Embeddings](docs/providers.md#embeddings) and the
-[example](examples/openai_embeddings_example.py).
+See [API tracking](docs/providers.md) for endpoint coverage, streaming, embeddings,
+and tracking calls made without the official client libraries.
 
 </details>
 

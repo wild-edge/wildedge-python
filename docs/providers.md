@@ -8,6 +8,12 @@ mapped to a `model_source` name on every event.
 OpenAI(base_url="https://api.fireworks.ai/inference/v1")
 ```
 
+## Direct HTTP calls
+
+For calls made with httpx, requests, or urllib instead of the OpenAI or
+Anthropic client libraries, use [`wildedge.llm_api()`](llm_api.md).
+See the [direct HTTP example](../examples/llm_api_example.py) for usage.
+
 ## Recognized providers
 
 | Provider | Base URL | `model_source` |
