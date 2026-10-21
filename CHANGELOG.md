@@ -41,12 +41,13 @@ under Unreleased and move into a version section at release time.
   chat messages and replies. `attachments_enabled=True` enables uploads only for
   attachments explicitly passed to `track_inference(attachments=[...])`.
   Apps relying on automatic GGUF capture must supply attachments explicitly.
-- Enabling an integration or hub on a second live client now raises
-  `RuntimeError` while another client owns process-wide instrumentation. This
-  includes `wildedge.init(dsn=..., integrations=[...])` under `wildedge run`.
-  Previously the second client's patches were skipped without a warning and
-  automatic events kept going to the first client. Call `init()` without `dsn`
-  to reuse the client `wildedge run` installed, or close the owner first.
+- `wildedge.init(dsn=...)` reuses the existing default client when the DSN
+  points to the same project, for example `dsn=os.environ["WILDEDGE_DSN"]`
+  under `wildedge run`. It used to create a second client.
+- Enabling an integration or hub on a second client while another live client
+  owns process-wide instrumentation now logs a warning. Automatic events keep
+  going to the owner's project, as before, but this used to happen without a
+  word. With `wildedge run --strict-integrations` it raises `RuntimeError`.
 - Quantization labels are defined once in `wildedge.quantizations` and used
   by every integration. Behaviour changes:
   - MLX-LM reports N-bit weights as `int4`/`int8`, like Transformers, instead

@@ -16,8 +16,9 @@ There are three ways a process gets its client, in order of coverage:
 
 All three produce the same thing: one process-wide default client that
 `wildedge.span()`, `wildedge.register_model()` and the rest delegate to.
-`init()` without `dsn` reuses whatever client already exists, so code written
-for in-process init runs unchanged under `wildedge run`.
+`init()` without `dsn`, or with the DSN that client already uses, reuses
+whatever client already exists, so code written for in-process init runs
+unchanged under `wildedge run`.
 
 The lazy mode configures itself from the environment: `WILDEDGE_DSN`,
 `WILDEDGE_INTEGRATIONS`, `WILDEDGE_HUBS`. Unset integration variables mean
@@ -99,12 +100,15 @@ them unwrapped or unset `WILDEDGE_DSN` there.
 ## One client per process
 
 - Framework patches are installed at most once per process. One live client
-  owns process-wide auto-instrumentation; another client attempting to enable
-  it raises `RuntimeError` until that owner is closed. Manual tracking does not
-  claim ownership.
-- `init()` reuses the live default client unless you pass `dsn`
-  explicitly, so the CLI-installed client and application code share one
-  client instead of racing.
+  owns process-wide auto-instrumentation. When another client enables an
+  integration or hub while that owner is live, it logs a warning and
+  automatic events keep going to the owner's project. The new client still
+  sends its manual tracking. With `wildedge run --strict-integrations`, the
+  conflict raises `RuntimeError` instead. Manual tracking does not claim
+  ownership.
+- `init()` reuses the live default client unless you pass a `dsn` for a
+  different project, so the CLI-installed client and application code share
+  one client instead of racing.
 - Trace and span correlation lives in contextvars at module level, not on a
   client. Auto-instrumented events emitted inside `wildedge.trace(...)` /
   `wildedge.span(...)` blocks correlate into the same trace no matter which

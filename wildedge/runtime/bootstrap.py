@@ -16,6 +16,7 @@ from wildedge.client import WildEdge
 from wildedge.constants import ENV_DSN, WILDEDGE_AUTOLOAD
 from wildedge.defaults import set_default_client
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
+from wildedge.instrumentation import set_strict_ownership
 from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
 from wildedge.settings import read_runtime_env
 
@@ -207,6 +208,10 @@ def install_runtime(*, install_signal_handlers: bool = True) -> RuntimeContext:
                     f"wildedge: instrument(None, hubs=[{hub_name!r}]) failed: {exc}",
                     file=os.sys.stderr,
                 )
+
+    # The app may call init() with its own DSN later. Under
+    # --strict-integrations an ownership conflict then raises instead of warning.
+    set_strict_ownership(env.strict_integrations)
 
     if env.strict_integrations:
         failures = [row for row in statuses if row["status"] in STRICT_FAILURE_STATUSES]

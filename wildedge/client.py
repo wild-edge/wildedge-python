@@ -23,7 +23,13 @@ from wildedge.events import SpanEvent
 from wildedge.events.span import SpanKind, SpanStatus
 from wildedge.hubs.base import BaseHubTracker
 from wildedge.hubs.registry import HUB_SPECS, supported_hubs
-from wildedge.instrumentation import claim_instrumentation, has_other_live_owner
+from wildedge.instrumentation import (
+    ClientRoute,
+    InstrumentationOwnedError,
+    claim_instrumentation,
+    has_other_live_owner,
+    strict_ownership,
+)
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.registry import (
     INTEGRATION_SPECS,
@@ -280,10 +286,14 @@ class WildEdge:
         dsn = env.dsn
         debug = env.debug
         self.noop = False
+        # (secret, host, project_key), so init(dsn=...) can tell when a
+        # requested destination matches this client. None for a no-op client.
+        self.destination: tuple[str, str, str] | None = None
         if not dsn:
             self._init_noop(debug=debug, device=device)
             return
         api_key, host, project_key = parse_dsn(dsn)
+        self.destination = (api_key, host, project_key)
         app_identity = resolve_app_identity(
             explicit=env.app_identity,
             project_key=project_key,
@@ -689,10 +699,30 @@ class WildEdge:
                 "wildedge: hub '%s' library not installed; skipping", hub_name
             )
             return
-        tracker.install_patch(claim_instrumentation(self, "hub:" + hub_name))
+        route = self._claim_instrumentation("hub:" + hub_name)
+        if route is None:
+            return
+        tracker.install_patch(route)
         self.hub_trackers[hub_name] = tracker
         if self.debug:
             logger.debug("wildedge: hub tracker '%s' activated", hub_name)
+
+    def _claim_instrumentation(self, name: str) -> ClientRoute | None:
+        """Claim process-wide instrumentation, or warn and skip if owned."""
+        try:
+            return claim_instrumentation(self, name)
+        except InstrumentationOwnedError:
+            if strict_ownership():
+                raise
+            logger.warning(
+                "wildedge: another WildEdge client (for example the one "
+                "`wildedge run` installed) already owns automatic tracking, so "
+                "'%s' events keep going to that client's project. Call "
+                "wildedge.init() without dsn to reuse that client, or close it "
+                "before enabling integrations on this one.",
+                name,
+            )
+            return None
 
     def _snapshot_hub_caches(self) -> dict[str, dict[str, int]]:
         """Return a before-snapshot of all active hub cache directories."""
@@ -846,7 +876,9 @@ class WildEdge:
                 logger.debug(LOG_INSTRUMENT_TORCH_KERAS, integration)
         else:
             installer = self.PATCH_INSTALLERS[integration]
-            installer(claim_instrumentation(self, integration))
+            route = self._claim_instrumentation(integration)
+            if route is not None:
+                installer(route)
         for hub_name in hubs or []:
             self._activate_hub(hub_name)
 
