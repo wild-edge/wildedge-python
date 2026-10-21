@@ -78,24 +78,41 @@ A `WhisperModel` stays with the SDK client that was active when it was created.
 After you replace the client, create the model again; until then, it isn't
 tracked and the SDK warns once.
 
-## Capturing audio and transcripts
+## Explicit audio and transcript attachments
 
-Capture is off by default. With `attachments_enabled=True`, each transcription
-uploads:
+Automatic instrumentation records metadata only, even with
+`attachments_enabled=True`. To upload audio or transcript text, supply the
+attachments explicitly through [manual tracking](manual-tracking.md#track-attachments).
+For example, with a faster-whisper model:
 
-- the input audio: the original file for a path, or a 16-bit WAV for an array
-- the transcript as `transcript.txt`
+```python
+import time
+import wildedge
+from wildedge import Attachment
 
-Keep in mind:
+# Use manual tracking for this call so it produces one inference event.
+client = wildedge.init(integrations=[], attachments_enabled=True)
+from faster_whisper import WhisperModel
 
-- Each attachment is capped at 10 MiB, and the client's own attachment limits
-  also apply. A transcript over the cap isn't uploaded at all.
-- Audio passed as a file-like object isn't captured.
-- An audio file must still exist when the transcription finishes.
-- To upload transcripts but not audio, pass an `attachment_filter` that keeps
-  only output attachments:
-  `attachment_filter=lambda items: [a for a in items if a.role == "output"]`.
-- Transcript text is never added to event attributes.
+model = WhisperModel("/models/whisper", device="cpu", compute_type="int8")
+handle = client.register_model(model, auto_instrument=False)
+started = time.perf_counter()
+segments, info = model.transcribe("speech.wav")
+text = "".join(segment.text for segment in segments)
+handle.track_inference(
+    duration_ms=round((time.perf_counter() - started) * 1000),
+    input_modality="audio",
+    output_modality="text",
+    attachments=[
+        Attachment(content_type="audio/wav", role="input", path="speech.wav"),
+        Attachment(content_type="text/plain", role="output", data=text.encode()),
+    ],
+)
+client.close(timeout=10)
+```
+
+Choose either attachment or both. Files must exist when `track_inference` runs;
+normal attachment size limits and the optional `attachment_filter` apply.
 
 ## Examples and tests
 

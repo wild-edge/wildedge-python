@@ -41,6 +41,10 @@ event flushes never block on an upload.
 | `attachment_filter` | `None` | - | `Callable[[list[Attachment]], list[Attachment]]` to redact/drop before buffering |
 | `attachment_dir` | per `app_identity` | - | Override the local buffer directory |
 
+`attachments_enabled=True` permits uploads of attachments explicitly supplied to
+`track_inference(attachments=[...])`. Automatic integrations do not attach raw
+inputs or outputs.
+
 See [Track attachments](manual-tracking.md#track-attachments) for usage.
 
 ### When ML libraries are imported

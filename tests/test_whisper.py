@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wildedge.attachments import AttachmentManager, AttachmentStore
 from wildedge.client import WildEdge
 from wildedge.instrumentation import claim_instrumentation
 from wildedge.integrations import faster_whisper as faster
@@ -99,18 +100,12 @@ def test_transcription_metadata(wav, handle):
     }
 
 
-def test_nothing_is_attached_without_capture(wav, handle):
+@pytest.mark.parametrize("uploads_enabled", [False, True])
+def test_transcription_never_attaches_payloads(wav, handle, uploads_enabled):
+    if uploads_enabled:
+        handle.capture_attachments = MagicMock()
     track_transcription(handle, wav, "hello world", duration_ms=1)
-    assert handle.track_inference.call_args.kwargs["attachments"] is None
-
-
-def test_capture_attaches_audio_and_transcript(wav, handle):
-    handle.capture_attachments = MagicMock()
-    track_transcription(handle, wav, "hello world", duration_ms=1)
-    attachments = handle.track_inference.call_args.kwargs["attachments"]
-    assert [a.role for a in attachments] == ["input", "output"]
-    assert attachments[0].path == str(wav)
-    assert attachments[1].data == b"hello world"
+    assert "attachments" not in handle.track_inference.call_args.kwargs
 
 
 def test_file_like_audio_is_not_read(handle):
@@ -119,7 +114,7 @@ def test_file_like_audio_is_not_read(handle):
     track_transcription(handle, source, "hello", duration_ms=1)
     event = handle.track_inference.call_args.kwargs
     assert event["input_meta"].to_dict() == {}
-    assert [a.name for a in event["attachments"]] == ["transcript.txt"]
+    assert "attachments" not in event
     assert source.tell() == 0
 
 
@@ -226,8 +221,7 @@ def test_stream_that_was_never_iterated_sends_nothing(handle):
     handle.track_inference.assert_not_called()
 
 
-def test_transcript_over_the_limit_is_not_attached(handle, monkeypatch):
-    monkeypatch.setattr(faster, "MAX_CAPTURE_BYTES", 8)
+def test_stream_counts_words_without_attaching_transcript(handle):
     handle.capture_attachments = MagicMock()
     segments = [SimpleNamespace(text="hello "), SimpleNamespace(text="world")]
     stream, _ = wrap_transcribe(lambda *_: (iter(segments), SimpleNamespace()))(
@@ -235,7 +229,7 @@ def test_transcript_over_the_limit_is_not_attached(handle, monkeypatch):
     )
     assert list(stream) == segments
     event = handle.track_inference.call_args.kwargs
-    assert event["attachments"] == []
+    assert "attachments" not in event
     assert event["context"]["transcript_word_count"] == 2
 
 
@@ -473,3 +467,27 @@ def test_mlx_replacement_client_reports_the_cached_model(
     assert load["attributes"]["model_cache_hit"] is True
     assert len(events_of(replacement_events, "inference")) == 1
     assert len(events_of(instrumented_client.events, "inference")) == 1
+
+
+@pytest.mark.parametrize("backend", ["faster_whisper", "batched", "mlx_whisper"])
+def test_instrumentation_buffers_no_payloads_with_uploads_enabled(
+    backend, fake_faster_whisper, fake_mlx_whisper, instrumented_client, tmp_path, wav
+):
+    store = AttachmentStore(str(tmp_path / "attachments"))
+    instrumented_client.attachment_manager = AttachmentManager(store)
+    if backend == "mlx_whisper":
+        install_mlx(claim_instrumentation(instrumented_client, "mlx_whisper"))
+        result = fake_mlx_whisper.transcribe(str(wav), path_or_hf_repo="org/model")
+        assert result["text"]
+    else:
+        install_auto_load_patch(
+            claim_instrumentation(instrumented_client, "faster_whisper")
+        )
+        model = fake_faster_whisper.WhisperModel("small")
+        if backend == "batched":
+            model = fake_faster_whisper.BatchedInferencePipeline(model)
+        segments, _ = model.transcribe(str(wav))
+        assert list(segments)
+    (event,) = events_of(instrumented_client.events, "inference")
+    assert "attachments" not in event
+    assert store.length() == 0

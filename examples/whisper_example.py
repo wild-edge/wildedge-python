@@ -4,7 +4,7 @@ Install mlx-whisper (Apple Silicon) or faster-whisper, set WILDEDGE_DSN, then:
     python examples/whisper_example.py mlx_whisper /path/to/model /path/to/audio.wav
     python examples/whisper_example.py faster_whisper /path/to/model /path/to/audio.wav
 
-See docs/whisper.md for lifecycle and opt-in attachment capture behavior.
+See docs/whisper.md for lifecycle and explicit attachment examples.
 """
 
 import argparse
@@ -17,13 +17,8 @@ def main():
     parser.add_argument("backend", choices=["mlx_whisper", "faster_whisper"])
     parser.add_argument("model")
     parser.add_argument("audio")
-    parser.add_argument(
-        "--capture", action="store_true", help="Attach audio and transcript"
-    )
     args = parser.parse_args()
-    client = wildedge.init(
-        integrations=[args.backend], attachments_enabled=args.capture
-    )
+    client = wildedge.init(integrations=[args.backend])
     try:
         with client.trace(), client.span(name="transcribe"):
             if args.backend == "mlx_whisper":

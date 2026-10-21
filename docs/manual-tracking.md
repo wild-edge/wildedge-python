@@ -261,14 +261,19 @@ handle.feedback(FeedbackType.THUMBS_DOWN)
 Opt-in upload of the raw bytes behind an inference, such as the source image,
 audio clip, or generated text, so you can inspect or curate them later. This is
 off by default and requires the attachment feature enabled on your project.
-Enable it at init, then pass `attachments=` to `track_inference`:
+Enable it at init, then pass `attachments=` to `track_inference`. Automatic
+integrations, including GGUF and Whisper, do not supply attachments. When tracking
+the inference manually, use `auto_instrument=False` at model registration to avoid
+recording the same call twice:
 
 ```python
 import wildedge
 from wildedge import Attachment
 
 client = wildedge.init(attachments_enabled=True)
-handle = client.register_model(model, model_id="doc-classifier-v1")
+handle = client.register_model(
+    model, model_id="doc-classifier-v1", auto_instrument=False
+)
 
 handle.track_inference(
     duration_ms=120,
@@ -291,6 +296,35 @@ Bytes are buffered to disk and survive restarts. Capture is gated by
 `attachment_filter` hook. See [Configuration](configuration.md#attachments) and
 [`examples/attachments_example.py`](../examples/attachments_example.py) for the
 full reference.
+
+### Explicit GGUF prompt and reply attachments
+
+Use manual tracking when you want to attach GGUF payloads:
+
+```python
+import wildedge
+from llama_cpp import Llama
+from wildedge import Attachment
+from wildedge.timing import Timer
+
+client = wildedge.init(integrations=[], attachments_enabled=True)
+llm = Llama(model_path="/models/model.gguf")
+handle = client.register_model(llm, auto_instrument=False)
+prompt = "Explain how rain forms."
+with Timer() as timer:
+    result = llm.create_completion(prompt=prompt, max_tokens=128)
+reply = result["choices"][0]["text"]
+handle.track_inference(
+    duration_ms=timer.elapsed_ms,
+    input_modality="text",
+    output_modality="generation",
+    attachments=[
+        Attachment(content_type="text/plain", role="input", data=prompt.encode()),
+        Attachment(content_type="text/plain", role="output", data=reply.encode()),
+    ],
+)
+client.close(timeout=10)
+```
 
 ## Track spans for agentic workflows
 

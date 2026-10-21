@@ -5,13 +5,20 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Changed
+
+- Automatic integrations no longer attach raw payloads, including GGUF prompts,
+  chat messages and replies. `attachments_enabled=True` enables uploads only for
+  attachments explicitly passed to `track_inference(attachments=[...])`.
+  Apps relying on automatic GGUF capture must supply attachments explicitly.
+
 ### Added
 
 - `mlx_whisper` and `faster_whisper` integrations track local Whisper model
   loads and transcriptions, including faster-whisper's
   `BatchedInferencePipeline`. Transcriptions record duration, language, word
-  count and audio metadata. With `attachments_enabled=True` they also upload
-  the input audio and transcript. See docs/whisper.md.
+  count and audio metadata. Audio and transcript attachments must be supplied
+  explicitly through the manual tracking API. See docs/whisper.md.
 
 ### Fixed
 
