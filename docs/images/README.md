@@ -20,3 +20,13 @@ Additional views in the News Reader demo:
 These sample views span WildEdge SDKs, including mobile hardware. They do not
 represent output from the Python quickstart. The README uses 180-pixel-wide
 thumbnails linked to the full-size images, with a separate live-demo link.
+
+- `demo-trace.jpg`: News Reader → Runs → demo-run-1. Shows a named step and
+  a local summarizer inference; this sample does not include a cloud call.
+- `demo-sql.jpg`: News Reader → Analytics → SQL. Shows the demo's default
+  query. SQL execution is disabled in this offline demo; no query results
+  were fabricated or added to the screenshot.
+
+The opening row contains performance, trace, and SQL previews. Events and
+hardware remain in a collapsed More screenshots section. All five thumbnails
+are 180 pixels wide and open their full-size image.
