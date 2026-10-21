@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextvars
 import functools
 import inspect
-import json
 import re
 import threading
 import time
@@ -13,7 +12,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from wildedge import accelerators, constants, quantizations
-from wildedge.attachments import Attachment
 from wildedge.events.inference import (
     GenerationConfig,
     GenerationOutputMeta,
@@ -27,7 +25,6 @@ from wildedge.integrations.common import (
     stream_error_code,
 )
 from wildedge.logging import logger
-from wildedge.modalities import Modality
 from wildedge.model import ModelInfo
 from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.timing import elapsed_ms
@@ -213,54 +210,6 @@ def make_gguf_generation_config(kwargs: dict) -> GenerationConfig | None:
     return config if config.to_dict() else None
 
 
-def make_gguf_attachments(
-    handle: object, prompt: object, messages: list | None, reply: str | None
-) -> list[Attachment] | None:
-    """Prompt (or chat messages) and reply, only when attachments are enabled."""
-    if not handle.wants_attachment(Modality.TEXT):
-        return None
-    attachments: list[Attachment] = []
-    try:
-        if messages is not None:
-            attachments.append(
-                Attachment(
-                    content_type="application/json",
-                    role="input",
-                    data=json.dumps(messages, default=str).encode(),
-                    name="messages.json",
-                )
-            )
-        elif isinstance(prompt, str) and prompt:
-            attachments.append(
-                Attachment(
-                    content_type="text/plain",
-                    role="input",
-                    data=prompt.encode(),
-                    name="prompt.txt",
-                )
-            )
-        if reply:
-            attachments.append(
-                Attachment(
-                    content_type="text/plain",
-                    role="output",
-                    data=reply.encode(),
-                    name="reply.txt",
-                )
-            )
-    except Exception as exc:
-        debug_gguf_failure("attachment build", exc)
-    return attachments or None
-
-
-def _choice_text(choice: dict) -> str | None:
-    text = choice.get("text")
-    if text is None:
-        message = choice.get("message") or choice.get("delta") or {}
-        text = message.get("content") if isinstance(message, dict) else None
-    return text if isinstance(text, str) else None
-
-
 def make_gguf_stream_callbacks(
     handle: object,
     prompt: object,
@@ -274,7 +223,6 @@ def make_gguf_stream_callbacks(
     tokens_in: list[int | None] = [None]
     tokens_out: list[int | None] = [None]
     stop_reason: list[str | None] = [None]
-    reply_parts: list[str] = []
 
     def on_chunk(chunk: object) -> None:
         if not isinstance(chunk, dict):
@@ -288,9 +236,6 @@ def make_gguf_stream_callbacks(
             reason = choices[0].get("finish_reason")
             if reason:
                 stop_reason[0] = reason
-            text = _choice_text(choices[0])
-            if text:
-                reply_parts.append(text)
 
     def on_done(
         duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
@@ -305,9 +250,6 @@ def make_gguf_stream_callbacks(
             error_code=stream_error_code(outcome),
             output_meta=make_gguf_output_meta(ti, to, sr, ttft_ms, duration_ms),
             generation_config=generation_config,
-            attachments=make_gguf_attachments(
-                handle, prompt, messages, "".join(reply_parts)
-            ),
         )
 
     return on_chunk, on_done
@@ -366,7 +308,6 @@ def build_patched_call(original_call):
             tokens_in = None
             tokens_out = None
             stop_reason = None
-            reply = None
             try:
                 if isinstance(result, dict):
                     usage = result.get("usage") or {}
@@ -375,7 +316,6 @@ def build_patched_call(original_call):
                     choices = result.get("choices") or []
                     if choices and isinstance(choices[0], dict):
                         stop_reason = choices[0].get("finish_reason")
-                        reply = _choice_text(choices[0])
             except Exception as exc:
                 debug_gguf_failure("usage extraction", exc)
             handle.track_inference(
@@ -388,7 +328,6 @@ def build_patched_call(original_call):
                     tokens_in, tokens_out, stop_reason, None, duration_ms
                 ),
                 generation_config=generation_config,
-                attachments=make_gguf_attachments(handle, prompt, messages, reply),
             )
             return result
         except Exception as exc:

@@ -1,22 +1,17 @@
-"""Shared metadata and opt-in capture for local Whisper runtimes."""
+"""Shared metadata tracking for local Whisper runtimes."""
 
 from __future__ import annotations
 
-import io
-import mimetypes
 import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-from wildedge.attachments import Attachment
 from wildedge.events.inference import AudioInputMeta
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import (
-    debug_failure,
     hf_repo_from_cache_path,
     stream_error_code,
 )
-from wildedge.modalities import Modality
 from wildedge.model import ModelHandle, ModelInfo
 
 # Backends, used in model IDs and as the integration names.
@@ -33,15 +28,6 @@ CLIENT_ATTR = "__wildedge_whisper_client__"
 
 # Both libraries expect 1-D sample arrays at this rate.
 SAMPLE_RATE = 16000
-
-# Upper bound for each captured audio or transcript attachment. The attachment
-# manager may apply a stricter limit of its own.
-MAX_CAPTURE_BYTES = 10 * 1024 * 1024
-
-# Captured arrays are encoded as mono 16-bit PCM WAV.
-PCM16_SAMPLE_BYTES = 2
-PCM16_MAX = 32767
-WAV_HEADER_BYTES = 44
 
 # Languages written without spaces between words, where splitting on
 # whitespace does not give a word count.
@@ -165,76 +151,6 @@ def audio_meta(audio: object, audio_duration_s: float | None = None) -> AudioInp
     return meta
 
 
-def pcm16_wav_size(sample_count: int) -> int:
-    return WAV_HEADER_BYTES + sample_count * PCM16_SAMPLE_BYTES
-
-
-def pcm16_wav(samples: object) -> bytes:
-    """Encode float samples in [-1, 1] as a mono 16-bit WAV file."""
-    import numpy as np  # noqa: PLC0415 -- optional; provided by the active Whisper runtime
-
-    pcm = (np.clip(np.asarray(samples), -1, 1) * PCM16_MAX).astype("<i2")
-    data = io.BytesIO()
-    with wave.open(data, "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(PCM16_SAMPLE_BYTES)
-        wav.setframerate(SAMPLE_RATE)
-        wav.writeframes(pcm.tobytes())
-    return data.getvalue()
-
-
-def audio_attachments(audio: object) -> list[Attachment]:
-    if isinstance(audio, (str, Path)):
-        path = Path(audio)
-        if path.is_file() and path.stat().st_size <= MAX_CAPTURE_BYTES:
-            content_type = (
-                mimetypes.guess_type(str(path))[0] or "application/octet-stream"
-            )
-            return [
-                Attachment(
-                    content_type=content_type,
-                    role="input",
-                    path=str(path),
-                    name=path.name,
-                    modality=Modality.AUDIO,
-                )
-            ]
-    elif is_sample_array(audio) and pcm16_wav_size(audio.shape[0]) <= MAX_CAPTURE_BYTES:
-        return [
-            Attachment(
-                content_type="audio/wav",
-                role="input",
-                data=pcm16_wav(audio),
-                name="input.wav",
-            )
-        ]
-    return []
-
-
-def transcription_attachments(
-    handle: ModelHandle, audio: object, text: str
-) -> list[Attachment]:
-    """The input audio and the transcript, each if the client allows it."""
-    attachments = []
-    if handle.wants_attachment(Modality.AUDIO):
-        attachments.extend(audio_attachments(audio))
-    encoded = text.encode()
-    if (
-        encoded
-        and len(encoded) <= MAX_CAPTURE_BYTES
-        and handle.wants_attachment(Modality.TEXT)
-    ):
-        attachments.append(
-            Attachment(
-                content_type="text/plain",
-                role="output",
-                data=encoded,
-                name="transcript.txt",
-            )
-        )
-    return attachments
-
-
 def track_transcription(
     handle: ModelHandle,
     audio: object,
@@ -264,19 +180,12 @@ def track_transcription(
         context["language_confidence"] = language_probability
     if first_segment_ms is not None:
         context["time_to_first_segment_ms"] = first_segment_ms
-    attachments = None
-    if handle.capture_attachments is not None:
-        try:
-            attachments = transcription_attachments(handle, audio, text)
-        except Exception as exc:
-            debug_failure("whisper", "attachment capture", exc)
     handle.track_inference(
         duration_ms=duration_ms,
         input_modality="audio",
         output_modality="text",
         input_meta=audio_meta(audio, audio_duration_s),
         context=context,
-        attachments=attachments,
         success=outcome == "completed",
         error_code=stream_error_code(outcome),
     )

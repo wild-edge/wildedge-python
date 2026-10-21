@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from wildedge import attachments, constants, modalities
+from wildedge import attachments, constants
 from wildedge.attachments import (
     Attachment,
     AttachmentManager,
@@ -104,7 +104,6 @@ def test_store_peek_oldest_first(tmp_path):
 
 def _manager(tmp_path, **kwargs):
     store = AttachmentStore(str(tmp_path), strategy="file")
-    kwargs.setdefault("allowed_modalities", modalities.ALL)
     return store, AttachmentManager(store, **kwargs)
 
 
@@ -216,7 +215,7 @@ def test_text_input_meta_no_has_attachments():
 
 def _make_handle(tmp_path):
     store = AttachmentStore(str(tmp_path), strategy="file")
-    mgr = AttachmentManager(store, allowed_modalities=modalities.ALL)
+    mgr = AttachmentManager(store)
     published: list[dict] = []
     info = ModelInfo(
         model_name="m", model_version="1", model_source="local", model_format="onnx"
@@ -225,17 +224,23 @@ def _make_handle(tmp_path):
     return handle, store, published
 
 
-def test_track_inference_wires_attachments(tmp_path):
+@pytest.mark.parametrize(
+    "content_type",
+    ["text/plain", "image/jpeg", "audio/wav", "video/mp4", "application/octet-stream"],
+)
+def test_track_inference_wires_attachments(tmp_path, content_type):
     handle, store, published = _make_handle(tmp_path)
     handle.track_inference(
         duration_ms=10,
         input_modality="image",
-        attachments=[Attachment(content_type="image/jpeg", role="input", data=b"img")],
+        attachments=[
+            Attachment(content_type=content_type, role="input", data=b"payload")
+        ],
     )
     assert store.length() == 1
     event = published[0]
     assert len(event["attachments"]) == 1
-    assert event["attachments"][0]["content_type"] == "image/jpeg"
+    assert event["attachments"][0]["content_type"] == content_type
     # The buffered attachment is keyed to this inference event.
     assert store.peek_many(1)[0].inference_id == event["inference"]["inference_id"]
 

@@ -35,50 +35,15 @@ event flushes never block on an upload.
 | Parameter | Default | Env var | Description |
 |---|---|---|---|
 | `attachments_enabled` | `false` | `WILDEDGE_ATTACHMENTS_ENABLED` | Enable raw input/output upload |
-| `attachment_modalities` | `[Modality.TEXT]` | `WILDEDGE_ATTACHMENT_MODALITIES` | Kinds of data that may be uploaded, as `Modality` members: `TEXT`, `IMAGE`, `AUDIO`, `VIDEO`, `OTHER` |
 | `max_attachments_per_inference` | `10` | - | Cap on attachments buffered per inference event |
 | `max_attachment_size_bytes` | `10485760` | - | Per-attachment size limit (10 MB); larger ones are dropped |
 | `attachment_storage_strategy` | `"file"` | - | `"file"` (bytes on disk) or `"inline"` (small blobs embedded in the record) |
 | `attachment_filter` | `None` | - | `Callable[[list[Attachment]], list[Attachment]]` to redact/drop before buffering |
 | `attachment_dir` | per `app_identity` | - | Override the local buffer directory |
 
-### Choosing what may be uploaded
-
-`attachment_modalities` decides which kinds of data leave the device. It
-applies to every attachment, whether an integration captured it or you passed
-it to `track_inference`. The default is text only: prompts, replies and
-transcripts. Voice recordings, images and video can identify a person, so they
-are uploaded only when you list them:
-
-```python
-from wildedge import Modality
-
-wildedge.init(
-    attachments_enabled=True,
-    attachment_modalities=[Modality.TEXT, Modality.AUDIO],
-)
-```
-
-To allow every modality, pass `list(Modality)`.
-
-The env var and CLI take the lowercase names, comma-separated, or `all`:
-`WILDEDGE_ATTACHMENT_MODALITIES=text,audio` or
-`wildedge run --attachments --attachment-modalities text,audio`.
-
-Each attachment's modality comes from its content type (`audio/wav` is
-`audio`, `application/json` is `text`). Anything else, such as raw tensors,
-is `other`. The first time an attachment is dropped this way, the SDK logs a
-warning naming the setting to change (only a debug message if you set
-`attachment_modalities` yourself). Blocked attachments are dropped before
-`attachment_filter` runs, and integrations skip building them at all, so a
-Whisper client without `audio` never encodes the audio.
-
-`attachment_modalities` doesn't turn uploads on by itself:
-`attachments_enabled` is still required, and the SDK warns if the list is set
-without it.
-
-For finer rules, such as uploading inputs but not outputs, use
-`attachment_filter`.
+`attachments_enabled=True` permits uploads of attachments explicitly supplied to
+`track_inference(attachments=[...])`. Automatic integrations do not attach raw
+inputs or outputs.
 
 See [Track attachments](manual-tracking.md#track-attachments) for usage.
 

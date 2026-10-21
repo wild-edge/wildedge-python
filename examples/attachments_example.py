@@ -18,7 +18,7 @@ to see real uploads; otherwise the client runs in no-op mode.
 """
 
 import wildedge
-from wildedge import Attachment, Modality
+from wildedge import Attachment
 
 
 # Optional: redact / drop attachments before they are buffered.
@@ -29,8 +29,6 @@ def redact(attachments: list[Attachment]) -> list[Attachment]:
 wildedge.init(
     app_version="1.0.0",
     attachments_enabled=True,
-    # Only text is uploaded unless other kinds of data are allowed here.
-    attachment_modalities=[Modality.TEXT, Modality.IMAGE],
     max_attachments_per_inference=5,
     max_attachment_size_bytes=5 * 1024 * 1024,
     attachment_storage_strategy="file",  # or "inline" for small blobs

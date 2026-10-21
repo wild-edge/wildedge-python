@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import inspect
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wildedge.attachments import AttachmentManager, AttachmentStore
 from wildedge.integrations import gguf as gguf_integration
 from wildedge.integrations.gguf import (
     GgufExtractor,
     call_arguments,
-    make_gguf_attachments,
     make_gguf_generation_config,
     make_gguf_output_meta,
     make_gguf_stream_callbacks,
@@ -113,7 +112,7 @@ class Llama:  # must match the name check in GgufExtractor.can_handle
 
     def create_chat_completion(self, messages, **kwargs):
         # The chat handler formats the messages, then calls llama.create_completion.
-        prompt = "".join(m["content"] for m in messages)
+        prompt = "".join(str(m["content"]) for m in messages)
         result = self.create_completion(prompt=prompt, **kwargs)
         if kwargs.get("stream"):
             return result
@@ -510,25 +509,40 @@ class TestGgufExtractor:
         llm.create_chat_completion(messages=[{"role": "user", "content": "hello"}])
         assert "attachments" not in publish_spy.events[0]
 
-    def test_chat_attachments_when_enabled(self, publish_spy):
-        captured = []
-
-        def capture(attachments, inference_id, timestamp):
-            captured.extend(attachments)
-            return [{"attachment_id": str(i)} for i in range(len(attachments))]
-
+    @pytest.mark.parametrize("streaming", [False, True])
+    @pytest.mark.parametrize("chat", [False, True])
+    def test_enabled_uploads_never_capture_payloads(
+        self, publish_spy, tmp_path, streaming, chat
+    ):
+        store = AttachmentStore(str(tmp_path))
+        manager = AttachmentManager(store)
         llm = Llama()
         handle = make_handle(publish_spy)
-        handle.capture_attachments = capture
+        handle.capture_attachments = manager.capture
         self.extractor.install_hooks(llm, handle)
-        messages = [{"role": "user", "content": "hello"}]
-        llm.create_chat_completion(messages=messages)
-        assert [(a.role, a.content_type) for a in captured] == [
-            ("input", "application/json"),
-            ("output", "text/plain"),
-        ]
-        assert json.loads(captured[0].data) == messages
-        assert captured[1].data == b"hi!"
+        if chat:
+            result = llm.create_chat_completion(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "private prompt"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "data:image/png;base64,PRIVATE"},
+                            },
+                        ],
+                    }
+                ],
+                stream=streaming,
+            )
+        else:
+            result = llm.create_completion(prompt="private prompt", stream=streaming)
+        if streaming:
+            assert list(result)
+        assert len(publish_spy.events) == 1
+        assert "attachments" not in publish_spy.events[0]
+        assert store.length() == 0
 
     def test_stop_given_as_string_counts_one_sequence(self):
         config = make_gguf_generation_config({"stop": "</s>"})
@@ -619,25 +633,9 @@ class TestGgufExtractor:
         on_chunk({"choices": [{"delta": {"content": "he"}}]})
         on_chunk({"choices": [{"delta": {"content": "y"}, "finish_reason": "stop"}]})
         on_done(10, 2)
-        assert captured[-1].data == b"hey"
+        assert captured == []
         meta = publish_spy.events[0]["inference"]["output_meta"]
         assert meta["stop_reason"] == "stop"
-
-    def test_attachment_build_error_is_swallowed(self, publish_spy):
-        handle = make_handle(publish_spy)
-        handle.capture_attachments = lambda *a: []
-        circular: list = []
-        circular.append(circular)
-        assert make_gguf_attachments(handle, "p", [circular], "reply") is None
-
-    def test_streamed_completion_attaches_joined_reply(self, publish_spy):
-        captured = []
-        llm = Llama()
-        handle = make_handle(publish_spy)
-        handle.capture_attachments = lambda a, *_: captured.extend(a) or []
-        self.extractor.install_hooks(llm, handle)
-        list(llm.create_completion(prompt="hello", stream=True))
-        assert [a.data for a in captured] == [b"hello", b"hi!"]
 
 
 # ---------------------------------------------------------------------------

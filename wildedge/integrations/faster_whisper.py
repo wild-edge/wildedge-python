@@ -19,12 +19,10 @@ from wildedge.integrations.whisper import (
     DESCRIPTOR_ATTR,
     FASTER_WHISPER,
     HANDLE_ATTR,
-    MAX_CAPTURE_BYTES,
     WhisperDescriptor,
     report_load,
     track_transcription,
 )
-from wildedge.modalities import Modality
 from wildedge.timing import elapsed_ms
 
 _PATCH_LOCK = threading.Lock()
@@ -50,31 +48,16 @@ OUTCOME_ABANDONED = "abandoned"
 
 
 class TranscriptCollector:
-    """Counts words as segments arrive and keeps the text when capture is on."""
+    """Counts words and timing without retaining transcript text."""
 
-    def __init__(self, t0: float, *, capture: bool) -> None:
+    def __init__(self, t0: float) -> None:
         self._t0 = t0
         self.words = 0
         self.last_segment_ms: int | None = None
-        self._parts: list[str] | None = [] if capture else None
-        self._size = 0
 
     def add(self, segment) -> None:
         self.last_segment_ms = elapsed_ms(self._t0)
-        text = segment.text
-        self.words += len(text.split())
-        if self._parts is None:
-            return
-        self._size += len(text.encode())
-        if self._size > MAX_CAPTURE_BYTES:
-            # A cut-off transcript is not worth uploading.
-            self._parts = None
-        else:
-            self._parts.append(text)
-
-    @property
-    def text(self) -> str:
-        return "" if self._parts is None else "".join(self._parts)
+        self.words += len(segment.text.split())
 
 
 class SegmentStream(SyncStreamWrapper):
@@ -125,9 +108,7 @@ def wrap_transcribe(original, model_of=lambda owner: owner):
             except Exception as telemetry_exc:
                 debug_failure(FASTER_WHISPER, "error tracking", telemetry_exc)
             raise
-        collector = TranscriptCollector(
-            t0, capture=handle.wants_attachment(Modality.TEXT)
-        )
+        collector = TranscriptCollector(t0)
 
         def done(duration_ms, first_segment_ms, *, outcome="completed"):
             if outcome == OUTCOME_ABANDONED and collector.last_segment_ms is not None:
@@ -135,7 +116,7 @@ def wrap_transcribe(original, model_of=lambda owner: owner):
             track_transcription(
                 handle,
                 audio,
-                collector.text,
+                "",
                 duration_ms=duration_ms,
                 language=getattr(info, "language", None),
                 language_probability=getattr(info, "language_probability", None),

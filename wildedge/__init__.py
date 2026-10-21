@@ -30,7 +30,6 @@ from wildedge.events import (
 )
 from wildedge.events.span import SpanKind, SpanStatus
 from wildedge.llm_api import LLMCall, llm_api
-from wildedge.modalities import Modality
 from wildedge.platforms import capture_hardware
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
@@ -60,7 +59,6 @@ __all__ = [
     "HardwareContext",
     "ImageInputMeta",
     "LLMCall",
-    "Modality",
     "QueuePolicy",
     "SpanContext",
     "SpanContextManager",

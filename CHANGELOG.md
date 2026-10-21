@@ -7,26 +7,18 @@ under Unreleased and move into a version section at release time.
 
 ### Changed
 
-- Attachments only upload text by default. The new `attachment_modalities`
-  setting (`WILDEDGE_ATTACHMENT_MODALITIES`, `wildedge run
-  --attachment-modalities`) lists the kinds of data that may be uploaded, as
-  members of the new `wildedge.Modality` enum: `TEXT`, `IMAGE`, `AUDIO`,
-  `VIDEO` or `OTHER`. It applies to manual and automatic attachments alike.
-  **Apps that upload images or other non-text attachments must now allow
-  them**, for example
-  `attachment_modalities=[Modality.TEXT, Modality.IMAGE]`. The SDK warns once
-  per blocked modality. `Attachment` gains an optional `modality` field for
-  content types that don't identify the data. Whisper uploads the input audio
-  only when `Modality.AUDIO` is allowed.
+- Automatic integrations no longer attach raw payloads, including GGUF prompts,
+  chat messages and replies. `attachments_enabled=True` enables uploads only for
+  attachments explicitly passed to `track_inference(attachments=[...])`.
+  Apps relying on automatic GGUF capture must supply attachments explicitly.
 
 ### Added
 
 - `mlx_whisper` and `faster_whisper` integrations track local Whisper model
   loads and transcriptions, including faster-whisper's
   `BatchedInferencePipeline`. Transcriptions record duration, language, word
-  count and audio metadata. With `attachments_enabled=True` they also upload
-  the transcript, and the input audio when `Modality.AUDIO` is in
-  `attachment_modalities`. See docs/whisper.md.
+  count and audio metadata. Audio and transcript attachments must be supplied
+  explicitly through the manual tracking API. See docs/whisper.md.
 
 ### Fixed
 
