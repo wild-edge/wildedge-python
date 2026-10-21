@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from wildedge import accelerators, constants
+from wildedge import accelerators, constants, quantizations
 from wildedge.events.error import ErrorCode
 from wildedge.events.inference import TextInputMeta
 from wildedge.logging import logger
@@ -67,6 +67,19 @@ def mlx_accelerator() -> str:
     except Exception as exc:
         debug_failure("mlx", "device detection", exc)
         return accelerators.MPS
+
+
+def mlx_layer_quantization(model: object) -> str | None:
+    """Quantization of an MLX model's layers: the bit width of the first
+    quantized layer, ``quantized`` when the width is unknown, or None when no
+    layer is quantized."""
+    for _, layer in model.named_modules():  # type: ignore[attr-defined]
+        bits = getattr(layer, "bits", None)
+        if isinstance(bits, int):
+            return quantizations.int_bits(bits)
+        if "quantized" in type(layer).__name__.lower():
+            return quantizations.QUANTIZED
+    return None
 
 
 def stream_error_code(outcome: str) -> str | None:
@@ -215,14 +228,17 @@ def build_input_meta(messages: list, tokens_in: int | None) -> TextInputMeta | N
     )
 
 
+# Substrings of framework dtype names (torch.float16, tensor(float16),
+# mlx.core.bfloat16, torch.qint8). Checked in order, so bfloat16 must come
+# before float16, which it contains.
 DTYPE_QUANTIZATION_MAP: dict[str, str] = {
-    "bfloat16": "bf16",
-    "float16": "f16",
-    "float32": "f32",
-    "int8": "int8",
-    "qint": "int8",
-    "quint": "int8",
-    "uint8": "int8",
+    "bfloat16": quantizations.BF16,
+    "float16": quantizations.F16,
+    "float32": quantizations.F32,
+    "int8": quantizations.INT8,
+    "qint": quantizations.INT8,
+    "quint": quantizations.INT8,
+    "uint8": quantizations.INT8,
 }
 
 

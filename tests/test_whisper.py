@@ -310,7 +310,7 @@ def test_faster_constructor_describes_the_runtime(
     info = getattr(model, DESCRIPTOR_ATTR)
     assert info.model_id == "faster_whisper:small"
     assert info.accelerator == "cuda"
-    assert info.quantization == "float16"
+    assert info.quantization == "f16"
     assert len(events_of(instrumented_client.events, "model_load")) == 1
 
 
@@ -425,7 +425,7 @@ def test_mlx_load_reads_quantization(fake_mlx_whisper, instrumented_client):
     assert load["load"]["accelerator"] == "mps"
     assert len(events_of(instrumented_client.events, "inference")) == 2
     registered = instrumented_client.registry.models["mlx_whisper:org/model-q4"]
-    assert registered.quantization == "q4"
+    assert registered.quantization == "int4"
 
 
 def test_mlx_reload_after_switching_models_is_reported(
