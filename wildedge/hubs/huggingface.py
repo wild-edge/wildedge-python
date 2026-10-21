@@ -72,7 +72,16 @@ def _patch_symbol_references(symbol: str, original: object, replacement: object)
     patched_count = 0
     for mod in list(sys.modules.values()):
         try:
-            if getattr(mod, symbol, None) is original:
+            # Read the module dict, not getattr: lazy modules (transformers)
+            # import submodules on attribute access. A name a lazy module has
+            # not loaded yet cannot hold a reference to the original. The lazy
+            # huggingface_hub package resolves names from its submodules on
+            # each access, so patching those covers `from huggingface_hub import`.
+            namespace = vars(mod)
+        except TypeError:
+            continue
+        try:
+            if namespace.get(symbol) is original:
                 setattr(mod, symbol, replacement)
                 patched_count += 1
         except Exception as exc:

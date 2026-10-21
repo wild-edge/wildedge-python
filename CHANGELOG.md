@@ -5,6 +5,15 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Fixed
+
+- Enabling the `huggingface` hub no longer imports unused transformers model
+  modules. To find references to `hf_hub_download` and `snapshot_download`,
+  the hub tracker looked up the name on every loaded module, and transformers'
+  lazy modules import code on lookup. With transformers loaded this imported
+  about 140 extra modules, took about 0.15 s and logged about 430 "failed to
+  patch" debug lines. The tracker now reads each module's namespace instead.
+
 ## 0.3.0 - 2026-10-21
 
 ### Added
