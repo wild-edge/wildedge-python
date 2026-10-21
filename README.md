@@ -21,7 +21,9 @@ Prompts and outputs aren't uploaded unless you explicitly attach them.
 
 **[Get started](#install)** · [Explore the demo](https://wildedge.dev/demo) · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
 
-[![WildEdge demo showing a local summarizer's latency, time to first token, throughput, and model health](docs/images/demo-model-performance.jpg)](https://wildedge.dev/demo)
+<a href="https://wildedge.dev/demo">
+  <img src="docs/images/demo-model-performance.jpg" alt="WildEdge demo showing a local summarizer's latency, time to first token, throughput, and model health" width="640">
+</a>
 
 *Spot performance changes in local models. [Explore the read-only demo](https://wildedge.dev/demo)
 with sample data. Pictured: News Reader → Models → Article Summarizer.*
