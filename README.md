@@ -21,12 +21,21 @@ Prompts and outputs aren't uploaded unless you explicitly attach them.
 
 **[Get started](#install)** · [Explore the demo](https://wildedge.dev/demo) · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
 
-| Model performance | Events | Hardware |
+| Model performance | Workflow trace | SQL editor |
 |:---:|:---:|:---:|
-| <a href="docs/images/demo-model-performance.jpg"><img src="docs/images/demo-model-performance.jpg" alt="Model health, latency, time to first token, and throughput" width="180"></a> | <a href="docs/images/demo-events.jpg"><img src="docs/images/demo-events.jpg" alt="Inference and error events with model and device metadata" width="180"></a> | <a href="docs/images/demo-hardware.jpg"><img src="docs/images/demo-hardware.jpg" alt="Thermal state, accelerator usage, and CPU throttling" width="180"></a> |
+| <a href="docs/images/demo-model-performance.jpg"><img src="docs/images/demo-model-performance.jpg" alt="Model health, latency, time to first token, and throughput" width="180"></a> | <a href="docs/images/demo-trace.jpg"><img src="docs/images/demo-trace.jpg" alt="Named workflow step and inference timing in a trace waterfall" width="180"></a> | <a href="docs/images/demo-sql.jpg"><img src="docs/images/demo-sql.jpg" alt="SQL query with stacked hourly inference volumes across local and cloud models" width="180"></a> |
 
-*Demo sample data across WildEdge SDKs. Click a thumbnail for the full-size image,
+*Illustrative sample data across WildEdge SDKs. Click a thumbnail for the full-size image,
 or [explore the read-only demo](https://wildedge.dev/demo).*
+
+<details>
+<summary>More screenshots: events and hardware</summary>
+
+| Events | Hardware |
+|:---:|:---:|
+| <a href="docs/images/demo-events.jpg"><img src="docs/images/demo-events.jpg" alt="Inference and error events with model and device metadata" width="180"></a> | <a href="docs/images/demo-hardware.jpg"><img src="docs/images/demo-hardware.jpg" alt="Thermal state, accelerator usage, and CPU throttling" width="180"></a> |
+
+</details>
 
 ## Install
 
