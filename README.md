@@ -95,6 +95,49 @@ API client. See [examples for each integration](#supported-integrations),
 [traces and spans](docs/manual-tracking.md#track-spans-for-agentic-workflows),
 and the [deployment guide](docs/deployment.md) for lifecycle details.
 
+<details>
+<summary>Trace a workflow across local and remote models</summary>
+
+Combine integrations and group inference calls into traces and spans. This
+example also requires `uv add openai` and an `OPENAI_API_KEY`, alongside the
+Transformers dependencies and WildEdge DSN above.
+
+```python
+import wildedge
+from openai import OpenAI
+from transformers import pipeline
+
+client = wildedge.init(integrations=["transformers", "openai"])
+try:
+    local = pipeline(
+        "text-generation",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct",
+        device=-1,
+    )
+    remote = OpenAI()
+    prompt = "Explain how rain forms in one sentence."
+
+    with wildedge.trace(run_id="run-1"):
+        with wildedge.span(kind="agent_step", name="draft"):
+            draft = local(
+                prompt, max_new_tokens=32, return_full_text=False
+            )[0]["generated_text"]
+        with wildedge.span(kind="agent_step", name="refine"):
+            response = remote.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": draft}],
+            )
+            print(response.choices[0].message.content)
+finally:
+    client.close(timeout=10)
+```
+
+Both inference calls belong to one trace, with separate `draft` and `refine`
+spans. See [manual tracking](docs/manual-tracking.md#track-spans-for-agentic-workflows)
+for additional span types and context.
+
+</details>
+
 ## Supported integrations
 
 **On-device**
