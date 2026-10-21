@@ -5,15 +5,6 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
-### Fixed
-
-- Enabling the `huggingface` hub no longer imports unused transformers model
-  modules. To find references to `hf_hub_download` and `snapshot_download`,
-  the hub tracker looked up the name on every loaded module, and transformers'
-  lazy modules import code on lookup. With transformers loaded this imported
-  about 140 extra modules, took about 0.15 s and logged about 430 "failed to
-  patch" debug lines. The tracker now reads each module's namespace instead.
-
 ## 0.3.0 - 2026-10-21
 
 ### Added
@@ -142,6 +133,12 @@ under Unreleased and move into a version section at release time.
   queue, so events were duplicated and, depending on timing, later events
   could be removed without being sent. This showed up when a process started
   with events saved by an earlier run and flushed soon after.
+- Enabling the `huggingface` hub no longer imports unused transformers model
+  modules. To find references to `hf_hub_download` and `snapshot_download`,
+  the hub tracker looked up the name on every loaded module, and transformers'
+  lazy modules import code on lookup. With transformers loaded this imported
+  about 140 extra modules, took about 0.15 s and logged about 430 "failed to
+  patch" debug lines. The tracker now reads each module's namespace instead.
 
 ## 0.2.2 - 2026-09-30
 
