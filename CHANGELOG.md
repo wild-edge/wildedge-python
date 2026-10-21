@@ -22,6 +22,12 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- Changing a model's metadata (for example `register_model(..., version="v2")`)
+  now takes effect after a restart. With offline persistence on (the default),
+  the model registry saved by an earlier process kept the first metadata ever
+  registered for each model on that machine, so later changes were ignored.
+  This includes anthropic models already saved as `"unknown"`.
+
 - `import wildedge` no longer imports every installed ML framework and API
   client. Each library is imported when its integration is activated or a
   model from it is registered, so SDK import is faster and a broken unrelated
@@ -161,8 +167,6 @@ under Unreleased and move into a version section at release time.
 - Models tracked by the anthropic integration register with `model_format`
   `"api"`, like the openai integration. The Anthropic extractor was never in
   the client's extractor list, so they were registered as `"unknown"`.
-  Machines that already tracked these models keep the saved `"unknown"` until
-  the SDK's model registry file is deleted.
 
 ## 0.2.1 - 2026-09-01
 
