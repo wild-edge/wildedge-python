@@ -16,6 +16,7 @@ from wildedge.integrations.common import (
 from wildedge.integrations.whisper import (
     CLIENT_ATTR,
     DESCRIPTOR_ATTR,
+    FASTER_WHISPER,
     HANDLE_ATTR,
     MAX_CAPTURE_BYTES,
     WhisperDescriptor,
@@ -26,11 +27,25 @@ from wildedge.timing import elapsed_ms
 
 _PATCH_LOCK = threading.Lock()
 
+# WhisperModel.__init__'s first parameter: a size name, hub repo or local path.
+MODEL_PATH_PARAM = "model_size_or_path"
+
+# Outcome of a segment loop that stopped without reading to the end.
+OUTCOME_ABANDONED = "abandoned"
+
+
+def accelerator_for(device: str) -> str:
+    """WildEdge accelerator for a CTranslate2 device ("cuda" or "cpu").
+
+    The runtime reports the resolved device, so "auto" doesn't reach here.
+    """
+    return "gpu" if device == "cuda" else "cpu"
+
 
 class TranscriptCollector:
     """Counts words as segments arrive and keeps the text when capture is on."""
 
-    def __init__(self, t0: float, capture: bool) -> None:
+    def __init__(self, t0: float, *, capture: bool) -> None:
         self._t0 = t0
         self.words = 0
         self.last_segment_ms: int | None = None
@@ -65,11 +80,14 @@ class SegmentStream(SyncStreamWrapper):
     was needed, decoded nothing and sends no event.
     """
 
+    # Class-level defaults keep __del__ safe if __init__ never finished;
+    # otherwise these lookups would fall through to the wrapped generator.
+    _finished = True
+    _iterator = None
+
     def __del__(self) -> None:
-        # vars() avoids __getattr__, which forwards to the wrapped generator.
-        state = vars(self)
-        if state.get("_finished") is False and state.get("_iterator") is not None:
-            self._finish("abandoned")
+        if self.started and not self.finished:
+            self._finish(OUTCOME_ABANDONED)
 
 
 def tracked_handle(model):
@@ -98,12 +116,14 @@ def wrap_transcribe(original, model_of=lambda owner: owner):
             try:
                 track_api_error(handle, exc, elapsed_ms(t0))
             except Exception as telemetry_exc:
-                debug_failure("faster_whisper", "error tracking", telemetry_exc)
+                debug_failure(FASTER_WHISPER, "error tracking", telemetry_exc)
             raise
-        collector = TranscriptCollector(t0, handle.capture_attachments is not None)
+        collector = TranscriptCollector(
+            t0, capture=handle.capture_attachments is not None
+        )
 
         def done(duration_ms, first_segment_ms, *, outcome="completed"):
-            if outcome == "abandoned" and collector.last_segment_ms is not None:
+            if outcome == OUTCOME_ABANDONED and collector.last_segment_ms is not None:
                 duration_ms = collector.last_segment_ms
             track_transcription(
                 handle,
@@ -133,7 +153,7 @@ def _install(client_ref):
 
     cls = faster_whisper.WhisperModel
     original = cls.__init__
-    if getattr(original, "__wildedge_patch_name__", None) == "faster_whisper":
+    if getattr(original, "__wildedge_patch_name__", None) == FASTER_WHISPER:
         return
     signature = inspect.signature(original)
 
@@ -147,7 +167,7 @@ def _install(client_ref):
         try:
             bound = signature.bind(self, *args, **kwargs)
             bound.apply_defaults()
-            runtime = self.model
+            runtime = self.model  # the ctranslate2.models.Whisper instance
             device = getattr(runtime, "device", bound.arguments.get("device", "cpu"))
             compute = getattr(
                 runtime, "compute_type", bound.arguments.get("compute_type")
@@ -156,9 +176,9 @@ def _install(client_ref):
                 self,
                 DESCRIPTOR_ATTR,
                 WhisperDescriptor.from_path(
-                    bound.arguments["model_size_or_path"],
-                    "faster_whisper",
-                    "gpu" if device == "cuda" else "cpu",
+                    bound.arguments[MODEL_PATH_PARAM],
+                    FASTER_WHISPER,
+                    accelerator_for(device),
                     compute,
                 ),
             )
@@ -169,9 +189,9 @@ def _install(client_ref):
             # clients do. After a client replacement it warns once instead.
             setattr(self, CLIENT_ATTR, bind_client_reference(client_ref, client))
         except Exception as exc:
-            debug_failure("faster_whisper", "model registration", exc)
+            debug_failure(FASTER_WHISPER, "model registration", exc)
 
-    init.__wildedge_patch_name__ = "faster_whisper"
+    init.__wildedge_patch_name__ = FASTER_WHISPER
     cls.__init__ = init
     cls.transcribe = wrap_transcribe(cls.transcribe)
     batched = getattr(faster_whisper, "BatchedInferencePipeline", None)

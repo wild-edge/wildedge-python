@@ -23,6 +23,7 @@ from wildedge.integrations.common import (
     build_input_meta,
     debug_failure,
     source_from_base_url,
+    stream_error_code,
     track_api_error,
 )
 from wildedge.model import ModelInfo
@@ -190,7 +191,7 @@ def make_openai_stream_callbacks(
             input_modality="text",
             output_modality="generation",
             success=outcome == "completed",
-            error_code=None if outcome == "completed" else "STREAM_" + outcome.upper(),
+            error_code=stream_error_code(outcome),
             input_meta=build_input_meta(messages, ti),
             output_meta=output_meta,
             api_meta=build_api_meta(last_chunk[0])
@@ -368,7 +369,7 @@ def make_responses_stream_callbacks(
                 success=False,
                 error_code="STREAM_INCOMPLETE"
                 if outcome == "completed"
-                else "STREAM_" + outcome.upper(),
+                else stream_error_code(outcome),
             )
         if response is not None and not recorded:
             recorded = True

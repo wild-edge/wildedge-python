@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextvars
 import functools
 import importlib
+import inspect
 import threading
 import time
 
@@ -15,8 +16,10 @@ from wildedge.integrations.common import (
 )
 from wildedge.integrations.whisper import (
     DESCRIPTOR_ATTR,
+    MLX_WHISPER,
     WhisperDescriptor,
     descriptor,
+    report_cached_load,
     report_load,
     track_transcription,
 )
@@ -24,41 +27,46 @@ from wildedge.timing import elapsed_ms
 
 _PATCH_LOCK = threading.Lock()
 
-# mlx_whisper.transcribe's default for path_or_hf_repo.
+# Defaults of mlx_whisper.transcribe, which picks the model and its dtype from
+# path_or_hf_repo and decode_options["fp16"].
 DEFAULT_REPO = "mlx-community/whisper-tiny"
+DEFAULT_FP16 = True
 
 
 def mlx_accelerator() -> str:
     try:
         import mlx.core as mx  # noqa: PLC0415 -- optional runtime
 
-        return "cpu" if "cpu" in str(mx.default_device()) else "gpu"
+        return "cpu" if mx.default_device() == mx.cpu else "gpu"
     except Exception as exc:
-        debug_failure("mlx_whisper", "device detection", exc)
+        debug_failure(MLX_WHISPER, "device detection", exc)
         return "gpu"
 
 
-def mlx_quantization(model: object, dtype: object) -> str:
-    """Bit width of quantized layers, else the weight dtype."""
-    try:
-        for _, layer in model.named_modules():  # type: ignore[union-attr]
-            bits = getattr(layer, "bits", None)
-            if isinstance(bits, int):
-                return f"q{bits}"
-    except Exception as exc:
-        debug_failure("mlx_whisper", "quantization detection", exc)
-    return dtype_to_quantization(str(dtype)) or "f32"
+def mlx_quantization(model: object, dtype: object) -> str | None:
+    """Bit width of quantized layers, else the weight dtype, if recognised."""
+    if model is not None:
+        try:
+            for _, layer in model.named_modules():  # type: ignore[attr-defined]
+                bits = getattr(layer, "bits", None)
+                if isinstance(bits, int):
+                    return f"q{bits}"
+        except Exception as exc:
+            debug_failure(MLX_WHISPER, "quantization detection", exc)
+    return dtype_to_quantization(str(dtype))
 
 
-def describe(model: object, path: object, dtype: object) -> WhisperDescriptor:
+def describe(path: object, dtype: object, model: object = None) -> WhisperDescriptor:
+    """Describe a model; without ``model`` (when loading failed) only the dtype
+    is known."""
     return WhisperDescriptor.from_path(
-        path, "mlx_whisper", mlx_accelerator(), mlx_quantization(model, dtype)
+        path, MLX_WHISPER, mlx_accelerator(), mlx_quantization(model, dtype)
     )
 
 
 def requested_model(kwargs: dict) -> tuple[str, str]:
     """Model path and dtype that ``mlx_whisper.transcribe`` uses for these arguments."""
-    dtype = "float16" if kwargs.get("fp16", True) else "float32"
+    dtype = "float16" if kwargs.get("fp16", DEFAULT_FP16) else "float32"
     return kwargs.get("path_or_hf_repo", DEFAULT_REPO), dtype
 
 
@@ -72,25 +80,32 @@ def _install(client_ref):
     module = importlib.import_module("mlx_whisper.transcribe")
     loaders = importlib.import_module("mlx_whisper.load_models")
     original = module.transcribe
-    if getattr(original, "__wildedge_patch_name__", None) == "mlx_whisper":
+    if getattr(original, "__wildedge_patch_name__", None) == MLX_WHISPER:
         return
     original_load = module.load_model
+    load_signature = inspect.signature(original_load)
     # The client that owns the transcription in progress, so a load inside it
     # reports to the same client even if the default changes meanwhile.
     active_client = contextvars.ContextVar("wildedge_mlx_whisper_client", default=None)
 
     @functools.wraps(original_load)
-    def load(path_or_hf_repo, *args, **kwargs):
+    def load(*args, **kwargs):
         client = active_client.get() or client_ref()
         t0 = time.perf_counter()
-        model = original_load(path_or_hf_repo, *args, **kwargs)
+        model = original_load(*args, **kwargs)
         try:
-            dtype = kwargs.get("dtype", args[0] if args else "float32")
-            setattr(model, DESCRIPTOR_ATTR, describe(model, path_or_hf_repo, dtype))
+            bound = load_signature.bind(*args, **kwargs)
+            bound.apply_defaults()
+            info = describe(
+                bound.arguments["path_or_hf_repo"],
+                bound.arguments.get("dtype"),
+                model,
+            )
+            setattr(model, DESCRIPTOR_ATTR, info)
             if client is not None and not client.closed:
                 report_load(client, model, elapsed_ms(t0))
         except Exception as exc:
-            debug_failure("mlx_whisper", "model registration", exc)
+            debug_failure(MLX_WHISPER, "model registration", exc)
         return model
 
     @functools.wraps(original)
@@ -105,11 +120,10 @@ def _install(client_ref):
         except Exception as exc:
             try:
                 if not client.closed:
-                    path, dtype = requested_model(kwargs)
-                    handle = client.register_model(describe(None, path, dtype))
+                    handle = client.register_model(describe(*requested_model(kwargs)))
                     track_api_error(handle, exc, elapsed_ms(t0))
             except Exception as telemetry_exc:
-                debug_failure("mlx_whisper", "error tracking", telemetry_exc)
+                debug_failure(MLX_WHISPER, "error tracking", telemetry_exc)
             raise
         finally:
             active_client.reset(token)
@@ -122,28 +136,25 @@ def _install(client_ref):
             info = descriptor(model)
             if info is None:
                 # Loaded before instrumentation started.
-                info = describe(model, *requested_model(kwargs))
+                info = describe(*requested_model(kwargs), model)
                 setattr(model, DESCRIPTOR_ATTR, info)
             if info.model_id not in client.auto_loaded:
-                # Cached before this client existed: report it once, with no
-                # load time of its own.
-                client._on_model_auto_loaded(
-                    model,
-                    load_ms=0,
-                    load_kwargs={"context": {"model_cache_hit": True}},
-                )
+                report_cached_load(client, model)
+            handle = client.registry.handles.get(
+                info.model_id
+            ) or client.register_model(model)
             track_transcription(
-                client.register_model(model),
+                handle,
                 audio,
                 result.get("text", ""),
                 duration_ms=elapsed_ms(t0),
                 language=result.get("language"),
             )
         except Exception as exc:
-            debug_failure("mlx_whisper", "transcription tracking", exc)
+            debug_failure(MLX_WHISPER, "transcription tracking", exc)
         return result
 
-    transcribe.__wildedge_patch_name__ = "mlx_whisper"
+    transcribe.__wildedge_patch_name__ = MLX_WHISPER
     module.load_model = load
     loaders.load_model = load
     module.transcribe = transcribe

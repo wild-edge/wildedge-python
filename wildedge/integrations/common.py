@@ -23,6 +23,23 @@ def debug_failure(framework: str, context: str, exc: BaseException) -> None:
     logger.debug("wildedge: %s %s failed: %s", framework, context, exc)
 
 
+# Folder prefix of a repo in the Hugging Face hub cache: models--org--name.
+HF_CACHE_REPO_PREFIX = "models--"
+
+
+def hf_repo_from_cache_path(path: str) -> str | None:
+    """``org/name`` for a path inside the Hugging Face hub cache, else None."""
+    for part in path.replace("\\", "/").split("/"):
+        if part.startswith(HF_CACHE_REPO_PREFIX):
+            return part[len(HF_CACHE_REPO_PREFIX) :].replace("--", "/", 1)
+    return None
+
+
+def stream_error_code(outcome: str) -> str | None:
+    """None for a stream that completed, else ``STREAM_<OUTCOME>``."""
+    return None if outcome == "completed" else "STREAM_" + outcome.upper()
+
+
 # ---------------------------------------------------------------------------
 # Chat API helpers, shared by the openai integration and wildedge.llm_api
 # ---------------------------------------------------------------------------
@@ -329,6 +346,10 @@ class StreamState:
         self._ttft_ms = None
         self._context = contextvars.copy_context()
 
+    @property
+    def finished(self) -> bool:
+        return self._finished
+
     def _safe(self, callback: Callable, *args: Any, **kwargs: Any) -> Any:
         try:
             return self._context.run(callback, *args, **kwargs)
@@ -373,6 +394,11 @@ class SyncStreamWrapper(StreamState):
         super().__init__(handle, t0, on_chunk, on_done)
         self._original = original
         self._iterator = None
+
+    @property
+    def started(self) -> bool:
+        """Whether iteration has begun."""
+        return self._iterator is not None
 
     def __iter__(self) -> SyncStreamWrapper:
         return self

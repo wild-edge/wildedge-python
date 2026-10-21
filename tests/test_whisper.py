@@ -5,10 +5,11 @@ import io
 import sys
 import wave
 from types import ModuleType, SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wildedge.client import WildEdge
 from wildedge.instrumentation import claim_instrumentation
 from wildedge.integrations import faster_whisper as faster
 from wildedge.integrations.faster_whisper import (
@@ -25,6 +26,7 @@ from wildedge.integrations.whisper import (
     model_name_and_source,
     track_transcription,
 )
+from wildedge.platforms.device_info import DeviceInfo
 
 
 @pytest.fixture
@@ -51,6 +53,18 @@ def tracked_model(handle):
     setattr(model, HANDLE_ATTR, handle)
     setattr(model, CLIENT_ATTR, lambda: object())
     return model
+
+
+def stubbed_client():
+    """A second client, set up like the client_with_stubbed_runtime fixture."""
+    with (
+        patch("wildedge.client.detect_device", return_value=DeviceInfo("id", "linux")),
+        patch("wildedge.client.Transmitter"),
+        patch("wildedge.client.Consumer"),
+    ):
+        return WildEdge(
+            dsn="https://secret@ingest.wildedge.dev/key", sampling_interval_s=None
+        )
 
 
 def events_of(events, event_type):
@@ -340,6 +354,16 @@ def test_faster_model_stays_with_its_original_client(
 # mlx-whisper ----------------------------------------------------------------
 
 
+class FakeMlxModel:
+    """Stands in for an MLX Whisper model; weak-referenceable like the real one."""
+
+    def __init__(self, bits=None):
+        self.layers = [("", SimpleNamespace(bits=bits))] if bits else []
+
+    def named_modules(self):
+        return self.layers
+
+
 @pytest.fixture
 def fake_mlx_whisper(monkeypatch):
     """mlx_whisper with ModelHolder's caching: one model, reloaded on change."""
@@ -348,8 +372,8 @@ def fake_mlx_whisper(monkeypatch):
         for n in ("mlx_whisper", "mlx_whisper.transcribe", "mlx_whisper.load_models")
     )
 
-    def load_model(path, dtype="float32"):
-        return SimpleNamespace(named_modules=lambda: [("", SimpleNamespace(bits=4))])
+    def load_model(path_or_hf_repo, dtype="float32"):
+        return FakeMlxModel(bits=4)
 
     class ModelHolder:
         model = None
@@ -368,34 +392,29 @@ def fake_mlx_whisper(monkeypatch):
     module.load_model = loaders.load_model = load_model
     for mod in (root, module, loaders):
         monkeypatch.setitem(sys.modules, mod.__name__, mod)
+    root.holder = ModelHolder
     return root
 
 
-def test_mlx_returns_the_original_result(monkeypatch, handle):
-    root, module, loaders = (
-        ModuleType(n)
-        for n in ("mlx_whisper", "mlx_whisper.transcribe", "mlx_whisper.load_models")
-    )
-    result = {"text": "hello world", "language": "en"}
-    module.ModelHolder = SimpleNamespace(model=SimpleNamespace())
-    module.transcribe = lambda *a, **kw: result
-    module.load_model = loaders.load_model = lambda *a, **kw: SimpleNamespace()
-    for mod in (root, module, loaders):
-        monkeypatch.setitem(sys.modules, mod.__name__, mod)
-    client = SimpleNamespace(
-        closed=False,
-        auto_loaded=set(),
-        register_model=MagicMock(return_value=handle),
-        _on_model_auto_loaded=MagicMock(),
-    )
-    install_mlx(lambda: client)
-    assert root.transcribe("audio.wav", path_or_hf_repo="test") is result
-    # The model was cached before instrumentation, so it is reported as a hit.
-    client._on_model_auto_loaded.assert_called_once()
-    assert client._on_model_auto_loaded.call_args.kwargs["load_kwargs"]["context"][
-        "model_cache_hit"
-    ]
-    handle.track_inference.assert_called_once()
+def test_mlx_returns_the_original_result(fake_mlx_whisper, instrumented_client):
+    install_mlx(claim_instrumentation(instrumented_client, "mlx_whisper"))
+    result = fake_mlx_whisper.transcribe("audio.wav", path_or_hf_repo="org/model")
+    assert result == {"text": "hello world", "language": "en"}
+    assert len(events_of(instrumented_client.events, "inference")) == 1
+
+
+def test_mlx_model_cached_before_init_is_reported_as_a_hit(
+    fake_mlx_whisper, instrumented_client
+):
+    fake_mlx_whisper.holder.model = FakeMlxModel()
+    fake_mlx_whisper.holder.model_path = "org/model"
+    install_mlx(claim_instrumentation(instrumented_client, "mlx_whisper"))
+    fake_mlx_whisper.transcribe("audio.wav", path_or_hf_repo="org/model")
+    (load,) = events_of(instrumented_client.events, "model_load")
+    assert load["model_id"] == "mlx_whisper:org/model"
+    assert load["attributes"]["model_cache_hit"] is True
+    registered = instrumented_client.registry.models["mlx_whisper:org/model"]
+    assert registered.quantization == "f16"
 
 
 def test_mlx_load_reads_quantization(fake_mlx_whisper, instrumented_client):
@@ -439,19 +458,17 @@ def test_mlx_sends_nothing_after_client_closes(fake_mlx_whisper, instrumented_cl
 
 
 def test_mlx_replacement_client_reports_the_cached_model(
-    fake_mlx_whisper, instrumented_client, handle
+    fake_mlx_whisper, instrumented_client
 ):
     install_mlx(claim_instrumentation(instrumented_client, "mlx_whisper"))
     fake_mlx_whisper.transcribe("audio.wav", path_or_hf_repo="org/model")
     instrumented_client.close()
-    replacement = MagicMock(closed=False, auto_loaded=set())
-    replacement.register_model.return_value = handle
+    replacement = stubbed_client()
+    replacement_events = []
+    replacement.publish = replacement_events.append
     claim_instrumentation(replacement, "mlx_whisper")
     fake_mlx_whisper.transcribe("audio.wav", path_or_hf_repo="org/model")
-    replacement._on_model_auto_loaded.assert_called_once()
-    load_context = replacement._on_model_auto_loaded.call_args.kwargs["load_kwargs"][
-        "context"
-    ]
-    assert load_context["model_cache_hit"]
-    handle.track_inference.assert_called_once()
+    (load,) = events_of(replacement_events, "model_load")
+    assert load["attributes"]["model_cache_hit"] is True
+    assert len(events_of(replacement_events, "inference")) == 1
     assert len(events_of(instrumented_client.events, "inference")) == 1

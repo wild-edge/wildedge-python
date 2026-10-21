@@ -895,8 +895,14 @@ class WildEdge:
         downloads: list[dict] | None = None,
         model_id: str | None = None,
         load_kwargs: dict | None = None,
+        reload: bool = False,
     ) -> None:
-        """Callback invoked by auto-patches after a model is constructed."""
+        """Callback invoked by auto-patches after a model is constructed.
+
+        A model ID seen before normally means a wrapper around a model that is
+        already loaded, so no second load event is sent. ``reload=True`` says
+        the weights were loaded again and records the load anyway.
+        """
         if self.closed:
             return
         # Always drain thread-local hub buffers to keep them clean.
@@ -908,7 +914,7 @@ class WildEdge:
             downloads = thread_records
 
         handle = self.register_model(obj, model_id=model_id)
-        already_tracked = handle.model_id in self.auto_loaded
+        already_tracked = handle.model_id in self.auto_loaded and not reload
         self.auto_loaded.add(handle.model_id)
 
         if already_tracked:
