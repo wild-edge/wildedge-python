@@ -1,6 +1,7 @@
 """Tests for the background consumer."""
 
 import os
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -346,6 +347,48 @@ class TestConsumerFlush:
         assert registered["fn"] == consumer.flush
         assert registered["args"] == (constants.DEFAULT_SHUTDOWN_FLUSH_TIMEOUT_SEC,)
 
+    def test_flush_does_not_resend_a_batch_already_in_flight(self, monkeypatch):
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        queue = EventQueue(max_size=100)
+        for i in range(10):
+            queue.add({"event_id": str(i), "event_type": "inference", "model_id": "m"})
+        sending = threading.Event()
+        release = threading.Event()
+        sent: list[str] = []
+
+        def slow_send(batch):
+            sent.extend(e["event_id"] for e in batch["events"])
+            sending.set()
+            release.wait(5)
+            return make_success_response(len(batch["events"]))
+
+        mock_transmitter = MagicMock(spec=Transmitter)
+        mock_transmitter.send.side_effect = slow_send
+        consumer = self._make_consumer(queue, mock_transmitter, batch_size=10)
+
+        background = threading.Thread(target=consumer.drain_once)
+        background.start()
+        assert sending.wait(5)
+        flusher = threading.Thread(target=consumer.flush, kwargs={"timeout": 5})
+        flusher.start()
+        release.set()
+        background.join(5)
+        flusher.join(5)
+
+        assert sorted(sent, key=int) == [str(i) for i in range(10)]
+        assert queue.length() == 0
+
+    def test_drain_once_gives_up_when_lock_wait_times_out(self, monkeypatch):
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        queue = EventQueue(max_size=100)
+        queue.add({"event_id": "e1", "event_type": "inference", "model_id": "m"})
+        mock_transmitter = MagicMock(spec=Transmitter)
+        consumer = self._make_consumer(queue, mock_transmitter)
+
+        with consumer.drain_lock:
+            assert consumer.drain_once(timeout=0.01) is False
+        mock_transmitter.send.assert_not_called()
+
 
 class TestConsumerForkSafety:
     def setup_method(self):
@@ -441,6 +484,32 @@ class TestConsumerForkSafety:
         consumer._resume()
 
         assert any(fn == consumer.flush for fn, _ in registered)
+
+    def test_pause_holds_drain_lock_until_resume(self, monkeypatch):
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        consumer = self._make_consumer(
+            EventQueue(max_size=100), MagicMock(spec=Transmitter)
+        )
+
+        consumer._pause()
+        assert consumer.drain_lock.locked()
+        consumer._resume()
+        assert not consumer.drain_lock.locked()
+
+    def test_resume_replaces_lock_held_by_in_flight_send(self, monkeypatch):
+        monkeypatch.setattr(Consumer, "run", lambda self: None)
+        consumer = self._make_consumer(
+            EventQueue(max_size=100), MagicMock(spec=Transmitter)
+        )
+        stuck = consumer.drain_lock
+        # A send that outlived _pause() still holds the lock.
+        stuck.acquire()
+        consumer.fork_holds_drain_lock = False
+        consumer._resume()
+
+        assert consumer.drain_lock is not stuck
+        assert not consumer.drain_lock.locked()
+        stuck.release()
 
 
 class TestForkRegistration:

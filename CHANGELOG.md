@@ -125,6 +125,11 @@ under Unreleased and move into a version section at release time.
   tracked call of its pipeline; other models the pipeline runs, and direct
   calls to the model, are still tracked. Generator and dataset inputs, which
   run lazily, are not covered yet (#78).
+- `flush()` no longer sends a batch the background sender is already sending.
+  Both used to send the same events and then each removed a batch from the
+  queue, so events were duplicated and, depending on timing, later events
+  could be removed without being sent. This showed up when a process started
+  with events saved by an earlier run and flushed soon after.
 
 ## 0.2.2 - 2026-09-30
 
