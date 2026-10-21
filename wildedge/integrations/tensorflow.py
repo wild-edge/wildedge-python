@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -21,16 +22,16 @@ from wildedge.integrations.common import (
     num_classes_from_output_shape,
     tf_weights_accelerator,
 )
+from wildedge.loading import optional_module
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:
     from wildedge.model import ModelHandle
 
-try:
-    import tensorflow as _tf  # type: ignore[import-untyped]
-except ImportError:
-    _tf = None  # type: ignore[assignment]
+# Imported when the integration is activated, so registering a Keras model
+# does not import TensorFlow.
+_tf = sys.modules.get("tensorflow")
 
 TENSORFLOW_CALL_PATCH_NAME = "tensorflow_call"
 TENSORFLOW_HANDLE_ATTR = "__wildedge_tensorflow_handle__"
@@ -245,8 +246,11 @@ class TensorflowExtractor(BaseExtractor):
 
     @classmethod
     def install_auto_load_patch(cls, client_ref: object) -> None:
-        global _tf_auto_patched
-        if _tf_auto_patched or _tf is None:
+        global _tf_auto_patched, _tf
+        if _tf_auto_patched:
+            return
+        _tf = _tf or optional_module("tensorflow")
+        if _tf is None:
             return
 
         with _TF_AUTO_PATCH_LOCK:

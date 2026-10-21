@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -23,16 +24,14 @@ from wildedge.integrations.common import (
     infer_input_modality_from_names,
     torch_module_accelerator,
 )
+from wildedge.loading import optional_module
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
-try:
-    import timm as _timm
-    from timm.data import ImageNetInfo as _ImageNetInfo
-except ImportError:
-    _timm = None  # type: ignore[assignment]
-    _ImageNetInfo = None  # type: ignore[assignment,misc]
+# Imported when the timm integration is activated, so registering a plain
+# PyTorch model does not import timm.
+_timm = sys.modules.get("timm")
 
 try:
     import torch as _torch
@@ -119,7 +118,9 @@ def image_input_meta(tensor: object) -> ImageInputMeta | None:
 def build_imagenet_labels() -> list[str] | None:
     """Return a 1000-entry description list using timm's bundled ImageNet metadata."""
     try:
-        info = _ImageNetInfo()  # type: ignore[misc]
+        from timm.data import ImageNetInfo  # noqa: PLC0415 -- optional, 1000-class only
+
+        info = ImageNetInfo()
         return [info.index_to_description(i) for i in range(1000)]
     except Exception as exc:
         debug_pytorch_failure("imagenet label build", exc)
@@ -234,7 +235,7 @@ class PytorchExtractor(BaseExtractor):
             nc = getattr(obj, "num_classes", 0)
             if isinstance(nc, int) and nc > 1:
                 num_classes = nc
-                if num_classes == 1000 and _timm is not None:
+                if num_classes == 1000:
                     labels = build_imagenet_labels()
         except Exception as exc:
             debug_pytorch_failure("num_classes detection", exc)
@@ -302,8 +303,11 @@ class PytorchExtractor(BaseExtractor):
         the duration of the call and emitted as a model_download event.
         Inference tracking is handled by the existing PyTorch forward hooks.
         """
-        global _timm_patched
-        if _timm_patched or _timm is None:
+        global _timm_patched, _timm
+        if _timm_patched:
+            return
+        _timm = _timm or optional_module("timm")
+        if _timm is None:
             return
 
         with _TIMM_PATCH_LOCK:

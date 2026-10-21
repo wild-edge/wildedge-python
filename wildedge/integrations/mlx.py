@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -15,6 +16,7 @@ from wildedge.integrations.common import (
     mlx_accelerator,
     mlx_layer_quantization,
 )
+from wildedge.loading import optional_module
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -27,10 +29,9 @@ except ImportError:
     _mlx_nn = None  # type: ignore[assignment]
     _tree_flatten = None  # type: ignore[assignment]
 
-try:
-    import mlx_lm as _mlx_lm
-except ImportError:
-    _mlx_lm = None  # type: ignore[assignment]
+# Imported when the integration is activated, so registering an MLX model
+# does not import mlx-lm.
+_mlx_lm = sys.modules.get("mlx_lm")
 
 if TYPE_CHECKING:
     from wildedge.model import ModelHandle
@@ -196,8 +197,11 @@ class MlxExtractor(BaseExtractor):
           tokens/second. The autoregressive ``model()`` loop inside generate
           is suppressed via a thread-local guard so it does not double-count.
         """
-        global _mlx_patched
-        if _mlx_patched or _mlx_lm is None:
+        global _mlx_patched, _mlx_lm
+        if _mlx_patched:
+            return
+        _mlx_lm = _mlx_lm or optional_module("mlx_lm")
+        if _mlx_lm is None:
             return
 
         with _MLX_PATCH_LOCK:
