@@ -229,6 +229,3 @@ Report security and privacy issues to: support@wildedge.dev
 - [Streaming lifecycle](docs/streaming.md)
 - [Changelog](https://github.com/wild-edge/wildedge-python/blob/main/CHANGELOG.md)
 - [License](https://github.com/wild-edge/wildedge-python/blob/main/LICENSE)
-
-Each GitHub release ships `llms.txt` and `llms-full.txt`: the full
-documentation for that exact version in one file, built for AI assistants.
