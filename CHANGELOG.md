@@ -5,6 +5,8 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+## 0.3.0 - 2026-10-21
+
 ### Added
 
 - `mlx_whisper` and `faster_whisper` integrations track local Whisper model
