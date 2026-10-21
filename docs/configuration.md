@@ -64,6 +64,10 @@ warning naming the setting to change (only a debug message if you set
 `attachment_filter` runs, and integrations skip building them at all, so a
 Whisper client without `audio` never encodes the audio.
 
+`attachment_modalities` doesn't turn uploads on by itself:
+`attachments_enabled` is still required, and the SDK warns if the list is set
+without it.
+
 For finer rules, such as uploading inputs but not outputs, use
 `attachment_filter`.
 

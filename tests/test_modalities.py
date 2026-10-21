@@ -169,3 +169,29 @@ def test_client_defaults_to_text(tmp_path, monkeypatch):
 def test_client_rejects_unknown_modality(tmp_path):
     with pytest.raises(ValueError, match="pictures"):
         client(tmp_path, attachment_modalities="pictures")
+
+
+@pytest.mark.parametrize("from_env", [False, True])
+def test_modalities_without_attachments_enabled_warn(monkeypatch, caplog, from_env):
+    monkeypatch.delenv(constants.ENV_ATTACHMENTS_ENABLED, raising=False)
+    kwargs = {}
+    if from_env:
+        monkeypatch.setenv(constants.ENV_ATTACHMENT_MODALITIES, "audio")
+    else:
+        kwargs["attachment_modalities"] = ["audio"]
+    with caplog.at_level(logging.WARNING, logger="wildedge"):
+        wildedge = WildEdge(dsn="https://test@test.com/key", **kwargs)
+    try:
+        assert wildedge.attachment_manager is None
+        assert any("attachments_enabled=True" in r.message for r in caplog.records)
+    finally:
+        wildedge.close()
+
+
+def test_enabled_attachments_with_modalities_do_not_warn(tmp_path, caplog):
+    with caplog.at_level(logging.WARNING, logger="wildedge"):
+        wildedge = client(tmp_path, attachment_modalities=["audio"])
+    try:
+        assert not any("attachments_enabled" in r.message for r in caplog.records)
+    finally:
+        wildedge.close()

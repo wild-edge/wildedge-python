@@ -379,6 +379,12 @@ class WildEdge:
             if attachment_modalities is None
             else modalities.parse(attachment_modalities)
         )
+        if allowed_modalities is not None and not attachments_enabled:
+            # The list only says what may be uploaded; it doesn't turn uploads on.
+            logger.warning(
+                "wildedge: attachment_modalities is set but attachments are "
+                "disabled; set attachments_enabled=True to upload them"
+            )
         self.attachment_manager: AttachmentManager | None = None
         self.attachment_uploader: AttachmentUploader | None = None
         if attachments_enabled:
