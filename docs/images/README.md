@@ -23,9 +23,10 @@ thumbnails linked to the full-size images, with a separate live-demo link.
 
 - `demo-trace.jpg`: News Reader → Runs → demo-run-1. Shows a named step and
   a local summarizer inference; this sample does not include a cloud call.
-- `demo-sql.jpg`: News Reader → Analytics → SQL. Shows the demo's default
-  query. SQL execution is disabled in this offline demo; no query results
-  were fabricated or added to the screenshot.
+- `demo-sql.jpg`: a local screenshot-only composition of the dashboard's SQL
+  editor and chart result components. It shows query results computed with DuckDB
+  from generated fictional events, not the deployed offline demo or production
+  telemetry. See [sql-preview/README.md](sql-preview/README.md) to reproduce it.
 
 The opening row contains performance, trace, and SQL previews. Events and
 hardware remain in a collapsed More screenshots section. All five thumbnails

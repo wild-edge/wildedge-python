@@ -23,9 +23,9 @@ Prompts and outputs aren't uploaded unless you explicitly attach them.
 
 | Model performance | Workflow trace | SQL editor |
 |:---:|:---:|:---:|
-| <a href="docs/images/demo-model-performance.jpg"><img src="docs/images/demo-model-performance.jpg" alt="Model health, latency, time to first token, and throughput" width="180"></a> | <a href="docs/images/demo-trace.jpg"><img src="docs/images/demo-trace.jpg" alt="Named workflow step and inference timing in a trace waterfall" width="180"></a> | <a href="docs/images/demo-sql.jpg"><img src="docs/images/demo-sql.jpg" alt="SQL editor for exploring inference telemetry" width="180"></a> |
+| <a href="docs/images/demo-model-performance.jpg"><img src="docs/images/demo-model-performance.jpg" alt="Model health, latency, time to first token, and throughput" width="180"></a> | <a href="docs/images/demo-trace.jpg"><img src="docs/images/demo-trace.jpg" alt="Named workflow step and inference timing in a trace waterfall" width="180"></a> | <a href="docs/images/demo-sql.jpg"><img src="docs/images/demo-sql.jpg" alt="SQL query with stacked hourly inference volumes across local and cloud models" width="180"></a> |
 
-*Demo sample data across WildEdge SDKs. Click a thumbnail for the full-size image,
+*Illustrative sample data across WildEdge SDKs. Click a thumbnail for the full-size image,
 or [explore the read-only demo](https://wildedge.dev/demo).*
 
 <details>
