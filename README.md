@@ -148,6 +148,17 @@ for additional span types and context.
 
 ## Supported integrations
 
+**Local inference:** llama.cpp, Transformers, MLX-LM, ONNX Runtime, PyTorch,
+TensorFlow, Keras, Ultralytics, timm, faster-whisper, and MLX Whisper.
+
+**API clients:** OpenAI, Anthropic, and OpenAI-compatible providers.
+
+Most integrations track supported entry points automatically after activation.
+PyTorch and standalone Keras models require explicit registration.
+
+<details>
+<summary>Integration keys, setup, and examples</summary>
+
 Enable the integration before creating models or API clients, using
 `--integrations` or `wildedge.init(integrations=[...])`. Automatic tracking
 covers the entry points listed below. PyTorch and standalone Keras models need
@@ -175,6 +186,11 @@ explicit registration through `client.load(...)` or `client.register_model(...)`
 | Anthropic | `anthropic` | Automatically for clients created after initialization | [Example](examples/anthropic_example.py) |
 | OpenAI | `openai` | Automatically for clients created after initialization | [Example](examples/openai_example.py) |
 
+</details>
+
+<details>
+<summary>API coverage and compatible providers</summary>
+
 Fireworks, Together, Baseten, xAI, Mistral, Groq and other OpenAI-compatible hosts
 work through the `openai` integration — pass their `base_url`. See
 [Providers](https://github.com/wild-edge/wildedge-python/blob/main/docs/providers.md)
@@ -194,6 +210,11 @@ The `openai` integration also tracks sync and async `embeddings.create()` calls.
 See [Embeddings](docs/providers.md#embeddings) and the
 [example](examples/openai_embeddings_example.py).
 
+</details>
+
+<details>
+<summary>Model download tracking</summary>
+
 **Hub tracking**
 
 Pass `hubs=` to track model download provenance. Hubs are framework-agnostic and can be combined with any integration.
@@ -202,6 +223,8 @@ Pass `hubs=` to track model download provenance. Hubs are framework-agnostic and
 |---|---|
 | `huggingface` | Downloads via `huggingface_hub` |
 | `torchhub` | Downloads via `torch.hub` |
+
+</details>
 
 For unsupported frameworks, see [Manual tracking](https://github.com/wild-edge/wildedge-python/blob/main/docs/manual-tracking.md).
 
