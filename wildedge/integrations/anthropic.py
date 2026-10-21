@@ -496,3 +496,7 @@ class AnthropicExtractor(BaseExtractor):
             _anthropic.Anthropic.__init__ = patched_sync_init
             _anthropic.AsyncAnthropic.__init__ = patched_async_init
             _anthropic_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = AnthropicExtractor.install_auto_load_patch

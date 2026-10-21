@@ -17,11 +17,17 @@ class HubSpec:
 
     name: str
     required_modules: tuple[str, ...]
+    tracker_class: str  # tracker class in the wildedge.hubs module with this name
+
+    @property
+    def tracker(self) -> str:
+        """Import path of the tracker class, loaded only when the hub is used."""
+        return f"wildedge.hubs.{self.name}:{self.tracker_class}"
 
 
 HUB_SPECS: tuple[HubSpec, ...] = (
-    HubSpec("huggingface", ("huggingface_hub",)),
-    HubSpec("torchhub", ("torch",)),
+    HubSpec("huggingface", ("huggingface_hub",), "HuggingFaceHubTracker"),
+    HubSpec("torchhub", ("torch",), "TorchHubTracker"),
 )
 
 HUBS_BY_NAME: dict[str, HubSpec] = {spec.name: spec for spec in HUB_SPECS}

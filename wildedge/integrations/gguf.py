@@ -559,3 +559,7 @@ class GgufExtractor(BaseExtractor):
             patched_init.__wildedge_original_call__ = original_init  # type: ignore[attr-defined]
             _llama_cpp.Llama.__init__ = patched_init
             _llama_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = GgufExtractor.install_auto_load_patch

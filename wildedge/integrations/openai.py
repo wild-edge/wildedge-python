@@ -659,3 +659,7 @@ class OpenAIExtractor(BaseExtractor):
             _openai.OpenAI.__init__ = patched_sync_init
             _openai.AsyncOpenAI.__init__ = patched_async_init
             _openai_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = OpenAIExtractor.install_auto_load_patch

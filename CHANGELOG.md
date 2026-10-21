@@ -15,6 +15,10 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- `import wildedge` no longer imports every installed ML framework and API
+  client. Each library is imported when its integration is activated or a
+  model from it is registered, so SDK import is faster and a broken unrelated
+  package no longer stops the SDK from starting.
 - Quantization labels are defined once in `wildedge.quantizations` and used
   by every integration. Behaviour changes:
   - MLX-LM reports N-bit weights as `int4`/`int8`, like Transformers, instead

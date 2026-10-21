@@ -450,3 +450,7 @@ class UltralyticsExtractor(BaseExtractor):
             patched_init.__wildedge_original_call__ = original_init  # type: ignore[attr-defined]
             _ultralytics.YOLO.__init__ = patched_init
             _ultralytics_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = UltralyticsExtractor.install_auto_load_patch

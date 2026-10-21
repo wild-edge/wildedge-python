@@ -509,3 +509,7 @@ class TransformersExtractor(BaseExtractor):
         _transformers.PreTrainedModel.from_pretrained = classmethod(  # type: ignore[assignment]
             patched_from_pretrained
         )
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = TransformersExtractor.install_auto_load_patch
