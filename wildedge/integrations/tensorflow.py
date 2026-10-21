@@ -12,16 +12,16 @@ try:
 except ImportError:
     _np = None  # type: ignore[assignment]
 
-from wildedge import constants
+from wildedge import accelerators, constants
 from wildedge.events.inference import ClassificationOutputMeta, TopKPrediction
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.integrations.common import (
     debug_failure,
     infer_input_modality_from_layer_types,
     num_classes_from_output_shape,
+    tf_weights_accelerator,
 )
 from wildedge.model import ModelInfo
-from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:
@@ -80,14 +80,10 @@ def is_tensorflow_model(obj: object) -> bool:
 
 def detect_accelerator(obj: object) -> str:
     try:
-        weights = getattr(obj, "weights", None) or []
-        if weights:
-            device = str(getattr(weights[0], "device", "") or "")
-            if any(g in device.upper() for g in ("GPU", "CUDA")):
-                return CURRENT_PLATFORM.gpu_accelerator_for_offload()
+        return tf_weights_accelerator(obj)
     except Exception as exc:
         debug_tensorflow_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def build_patched_call(

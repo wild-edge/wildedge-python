@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import constants
+from wildedge import accelerators, constants
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     DetectionOutputMeta,
@@ -22,6 +22,7 @@ from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
     image_brightness_histogram,
+    torch_module_accelerator,
 )
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
@@ -81,18 +82,12 @@ def is_yolo(obj: object) -> bool:
 
 def detect_accelerator(obj: object) -> str:
     try:
-        inner = getattr(obj, "model", None)
+        inner = getattr(obj, "model", None)  # the torch module inside YOLO
         if inner is not None:
-            try:
-                first_param = next(inner.parameters())
-                device_type = str(getattr(first_param.device, "type", ""))
-                if device_type:
-                    return device_type
-            except StopIteration:
-                pass
+            return torch_module_accelerator(inner) or accelerators.CPU
     except Exception as exc:
         debug_ultralytics_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def detect_quantization(obj: object) -> str | None:

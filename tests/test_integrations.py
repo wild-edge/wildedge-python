@@ -667,7 +667,7 @@ class TestKerasExtractor:
         model = _FakeKerasModel()
         model.weights = [MagicMock(device="/GPU:0")]
         with patch(
-            "wildedge.integrations.keras.CURRENT_PLATFORM.gpu_accelerator_for_offload",
+            "wildedge.platforms.CURRENT_PLATFORM.gpu_accelerator_for_offload",
             return_value="cuda",
         ):
             assert keras_detect_accelerator(model) == "cuda"

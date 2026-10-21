@@ -9,7 +9,7 @@ import time
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from wildedge import constants
+from wildedge import accelerators, constants
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     EmbeddingOutputMeta,
@@ -18,7 +18,11 @@ from wildedge.events.inference import (
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor
-from wildedge.integrations.common import debug_failure, dtype_to_quantization
+from wildedge.integrations.common import (
+    debug_failure,
+    dtype_to_quantization,
+    torch_module_accelerator,
+)
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -136,12 +140,12 @@ def detect_quantization(obj: object) -> str | None:
 
 def detect_accelerator(obj: object) -> str:
     try:
+        # A pipeline wraps the model; a bare model is its own module.
         model = getattr(obj, "model", obj)
-        first = next(model.parameters())  # type: ignore[union-attr]
-        return str(getattr(first.device, "type", "cpu") or "cpu")
+        return torch_module_accelerator(model) or accelerators.CPU
     except Exception as exc:
         debug_transformers_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def infer_task_from_arch(arch: str | None) -> str | None:
