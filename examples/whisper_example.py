@@ -1,8 +1,17 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["wildedge-sdk"]
+#
+# [tool.uv.sources]
+# wildedge-sdk = { path = "..", editable = true }
+# ///
 """Transcribe a WAV using a local Whisper model with automatic instrumentation.
 
-Install mlx-whisper (Apple Silicon) or faster-whisper, set WILDEDGE_DSN, then:
-    python examples/whisper_example.py mlx_whisper /path/to/model /path/to/audio.wav
-    python examples/whisper_example.py faster_whisper /path/to/model /path/to/audio.wav
+Set WILDEDGE_DSN, then add the backend you want to run:
+    uv run --with mlx-whisper examples/whisper_example.py mlx_whisper MODEL AUDIO
+    uv run --with faster-whisper examples/whisper_example.py faster_whisper MODEL AUDIO
+
+MODEL is a local path or Hugging Face repo, AUDIO is a WAV file.
 
 See docs/whisper.md for lifecycle and explicit attachment examples.
 """
@@ -20,7 +29,7 @@ def main():
     args = parser.parse_args()
     client = wildedge.init(integrations=[args.backend])
     try:
-        with client.trace(), client.span(name="transcribe"):
+        with client.trace(), client.span(kind="agent_step", name="transcribe"):
             if args.backend == "mlx_whisper":
                 import mlx_whisper  # noqa: PLC0415 -- optional runtime
 
