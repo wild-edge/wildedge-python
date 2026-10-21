@@ -42,11 +42,12 @@ Monitor an existing application by adding `wildedge run` to its start command:
 
 ```bash
 WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
-wildedge run --integrations llama_cpp -- python app.py
+uv run wildedge run --integrations llama_cpp -- python app.py
 ```
 
-The `llama_cpp` integration instruments llama.cpp through `llama-cpp-python`.
-Replace it with your [integration](#supported-integrations).
+This assumes your application already uses `llama-cpp-python`. The `llama_cpp`
+integration instruments that library; replace it with your
+[integration](#supported-integrations).
 No SDK calls are required in your application code.
 
 See the [deployment guide](docs/deployment.md) for startup options,
@@ -147,27 +148,32 @@ for additional span types and context.
 
 ## Supported integrations
 
-**On-device**
+Enable the integration before creating models or API clients, using
+`--integrations` or `wildedge.init(integrations=[...])`. Automatic tracking
+covers the entry points listed below. PyTorch and standalone Keras models need
+explicit registration through `client.load(...)` or `client.register_model(...)`.
 
-| Integration | Example |
-|---|---|
-| `transformers` | [transformers_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/transformers_example.py) |
-| `mlx_whisper` / `faster_whisper` | [whisper_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/whisper_example.py) |
-| `mlx` | [mlx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/mlx_example.py) |
-| `timm` | [timm_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/timm_example.py) |
-| llama.cpp (`llama_cpp`, via `llama-cpp-python`) | [gguf_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/gguf_example.py) |
-| `onnx` | [onnx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/onnx_example.py) |
-| `ultralytics` | - |
-| `tensorflow` | [tensorflow_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/tensorflow_example.py) |
-| `torch` | [pytorch_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/pytorch_example.py) |
-| `keras` | [keras_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/keras_example.py) |
+**Local models**
 
-**Remote models**
+| Library | Integration key | How tracking starts | Example |
+|---|---|---|---|
+| Transformers | `transformers` | Automatically through `pipeline` / `from_pretrained` | [Example](examples/transformers_example.py) |
+| llama.cpp (`llama-cpp-python`) | `llama_cpp` | Automatically when constructing `Llama` | [Example](examples/gguf_example.py) |
+| MLX-LM | `mlx` | Automatically through `mlx_lm.load` | [Example](examples/mlx_example.py) |
+| faster-whisper / MLX Whisper | `faster_whisper` / `mlx_whisper` | Automatically through supported model loaders | [Example](examples/whisper_example.py) |
+| ONNX Runtime | `onnx` | Automatically when constructing `InferenceSession` | [Example](examples/onnx_example.py) |
+| timm | `timm` | Automatically through `create_model` | [Example](examples/timm_example.py) |
+| Ultralytics | `ultralytics` | Automatically when constructing `YOLO` | — |
+| TensorFlow | `tensorflow` | Automatically through `keras.models.load_model` / `saved_model.load`; register models created in code | [Example](examples/tensorflow_example.py) |
+| PyTorch | `torch` | Register the model explicitly | [Example](examples/pytorch_example.py) |
+| Keras | `keras` | Register the model explicitly | [Example](examples/keras_example.py) |
 
-| Integration | Example |
-|---|---|
-| `anthropic` | [anthropic_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/anthropic_example.py) |
-| `openai` | [openai_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/openai_example.py) |
+**API clients**
+
+| Library | Integration key | How tracking starts | Example |
+|---|---|---|---|
+| Anthropic | `anthropic` | Automatically for clients created after initialization | [Example](examples/anthropic_example.py) |
+| OpenAI | `openai` | Automatically for clients created after initialization | [Example](examples/openai_example.py) |
 
 Fireworks, Together, Baseten, xAI, Mistral, Groq and other OpenAI-compatible hosts
 work through the `openai` integration — pass their `base_url`. See
@@ -214,9 +220,11 @@ For advanced options (batching, queue tuning, dead-letter storage, attachments),
 
 ## Security & Privacy
 
-By default the SDK transmits only anonymized telemetry, never raw model inputs
-or outputs. The one exception is opt-in [attachments](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md#attachments)
-(`attachments_enabled`), which upload raw bytes you explicitly pass in.
+Automatic integrations send inference metrics, model metadata, and device/hardware
+information, including a device identifier, OS information, locale, and timezone.
+They do not attach raw inputs or outputs. Raw payload uploads require explicitly
+supplied [attachments](docs/configuration.md#attachments) and
+`attachments_enabled=True`.
 
 Report security and privacy issues to: support@wildedge.dev
 
