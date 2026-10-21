@@ -19,7 +19,14 @@ Transformers, OpenAI, and more.
 Instrument supported libraries with one command, or add tracking in your code.
 Prompts and outputs aren't uploaded unless you explicitly attach them.
 
-**[Get started](#install)** · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
+**[Get started](#install)** · [Explore the demo](https://wildedge.dev/demo) · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
+
+| Model performance | Events | Hardware |
+|:---:|:---:|:---:|
+| <a href="docs/images/demo-model-performance.jpg"><img src="docs/images/demo-model-performance.jpg" alt="Model health, latency, time to first token, and throughput" width="180"></a> | <a href="docs/images/demo-events.jpg"><img src="docs/images/demo-events.jpg" alt="Inference and error events with model and device metadata" width="180"></a> | <a href="docs/images/demo-hardware.jpg"><img src="docs/images/demo-hardware.jpg" alt="Thermal state, accelerator usage, and CPU throttling" width="180"></a> |
+
+*Demo sample data across WildEdge SDKs. Click a thumbnail for the full-size image,
+or [explore the read-only demo](https://wildedge.dev/demo).*
 
 ## Install
 
@@ -35,11 +42,12 @@ Monitor an existing application by adding `wildedge run` to its start command:
 
 ```bash
 WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
-wildedge run --integrations llama_cpp -- python app.py
+uv run wildedge run --integrations llama_cpp -- python app.py
 ```
 
-The `llama_cpp` integration instruments llama.cpp through `llama-cpp-python`.
-Replace it with your [integration](#supported-integrations).
+This assumes your application already uses `llama-cpp-python`. The `llama_cpp`
+integration instruments that library; replace it with your
+[integration](#supported-integrations).
 No SDK calls are required in your application code.
 
 See the [deployment guide](docs/deployment.md) for startup options,
@@ -47,74 +55,154 @@ environment validation, and production configuration.
 
 ## SDK
 
-Use the SDK when you can't wrap the process, or when you want traces and spans
-around your own code. `wildedge run` covers everything else.
+To try tracking in your code, run one local text-generation model on CPU.
+Install the model's dependencies:
+
+```bash
+uv add transformers torch
+```
+
+Save this as `app.py`. The first run downloads the model from Hugging Face;
+no model-provider API key is needed.
+
+```python
+import wildedge
+from transformers import pipeline
+
+client = wildedge.init(integrations=["transformers"])
+try:
+    model = pipeline(
+        "text-generation",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct",
+        device=-1,  # CPU
+    )
+    result = model(
+        "Explain how rain forms in one sentence.",
+        max_new_tokens=32,
+        do_sample=False,
+        return_full_text=False,
+    )
+    print(result[0]["generated_text"])
+finally:
+    client.close(timeout=10)
+```
+
+Set the DSN from your WildEdge project and run it:
+
+```bash
+export WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>"
+uv run python app.py
+```
+
+Open your project at [app.wildedge.dev](https://app.wildedge.dev) to inspect the
+model load and inference events, including duration and model metadata. The
+generated text is printed locally; it isn't uploaded.
+
+Already have an application? Initialize WildEdge before creating your model or
+API client. See [examples for each integration](#supported-integrations),
+[traces and spans](docs/manual-tracking.md#track-spans-for-agentic-workflows),
+and the [deployment guide](docs/deployment.md) for lifecycle details.
+
+<details>
+<summary>Trace a workflow across local and remote models</summary>
+
+Combine integrations and group inference calls into traces and spans. This
+example also requires `uv add openai` and an `OPENAI_API_KEY`, alongside the
+Transformers dependencies and WildEdge DSN above.
 
 ```python
 import wildedge
 from openai import OpenAI
 from transformers import pipeline
 
-wildedge.init(integrations=["transformers", "openai"])  # optional under `wildedge run`
+client = wildedge.init(integrations=["transformers", "openai"])
+try:
+    local = pipeline(
+        "text-generation",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct",
+        device=-1,
+    )
+    remote = OpenAI()
+    prompt = "Explain how rain forms in one sentence."
 
-local = pipeline("text-generation", model="HuggingFaceTB/SmolLM2-360M-Instruct")
-remote = OpenAI()
-
-with wildedge.trace(run_id="run-1"):
-    with wildedge.span(kind="agent_step", name="draft"):
-        draft = local(prompt)[0]["generated_text"]
-    with wildedge.span(kind="agent_step", name="refine"):
-        remote.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": draft}],
-        )
+    with wildedge.trace(run_id="run-1"):
+        with wildedge.span(kind="agent_step", name="draft"):
+            draft = local(
+                prompt, max_new_tokens=32, return_full_text=False
+            )[0]["generated_text"]
+        with wildedge.span(kind="agent_step", name="refine"):
+            response = remote.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": draft}],
+            )
+            print(response.choices[0].message.content)
+finally:
+    client.close(timeout=10)
 ```
 
-See [Deployment](https://github.com/wild-edge/wildedge-python/blob/main/docs/deployment.md)
-for client lifecycle and the full contract.
+Both inference calls belong to one trace, with separate `draft` and `refine`
+spans. See [manual tracking](docs/manual-tracking.md#track-spans-for-agentic-workflows)
+for additional span types and context.
+
+</details>
 
 ## Supported integrations
 
-**On-device**
+**Local inference:** llama.cpp, Transformers, MLX-LM, ONNX Runtime, PyTorch,
+TensorFlow, Keras, Ultralytics, timm, faster-whisper, and MLX Whisper.
 
-| Integration | Example |
-|---|---|
-| `transformers` | [transformers_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/transformers_example.py) |
-| `mlx_whisper` / `faster_whisper` | [whisper_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/whisper_example.py) |
-| `mlx` | [mlx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/mlx_example.py) |
-| `timm` | [timm_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/timm_example.py) |
-| llama.cpp (`llama_cpp`, via `llama-cpp-python`) | [gguf_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/gguf_example.py) |
-| `onnx` | [onnx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/onnx_example.py) |
-| `ultralytics` | - |
-| `tensorflow` | [tensorflow_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/tensorflow_example.py) |
-| `torch` | [pytorch_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/pytorch_example.py) |
-| `keras` | [keras_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/keras_example.py) |
+**API clients:** OpenAI, Anthropic, and OpenAI-compatible providers.
 
-**Remote models**
+Most integrations track supported entry points automatically after activation.
+PyTorch and standalone Keras models require explicit registration.
 
-| Integration | Example |
-|---|---|
-| `anthropic` | [anthropic_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/anthropic_example.py) |
-| `openai` | [openai_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/openai_example.py) |
+<details>
+<summary>Integration keys, setup, and examples</summary>
+
+Enable the integration before creating models or API clients, using
+`--integrations` or `wildedge.init(integrations=[...])`. Automatic tracking
+covers the entry points listed below. PyTorch and standalone Keras models need
+explicit registration through `client.load(...)` or `client.register_model(...)`.
+
+**Local models**
+
+| Library | Integration key | How tracking starts | Example |
+|---|---|---|---|
+| Transformers | `transformers` | Automatically through `pipeline` / `from_pretrained` | [Example](examples/transformers_example.py) |
+| llama.cpp (`llama-cpp-python`) | `llama_cpp` | Automatically when constructing `Llama` | [Example](examples/gguf_example.py) |
+| MLX-LM | `mlx` | Automatically through `mlx_lm.load` | [Example](examples/mlx_example.py) |
+| faster-whisper / MLX Whisper | `faster_whisper` / `mlx_whisper` | Automatically through supported model loaders | [Example](examples/whisper_example.py) |
+| ONNX Runtime | `onnx` | Automatically when constructing `InferenceSession` | [Example](examples/onnx_example.py) |
+| timm | `timm` | Automatically through `create_model` | [Example](examples/timm_example.py) |
+| Ultralytics | `ultralytics` | Automatically when constructing `YOLO` | — |
+| TensorFlow | `tensorflow` | Automatically through `keras.models.load_model` / `saved_model.load`; register models created in code | [Example](examples/tensorflow_example.py) |
+| PyTorch | `torch` | Register the model explicitly | [Example](examples/pytorch_example.py) |
+| Keras | `keras` | Register the model explicitly | [Example](examples/keras_example.py) |
+
+**API clients**
+
+| Library | Integration key | How tracking starts | Example |
+|---|---|---|---|
+| Anthropic | `anthropic` | Automatically for clients created after initialization | [Example](examples/anthropic_example.py) |
+| OpenAI | `openai` | Automatically for clients created after initialization | [Example](examples/openai_example.py) |
+
+</details>
+
+<details>
+<summary>API coverage and compatible providers</summary>
 
 Fireworks, Together, Baseten, xAI, Mistral, Groq and other OpenAI-compatible hosts
 work through the `openai` integration — pass their `base_url`. See
 [Providers](https://github.com/wild-edge/wildedge-python/blob/main/docs/providers.md)
 for every recognized endpoint.
 
-Using httpx, requests or urllib directly instead of the `openai` / `anthropic`
-client libraries? Wrap the call in
-[`wildedge.llm_api()`](https://github.com/wild-edge/wildedge-python/blob/main/docs/llm_api.md)
-to get the same events:
-[llm_api_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/llm_api_example.py).
+See [API tracking](docs/providers.md) for endpoint coverage, streaming, embeddings,
+and tracking calls made without the official client libraries.
 
-The `openai` integration also tracks `client.responses.create(...)`, including
-async clients and `stream=True`. See [Responses tracking](docs/providers.md#responses-api)
-for coverage and streaming behavior.
+</details>
 
-The `openai` integration also tracks sync and async `embeddings.create()` calls.
-See [Embeddings](docs/providers.md#embeddings) and the
-[example](examples/openai_embeddings_example.py).
+<details>
+<summary>Model download tracking</summary>
 
 **Hub tracking**
 
@@ -124,6 +212,8 @@ Pass `hubs=` to track model download provenance. Hubs are framework-agnostic and
 |---|---|
 | `huggingface` | Downloads via `huggingface_hub` |
 | `torchhub` | Downloads via `torch.hub` |
+
+</details>
 
 For unsupported frameworks, see [Manual tracking](https://github.com/wild-edge/wildedge-python/blob/main/docs/manual-tracking.md).
 
@@ -142,9 +232,11 @@ For advanced options (batching, queue tuning, dead-letter storage, attachments),
 
 ## Security & Privacy
 
-By default the SDK transmits only anonymized telemetry, never raw model inputs
-or outputs. The one exception is opt-in [attachments](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md#attachments)
-(`attachments_enabled`), which upload raw bytes you explicitly pass in.
+Automatic integrations send inference metrics, model metadata, and device/hardware
+information, including a device identifier, OS information, locale, and timezone.
+They do not attach raw inputs or outputs. Raw payload uploads require explicitly
+supplied [attachments](docs/configuration.md#attachments) and
+`attachments_enabled=True`.
 
 Report security and privacy issues to: support@wildedge.dev
 
@@ -157,6 +249,3 @@ Report security and privacy issues to: support@wildedge.dev
 - [Streaming lifecycle](docs/streaming.md)
 - [Changelog](https://github.com/wild-edge/wildedge-python/blob/main/CHANGELOG.md)
 - [License](https://github.com/wild-edge/wildedge-python/blob/main/LICENSE)
-
-Each GitHub release ships `llms.txt` and `llms-full.txt`: the full
-documentation for that exact version in one file, built for AI assistants.
