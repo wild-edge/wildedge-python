@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from wildedge import constants
+from wildedge import constants, modalities
 from wildedge.batch import build_batch
 from wildedge.client import parse_dsn
 from wildedge.events.span import SpanEvent
@@ -67,6 +67,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--attachments",
         action="store_true",
         help="Enable opt-in raw input/output attachment upload (paid feature).",
+    )
+    run.add_argument(
+        "--attachment-modalities",
+        default=None,
+        type=modality_list,
+        help=(
+            "Comma-separated kinds of data attachments may contain: text, image, "
+            "audio, video, other, or all. Default: text."
+        ),
     )
     run.add_argument(
         "--debug",
@@ -267,6 +276,8 @@ def run_command(parsed: argparse.Namespace) -> int:
     env[constants.ENV_FLUSH_TIMEOUT] = str(parsed.flush_timeout)
     if parsed.attachments:
         env[constants.ENV_ATTACHMENTS_ENABLED] = "1"
+    if parsed.attachment_modalities:
+        env[constants.ENV_ATTACHMENT_MODALITIES] = parsed.attachment_modalities
     env[constants.ENV_PROPAGATE] = "1" if parsed.propagate else "0"
     env[constants.ENV_STRICT_INTEGRATIONS] = "1" if parsed.strict_integrations else "0"
     env[constants.ENV_STRICT] = "1" if parsed.strict else "0"
@@ -300,6 +311,15 @@ def hub_list(value: str | None) -> list[str]:
     if value == "all":
         return sorted(supported_hubs())
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def modality_list(value: str) -> str:
+    """Validate ``--attachment-modalities`` before the child process starts."""
+    try:
+        modalities.parse(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+    return value
 
 
 def check_writable_dir(path: Path) -> tuple[bool, str]:

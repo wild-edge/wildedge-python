@@ -5,13 +5,27 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Changed
+
+- Attachments only upload text by default. The new `attachment_modalities`
+  setting (`WILDEDGE_ATTACHMENT_MODALITIES`, `wildedge run
+  --attachment-modalities`) lists the kinds of data that may be uploaded:
+  `text`, `image`, `audio`, `video` or `other`. It applies to manual and
+  automatic attachments alike. **Apps that upload images or other non-text
+  attachments must now allow them**, for example
+  `attachment_modalities=["text", "image"]`. The SDK warns once per blocked
+  modality. `Attachment` gains an optional `modality` field for content types
+  that don't identify the data. Whisper uploads the input audio only when
+  `audio` is allowed.
+
 ### Added
 
 - `mlx_whisper` and `faster_whisper` integrations track local Whisper model
   loads and transcriptions, including faster-whisper's
   `BatchedInferencePipeline`. Transcriptions record duration, language, word
   count and audio metadata. With `attachments_enabled=True` they also upload
-  the input audio and transcript. See docs/whisper.md.
+  the transcript, and the input audio when `audio` is in
+  `attachment_modalities`. See docs/whisper.md.
 
 ### Fixed
 

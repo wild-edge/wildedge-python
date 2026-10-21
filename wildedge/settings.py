@@ -15,6 +15,7 @@ class ClientEnv:
     debug: bool
     app_identity: str | None
     attachments_enabled: bool | None
+    attachment_modalities: str | None
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,7 @@ def read_client_env(
         debug=resolved_debug,
         app_identity=resolved_identity,
         attachments_enabled=attachments_enabled,
+        attachment_modalities=env.get(constants.ENV_ATTACHMENT_MODALITIES) or None,
     )
 
 

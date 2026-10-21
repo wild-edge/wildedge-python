@@ -578,3 +578,30 @@ def test_doctor_json_includes_environment_and_statuses(monkeypatch, capsys):
     assert data["environment"]["autoload_on_pythonpath"] is False
     assert data["config_status"] == "PASS"
     assert data["connectivity_status"] == "SKIP"
+
+
+def test_cli_run_passes_attachment_modalities(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(cli.os, "execle", _fake_execle(captured))
+    monkeypatch.setattr(cli.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+    rc = cli.main(
+        [
+            "run",
+            "--dsn",
+            "https://secret@ingest.wildedge.dev/key",
+            "--attachments",
+            "--attachment-modalities",
+            "text,audio",
+            "--",
+            "python",
+            "app.py",
+        ]
+    )
+    assert rc == 0
+    assert captured["env"][constants.ENV_ATTACHMENT_MODALITIES] == "text,audio"
+
+
+def test_cli_run_rejects_unknown_attachment_modality(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["run", "--attachment-modalities", "audios", "--", "python"])
+    assert "audios" in capsys.readouterr().err

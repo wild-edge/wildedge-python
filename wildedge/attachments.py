@@ -18,19 +18,20 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import threading
 import time
 import urllib.error
 import urllib.request
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from wildedge import constants
+from wildedge import constants, modalities
 from wildedge.logging import logger
 
 AttachmentStorageStrategy = str  # "file" | "inline"
@@ -42,7 +43,10 @@ class Attachment:
 
     Provide exactly one of ``data`` (in-memory bytes) or ``path`` (a file on
     disk). ``content_type`` is the MIME type baked into the presigned URL and
-    echoed in the inference event reference.
+    echoed in the inference event reference. ``modality`` (see
+    ``wildedge.modalities``) decides whether the client's
+    ``attachment_modalities`` allow the upload; it defaults to the one
+    ``content_type`` belongs to.
     """
 
     content_type: str
@@ -50,6 +54,11 @@ class Attachment:
     data: bytes | None = None
     path: str | None = None
     name: str | None = None
+    modality: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.modality is None:
+            self.modality = modalities.from_content_type(self.content_type)
 
     def resolve_bytes(self) -> bytes:
         if self.data is not None:
@@ -247,8 +256,9 @@ class AttachmentStore:
 
 
 class AttachmentManager:
-    """Capture-side gate: applies the filter hook and per-inference caps, then
-    buffers eligible attachments and returns the event references."""
+    """Capture-side gate: keeps the allowed modalities, applies the filter hook
+    and per-inference caps, then buffers eligible attachments and returns the
+    event references."""
 
     def __init__(
         self,
@@ -257,9 +267,21 @@ class AttachmentManager:
         max_per_inference: int = constants.DEFAULT_MAX_ATTACHMENTS_PER_INFERENCE,
         max_size_bytes: int = constants.DEFAULT_MAX_ATTACHMENT_SIZE_BYTES,
         attachment_filter: Callable[[list[Attachment]], list[Attachment]] | None = None,
+        allowed_modalities: Iterable[str] | None = None,
         debug: bool = False,
     ) -> None:
         self.store = store
+        # None means the default. Then a blocked modality is logged as a
+        # warning, since the app may not know about the setting; an explicit
+        # choice is only logged in debug mode.
+        self.allowed_modalities = frozenset(
+            modalities.DEFAULT if allowed_modalities is None else allowed_modalities
+        )
+        self.blocked_log_level = (
+            logging.WARNING if allowed_modalities is None else logging.DEBUG
+        )
+        # Modalities already reported as blocked, so each one warns once.
+        self.blocked_reported: set[str] = set()
         self.max_per_inference = max_per_inference
         self.max_size_bytes = max_size_bytes
         self.attachment_filter = attachment_filter
@@ -270,6 +292,21 @@ class AttachmentManager:
         """Stop accepting attachments (e.g. the project has the feature off)."""
         self.enabled = False
 
+    def accepts(self, modality: str) -> bool:
+        """Whether attachments of this modality may be uploaded."""
+        if modality in self.allowed_modalities:
+            return True
+        if modality not in self.blocked_reported:
+            self.blocked_reported.add(modality)
+            logger.log(
+                self.blocked_log_level,
+                "wildedge: not uploading %s attachments; add %r to "
+                "attachment_modalities to allow them",
+                modality,
+                modality,
+            )
+        return False
+
     def capture(
         self,
         attachments: list[Attachment],
@@ -279,10 +316,13 @@ class AttachmentManager:
         if not self.enabled or not attachments:
             return []
 
-        selected = attachments
+        # Blocked modalities are dropped first, so the filter never sees them.
+        selected = [a for a in attachments if self.accepts(str(a.modality))]
+        if not selected:
+            return []
         if self.attachment_filter is not None:
             try:
-                selected = self.attachment_filter(list(attachments))
+                selected = self.attachment_filter(selected)
             except Exception as exc:  # pragma: no cover - user callback failures
                 logger.warning("wildedge: attachment_filter raised: %s", exc)
                 return []

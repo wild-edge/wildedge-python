@@ -4,12 +4,12 @@ import os
 import time
 import uuid
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
-from wildedge import constants
+from wildedge import constants, modalities
 from wildedge.attachments import (
     Attachment,
     AttachmentManager,
@@ -274,6 +274,7 @@ class WildEdge:
         ),
         attachment_filter: Callable[[list[Attachment]], list[Attachment]] | None = None,
         attachment_dir: str | None = None,
+        attachment_modalities: str | Iterable[str] | None = None,
     ):
         env = read_client_env(dsn=dsn, debug=debug, app_identity=app_identity)
         dsn = env.dsn
@@ -371,6 +372,13 @@ class WildEdge:
                 if env.attachments_enabled is not None
                 else constants.DEFAULT_ATTACHMENTS_ENABLED
             )
+        if attachment_modalities is None:
+            attachment_modalities = env.attachment_modalities
+        allowed_modalities = (
+            None
+            if attachment_modalities is None
+            else modalities.parse(attachment_modalities)
+        )
         self.attachment_manager: AttachmentManager | None = None
         self.attachment_uploader: AttachmentUploader | None = None
         if attachments_enabled:
@@ -386,6 +394,7 @@ class WildEdge:
                 max_per_inference=max_attachments_per_inference,
                 max_size_bytes=max_attachment_size_bytes,
                 attachment_filter=attachment_filter,
+                allowed_modalities=allowed_modalities,
                 debug=debug,
             )
             self.attachment_uploader = AttachmentUploader(
@@ -537,13 +546,13 @@ class WildEdge:
                 "Pass id='your-model-id' to register_model()."
             )
 
-        capture_attachments = (
-            self.attachment_manager.capture
-            if self.attachment_manager is not None
-            else None
-        )
+        manager = self.attachment_manager
         handle, is_new = self.registry.register(
-            model_id, info, self.publish, capture_attachments
+            model_id,
+            info,
+            self.publish,
+            capture_attachments=manager.capture if manager is not None else None,
+            accepts_attachment=manager.accepts if manager is not None else None,
         )
 
         if not is_new:

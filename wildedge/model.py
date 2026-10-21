@@ -64,13 +64,25 @@ class ModelHandle:
         publish: Callable[[dict], None],
         capture_attachments: Callable[[list[Attachment], str, datetime], list[dict]]
         | None = None,
+        accepts_attachment: Callable[[str], bool] | None = None,
     ):
         self.model_id = model_id
         self.info = info
         self.publish = publish
         self.capture_attachments = capture_attachments
+        self.accepts_attachment = accepts_attachment
         self.detected_accelerator: str = accelerators.CPU
         self.last_inference_id: str | None = None
+
+    def wants_attachment(self, modality: str) -> bool:
+        """Whether an attachment of this modality would be uploaded.
+
+        Integrations check this before building an attachment, so a blocked
+        one costs nothing.
+        """
+        if self.capture_attachments is None:
+            return False
+        return self.accepts_attachment is None or self.accepts_attachment(modality)
 
     def track_load(
         self,
@@ -405,6 +417,7 @@ class ModelRegistry:
         publish: Callable[[dict], None],
         capture_attachments: Callable[[list[Attachment], str, datetime], list[dict]]
         | None = None,
+        accepts_attachment: Callable[[str], bool] | None = None,
     ) -> tuple[ModelHandle, bool]:
         """Return (handle, is_new). is_new=False means already registered; skip install_hooks."""
         if model_id in self.handles:
@@ -419,6 +432,7 @@ class ModelRegistry:
             info=self.models[model_id],
             publish=publish,
             capture_attachments=capture_attachments,
+            accepts_attachment=accepts_attachment,
         )
         self.handles[model_id] = handle
         return handle, True

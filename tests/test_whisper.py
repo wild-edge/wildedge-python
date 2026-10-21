@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from wildedge.attachments import AttachmentManager, AttachmentStore
 from wildedge.client import WildEdge
 from wildedge.instrumentation import claim_instrumentation
 from wildedge.integrations import faster_whisper as faster
@@ -26,14 +27,22 @@ from wildedge.integrations.whisper import (
     model_name_and_source,
     track_transcription,
 )
+from wildedge.model import ModelHandle, ModelInfo
 from wildedge.platforms.device_info import DeviceInfo
 
 
 @pytest.fixture
 def handle():
-    return SimpleNamespace(
-        capture_attachments=None, track_inference=MagicMock(), track_error=MagicMock()
+    info = ModelInfo(
+        model_name="whisper",
+        model_version="1",
+        model_source="local",
+        model_format="ctranslate2",
     )
+    handle = ModelHandle("whisper", info, MagicMock())
+    handle.track_inference = MagicMock()
+    handle.track_error = MagicMock()
+    return handle
 
 
 @pytest.fixture
@@ -473,3 +482,27 @@ def test_mlx_replacement_client_reports_the_cached_model(
     assert load["attributes"]["model_cache_hit"] is True
     assert len(events_of(replacement_events, "inference")) == 1
     assert len(events_of(instrumented_client.events, "inference")) == 1
+
+
+def test_audio_is_left_out_unless_allowed(wav, handle, tmp_path):
+    manager = AttachmentManager(AttachmentStore(str(tmp_path)))
+    handle.capture_attachments = manager.capture
+    handle.accepts_attachment = manager.accepts
+    track_transcription(handle, wav, "hello world", duration_ms=1)
+    attachments = handle.track_inference.call_args.kwargs["attachments"]
+    assert [a.name for a in attachments] == ["transcript.txt"]
+
+
+def test_allowed_audio_file_is_attached_as_audio(tmp_path, handle):
+    path = tmp_path / "clip.unknown-extension"
+    path.write_bytes(b"\x00" * 16)
+    manager = AttachmentManager(
+        AttachmentStore(str(tmp_path / "store")), allowed_modalities={"audio"}
+    )
+    handle.capture_attachments = manager.capture
+    handle.accepts_attachment = manager.accepts
+    track_transcription(handle, path, "hello", duration_ms=1)
+    attachments = handle.track_inference.call_args.kwargs["attachments"]
+    assert [(a.name, a.modality) for a in attachments] == [
+        ("clip.unknown-extension", "audio")
+    ]

@@ -8,6 +8,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from wildedge import modalities
 from wildedge.attachments import Attachment
 from wildedge.events.inference import AudioInputMeta
 from wildedge.integrations.base import BaseExtractor
@@ -195,6 +196,7 @@ def audio_attachments(audio: object) -> list[Attachment]:
                     role="input",
                     path=str(path),
                     name=path.name,
+                    modality=modalities.AUDIO,
                 )
             ]
     elif is_sample_array(audio) and pcm16_wav_size(audio.shape[0]) <= MAX_CAPTURE_BYTES:
@@ -209,10 +211,19 @@ def audio_attachments(audio: object) -> list[Attachment]:
     return []
 
 
-def transcription_attachments(audio: object, text: str) -> list[Attachment]:
-    attachments = audio_attachments(audio)
+def transcription_attachments(
+    handle: ModelHandle, audio: object, text: str
+) -> list[Attachment]:
+    """The input audio and the transcript, each if the client allows it."""
+    attachments = []
+    if handle.wants_attachment(modalities.AUDIO):
+        attachments.extend(audio_attachments(audio))
     encoded = text.encode()
-    if encoded and len(encoded) <= MAX_CAPTURE_BYTES:
+    if (
+        encoded
+        and len(encoded) <= MAX_CAPTURE_BYTES
+        and handle.wants_attachment(modalities.TEXT)
+    ):
         attachments.append(
             Attachment(
                 content_type="text/plain",
@@ -256,7 +267,7 @@ def track_transcription(
     attachments = None
     if handle.capture_attachments is not None:
         try:
-            attachments = transcription_attachments(audio, text)
+            attachments = transcription_attachments(handle, audio, text)
         except Exception as exc:
             debug_failure("whisper", "attachment capture", exc)
     handle.track_inference(

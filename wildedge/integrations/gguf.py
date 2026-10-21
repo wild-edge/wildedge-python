@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import accelerators, constants, quantizations
+from wildedge import accelerators, constants, modalities, quantizations
 from wildedge.attachments import Attachment
 from wildedge.events.inference import (
     GenerationConfig,
@@ -216,7 +216,7 @@ def make_gguf_attachments(
     handle: object, prompt: object, messages: list | None, reply: str | None
 ) -> list[Attachment] | None:
     """Prompt (or chat messages) and reply, only when attachments are enabled."""
-    if getattr(handle, "capture_attachments", None) is None:
+    if not handle.wants_attachment(modalities.TEXT):
         return None
     attachments: list[Attachment] = []
     try:

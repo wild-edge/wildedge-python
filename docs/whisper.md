@@ -81,10 +81,14 @@ tracked and the SDK warns once.
 ## Capturing audio and transcripts
 
 Capture is off by default. With `attachments_enabled=True`, each transcription
-uploads:
+uploads the transcript as `transcript.txt`. The input audio is a voice
+recording, so it is uploaded only when you also allow audio:
 
-- the input audio: the original file for a path, or a 16-bit WAV for an array
-- the transcript as `transcript.txt`
+```python
+wildedge.init(attachments_enabled=True, attachment_modalities=["text", "audio"])
+```
+
+The audio is the original file for a path, or a 16-bit WAV for an array.
 
 Keep in mind:
 
@@ -92,9 +96,7 @@ Keep in mind:
   also apply. A transcript over the cap isn't uploaded at all.
 - Audio passed as a file-like object isn't captured.
 - An audio file must still exist when the transcription finishes.
-- To upload transcripts but not audio, pass an `attachment_filter` that keeps
-  only output attachments:
-  `attachment_filter=lambda items: [a for a in items if a.role == "output"]`.
+- To upload audio but not transcripts, use `attachment_modalities=["audio"]`.
 - Transcript text is never added to event attributes.
 
 ## Examples and tests

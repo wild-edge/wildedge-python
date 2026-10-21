@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from wildedge import attachments, constants
+from wildedge import attachments, constants, modalities
 from wildedge.attachments import (
     Attachment,
     AttachmentManager,
@@ -104,6 +104,7 @@ def test_store_peek_oldest_first(tmp_path):
 
 def _manager(tmp_path, **kwargs):
     store = AttachmentStore(str(tmp_path), strategy="file")
+    kwargs.setdefault("allowed_modalities", modalities.ALL)
     return store, AttachmentManager(store, **kwargs)
 
 
@@ -215,7 +216,7 @@ def test_text_input_meta_no_has_attachments():
 
 def _make_handle(tmp_path):
     store = AttachmentStore(str(tmp_path), strategy="file")
-    mgr = AttachmentManager(store)
+    mgr = AttachmentManager(store, allowed_modalities=modalities.ALL)
     published: list[dict] = []
     info = ModelInfo(
         model_name="m", model_version="1", model_source="local", model_format="onnx"
