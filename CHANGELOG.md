@@ -7,6 +7,11 @@ under Unreleased and move into a version section at release time.
 
 ### Changed
 
+- The llama.cpp Python integration is now named `llama_cpp` in Python, CLI,
+  and environment configuration. `gguf` remains a compatibility alias; `all`
+  selects the integration once under its new name. Model format metadata
+  remains `gguf`.
+
 - Automatic integrations no longer attach raw payloads, including GGUF prompts,
   chat messages and replies. `attachments_enabled=True` enables uploads only for
   attachments explicitly passed to `track_inference(attachments=[...])`.

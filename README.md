@@ -12,9 +12,14 @@
 [![PyPI](https://img.shields.io/pypi/v/wildedge-sdk)](https://pypi.org/project/wildedge-sdk/)
 [![Coverage](https://codecov.io/gh/wild-edge/wildedge-python/branch/main/graph/badge.svg)](https://codecov.io/gh/wild-edge/wildedge-python)
 
-ML inference monitoring for Python: on-device and remote models. Tracks latency, tokens, errors, and model metadata with no code changes, plus traces for agent pipelines.
+Monitor local and remote ML inference from Python. Track latency, token usage,
+errors, model metadata, and local hardware context across llama.cpp, MLX,
+Transformers, OpenAI, and more.
 
-**[Get a DSN](https://app.wildedge.dev)** · [Website](https://wildedge.dev) · [Docs](https://docs.wildedge.dev) · [Blog](https://blog.wildedge.dev)
+Instrument supported libraries with one command, or add tracking in your code.
+Prompts and outputs aren't uploaded unless you explicitly attach them.
+
+**[Get started](#install)** · [Docs](https://docs.wildedge.dev) · [Website](https://wildedge.dev)
 
 ## Install
 
@@ -26,32 +31,19 @@ To send events, sign up at [app.wildedge.dev](https://app.wildedge.dev), create 
 
 ## CLI
 
-Drop `wildedge run` in front of your existing command. WildEdge instruments the runtime before your code starts. No SDK calls required in user code.
+Monitor an existing application by adding `wildedge run` to its start command:
 
 ```bash
 WILDEDGE_DSN="https://<secret>@ingest.wildedge.dev/<key>" \
-wildedge run --integrations timm -- python app.py
+wildedge run --integrations llama_cpp -- python app.py
 ```
 
-Validate your environment before deploying. `--send-test-event` proves the
-whole pipeline end to end by sending one span event and reporting the ingest
-response (exit codes: 0 pass, 1 config failure, 2 connectivity failure):
+The `llama_cpp` integration instruments llama.cpp through `llama-cpp-python`.
+Replace it with your [integration](#supported-integrations).
+No SDK calls are required in your application code.
 
-```bash
-wildedge doctor --integrations all --send-test-event
-```
-
-Useful flags:
-
-| Flag | Description |
-|---|---|
-| `--integrations` | Comma-separated list of integrations to activate (or `all`) |
-| `--hubs` | Hub trackers to activate: `huggingface`, `torchhub` |
-| `--print-startup-report` | Print per-integration status at startup |
-| `--strict-integrations` | Exit (code 121) if a requested integration can't be instrumented |
-| `--strict` | Exit (120 config, 122 internal) instead of running untracked when bootstrap fails |
-| `--attachments` | Enable opt-in raw input/output attachment upload |
-| `--no-propagate` | Don't pass WildEdge env vars to child processes |
+See the [deployment guide](docs/deployment.md) for startup options,
+environment validation, and production configuration.
 
 ## SDK
 
@@ -91,7 +83,7 @@ for client lifecycle and the full contract.
 | `mlx_whisper` / `faster_whisper` | [whisper_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/whisper_example.py) |
 | `mlx` | [mlx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/mlx_example.py) |
 | `timm` | [timm_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/timm_example.py) |
-| `gguf` | [gguf_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/gguf_example.py) |
+| llama.cpp (`llama_cpp`, via `llama-cpp-python`) | [gguf_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/gguf_example.py) |
 | `onnx` | [onnx_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/onnx_example.py) |
 | `ultralytics` | - |
 | `tensorflow` | [tensorflow_example.py](https://github.com/wild-edge/wildedge-python/blob/main/examples/tensorflow_example.py) |
@@ -147,17 +139,6 @@ For unsupported frameworks, see [Manual tracking](https://github.com/wild-edge/w
 | `attachments_enabled` | `false` | Opt-in upload of raw inference inputs/outputs (or `WILDEDGE_ATTACHMENTS_ENABLED`). See [Attachments](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md#attachments) |
 
 For advanced options (batching, queue tuning, dead-letter storage, attachments), see [Configuration](https://github.com/wild-edge/wildedge-python/blob/main/docs/configuration.md).
-
-## Projects using this SDK
-
-| Name | Link |
-|---|---|
-| outfitstudio.app | https://outfitstudio.app/ |
-| agntr | [github.com/pmaciolek/agntr](https://github.com/pmaciolek/agntr) |
-| demo-app | [github.com/wild-edge/demo-app](https://github.com/wild-edge/demo-app) |
-| *(your project here)* | - |
-
-Using WildEdge in your project? Open a PR to add it to the list.
 
 ## Security & Privacy
 

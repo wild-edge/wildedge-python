@@ -71,7 +71,7 @@ jobs:
             --version-set "${{ matrix.version-set }}" \
             --python-version "${{ matrix.python-version }}"
       - name: Cache downloaded test models
-        if: matrix.integration == 'gguf' || matrix.integration == 'faster_whisper'
+        if: matrix.integration == 'llama_cpp' || matrix.integration == 'faster_whisper'
         uses: actions/cache@v4
         with:
           path: |

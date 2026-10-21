@@ -54,7 +54,7 @@ GGUF_HANDLE_ATTR = "__wildedge_gguf_handle__"
 LLAMA_AUTO_LOAD_PATCH_NAME = "gguf_auto_load"
 
 
-debug_gguf_failure = functools.partial(debug_failure, "gguf")
+debug_gguf_failure = functools.partial(debug_failure, "llama_cpp")
 
 
 def n_gpu_layers(obj: object) -> int:

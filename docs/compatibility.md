@@ -9,12 +9,12 @@ generated from `scripts/compat_matrix.py`, which also defines the CI jobs.
 `tests/compat/test_<integration>_compat.py` loads a real model with the real
 library and checks the events the SDK records: a `model_load` event, then an
 `inference` event for the same model with the expected fields (token counts
-for LLMs, input modality for vision models). Apart from one download for gguf, nothing
+for LLMs, input modality for vision models). Apart from one download for llama_cpp, nothing
 touches the network:
 
 - openai and anthropic get canned responses through the SDK's own HTTP
   client (`MockTransport`).
-- onnx loads a tiny model committed in `tests/compat/fixtures`. gguf
+- onnx loads a tiny model committed in `tests/compat/fixtures`. llama_cpp
   downloads a 1.2 MB model on first use, checked against a pinned sha256.
 - torch, timm, tensorflow, transformers, ultralytics and mlx build models from
   a config, with random weights.
@@ -57,8 +57,8 @@ To run the full matrix locally: `python scripts/run_compat_local.py`.
 | `tensorflow` | `min` | `tensorflow==2.16.1`, `keras==3.3.3`, `numpy==1.26.4` | 3.10, 3.11, 3.12 |
 | `tensorflow` | `current` | `tensorflow==2.21.0`, `keras==3.15.1`, `numpy==2.2.6` | 3.10, 3.11, 3.12 |
 | `tensorflow` | `current` (`py3.10` override) | `tensorflow==2.21.0`, `keras==3.12.4`, `numpy==2.2.6` | 3.10 |
-| `gguf` | `min` | `llama-cpp-python==0.2.90`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13 |
-| `gguf` | `current` | `llama-cpp-python==0.3.36`, `numpy==2.2.6` | 3.10, 3.11, 3.12, 3.13 |
+| `llama_cpp` | `min` | `llama-cpp-python==0.2.90`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13 |
+| `llama_cpp` | `current` | `llama-cpp-python==0.3.36`, `numpy==2.2.6` | 3.10, 3.11, 3.12, 3.13 |
 | `openai` | `min` | `openai==1.30.0` | 3.10, 3.11, 3.12, 3.13 |
 | `openai` | `current` | `openai==3.35.1` | 3.10, 3.11, 3.12, 3.13 |
 | `transformers` | `min` | `transformers==4.40.0`, `torch==2.4.1`, `numpy==1.26.4` | 3.10, 3.11, 3.12, 3.13 |

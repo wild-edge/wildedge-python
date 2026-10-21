@@ -11,7 +11,7 @@ cd "${SCRIPT_DIR}"
 
 uv sync
 
-uv run wildedge doctor --integrations gguf --hubs huggingface
+uv run wildedge doctor --integrations llama_cpp --hubs huggingface
 
 # wildedge run replaces this process (os.execle) so sitecustomize.py
 # auto-installs the runtime before Django loads, patching Llama.__init__
@@ -26,13 +26,13 @@ uv run wildedge doctor --integrations gguf --hubs huggingface
 if [[ "$(uname)" == "Darwin" ]]; then
   uv run wildedge run \
     --print-startup-report \
-    --integrations gguf \
+    --integrations llama_cpp \
     --hubs huggingface \
     -- waitress-serve --port=8100 gemmaapp.wsgi:application
 else
   uv run wildedge run \
     --print-startup-report \
-    --integrations gguf \
+    --integrations llama_cpp \
     --hubs huggingface \
     -- gunicorn gemmaapp.wsgi:application --config gunicorn.conf.py
 fi

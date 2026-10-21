@@ -33,17 +33,18 @@ class IntegrationSpec:
     name: str
     required_modules: tuple[str, ...]
     kind: IntegrationKind
+    adapter_module: str | None = None
 
     @property
     def installer(self) -> str | None:
         if self.kind != "client_patch":
             return None
-        return f"{ADAPTER_PACKAGE}.{self.name}:install_auto_load_patch"
+        return f"{ADAPTER_PACKAGE}.{self.adapter_module or self.name}:install_auto_load_patch"
 
 
 INTEGRATION_SPECS: tuple[IntegrationSpec, ...] = (
     IntegrationSpec("anthropic", ("anthropic",), "client_patch"),
-    IntegrationSpec("gguf", ("llama_cpp",), "client_patch"),
+    IntegrationSpec("llama_cpp", ("llama_cpp",), "client_patch", adapter_module="gguf"),
     IntegrationSpec("onnx", ("onnxruntime",), "client_patch"),
     IntegrationSpec("openai", ("openai",), "client_patch"),
     IntegrationSpec("timm", ("timm",), "client_patch"),
@@ -62,9 +63,20 @@ INTEGRATIONS_BY_NAME: dict[str, IntegrationSpec] = {
 }
 
 
+# Public names describe runtimes; retain the pre-0.3 name as an input alias.
+INTEGRATION_ALIASES = {"gguf": "llama_cpp"}
+INTEGRATIONS_BY_NAME.update(
+    {alias: INTEGRATIONS_BY_NAME[name] for alias, name in INTEGRATION_ALIASES.items()}
+)
+
+
+def canonical_integration(name: str) -> str:
+    return INTEGRATION_ALIASES.get(name, name)
+
+
 def supported_integrations() -> set[str]:
     """Return all supported integration names."""
-    return set(INTEGRATIONS_BY_NAME.keys())
+    return {spec.name for spec in INTEGRATION_SPECS}
 
 
 def noop_integrations() -> set[str]:
