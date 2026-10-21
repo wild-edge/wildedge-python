@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 
-from wildedge import constants
+from wildedge import accelerators, constants
 from wildedge.logging import logger
 from wildedge.platforms.device_info import DeviceInfo
 from wildedge.platforms.hardware import HardwareContext, ThermalContext
@@ -113,7 +113,7 @@ class Platform(ABC):
             cpu_cores=os.cpu_count(),
             ram_total_bytes=self.ram_bytes(),
             disk_total_bytes=self.disk_bytes(),
-            accelerators=["cpu", *gpu_accs],
+            accelerators=[accelerators.CPU, *gpu_accs],
             gpu_name=gpu_name,
         )
         if overrides:

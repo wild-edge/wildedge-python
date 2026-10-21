@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from wildedge import constants
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.integrations.common import debug_failure
+from wildedge.integrations.common import debug_failure, mlx_accelerator
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -171,6 +171,7 @@ class MlxExtractor(BaseExtractor):
             return None
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
+        handle.detected_accelerator = mlx_accelerator()
         setattr(obj, MLX_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,

@@ -15,6 +15,11 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- MLX-LM models now report the device they run on (`mps` for the Apple GPU)
+  instead of always `cpu`. Accelerator names are defined once in
+  `wildedge.accelerators`, and PyTorch, Transformers, Ultralytics,
+  TensorFlow and Keras share their device detection.
+
 - Process-wide integrations and hub patches now support sequential SDK client
   replacement after the previous owner closes. Reinitialization replaces a closed
   default; live ownership conflicts raise explicitly. Existing models/provider

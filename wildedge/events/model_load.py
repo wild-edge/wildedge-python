@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from wildedge import accelerators
 from wildedge.events.common import add_optional_fields
 
 
@@ -42,7 +43,7 @@ class ModelLoadEvent:
     model_id: str
     duration_ms: int
     memory_bytes: int | None = None
-    accelerator: str = "cpu"
+    accelerator: str = accelerators.CPU
     success: bool = True
     error_code: str | None = None
     peak_memory_bytes: int | None = None

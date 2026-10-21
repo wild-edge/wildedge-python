@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import constants
+from wildedge import accelerators, constants
 from wildedge.attachments import Attachment
 from wildedge.events.inference import (
     GenerationConfig,
@@ -76,7 +76,7 @@ def detect_accelerator(obj: object) -> str:
             return CURRENT_PLATFORM.gpu_accelerator_for_offload()
     except Exception as exc:
         debug_gguf_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def parse_quantization(filename: str) -> str | None:

@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from wildedge import accelerators
 from wildedge.attachments import Attachment
 from wildedge.events import (
     ApiMeta,
@@ -68,7 +69,7 @@ class ModelHandle:
         self.info = info
         self.publish = publish
         self.capture_attachments = capture_attachments
-        self.detected_accelerator: str = "cpu"
+        self.detected_accelerator: str = accelerators.CPU
         self.last_inference_id: str | None = None
 
     def track_load(

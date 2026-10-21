@@ -7,6 +7,7 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
+from wildedge import accelerators
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     HistogramSummary,
@@ -20,6 +21,7 @@ from wildedge.integrations.common import (
     dtype_to_quantization,
     image_brightness_histogram,
     infer_input_modality_from_names,
+    torch_module_accelerator,
 )
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
@@ -57,22 +59,12 @@ def is_torch_module(obj: object) -> bool:
     )
 
 
-def parameter_device_type(obj: object) -> str | None:
-    try:
-        first_param = next(obj.parameters())  # type: ignore[union-attr]
-    except StopIteration:
-        return None
-    except Exception as exc:
-        debug_pytorch_failure("parameter device discovery", exc)
-        return None
-    return str(getattr(first_param.device, "type", "") or None)
-
-
 def detect_accelerator(obj: object) -> str:
-    device_type = parameter_device_type(obj)
-    if device_type:
-        return device_type  # 'cpu', 'cuda', 'mps', 'xpu', etc.
-    return "cpu"
+    try:
+        return torch_module_accelerator(obj) or accelerators.CPU
+    except Exception as exc:
+        debug_pytorch_failure("accelerator detection", exc)
+        return accelerators.CPU
 
 
 def detect_quantization(obj: object) -> str | None:

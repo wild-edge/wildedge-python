@@ -9,10 +9,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from wildedge import constants
+from wildedge import accelerators, constants
 from wildedge.events.error import ErrorCode
 from wildedge.events.inference import TextInputMeta
 from wildedge.logging import logger
+from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:
@@ -33,6 +34,39 @@ def hf_repo_from_cache_path(path: str) -> str | None:
         if part.startswith(HF_CACHE_REPO_PREFIX):
             return part[len(HF_CACHE_REPO_PREFIX) :].replace("--", "/", 1)
     return None
+
+
+def torch_module_accelerator(module: object) -> str | None:
+    """Device type of a torch module's first parameter, such as cpu, cuda,
+    mps or xpu. None when the module has no parameters."""
+    try:
+        first = next(module.parameters())  # type: ignore[attr-defined]
+    except StopIteration:
+        return None
+    device_type = getattr(first.device, "type", None)
+    return str(device_type) if device_type else None
+
+
+def tf_weights_accelerator(model: object) -> str:
+    """The platform's GPU when a TensorFlow/Keras model's first weight is on a
+    GPU, else CPU. TF names devices like ``/job:localhost/.../device:GPU:0``."""
+    weights = getattr(model, "weights", None) or []
+    if weights:
+        device = str(getattr(weights[0], "device", "") or "").upper()
+        if "GPU" in device or "CUDA" in device:
+            return CURRENT_PLATFORM.gpu_accelerator_for_offload()
+    return accelerators.CPU
+
+
+def mlx_accelerator() -> str:
+    """MLX runs on the Apple GPU unless the app switched its default to CPU."""
+    try:
+        import mlx.core as mx  # noqa: PLC0415 -- optional runtime
+
+        return accelerators.CPU if mx.default_device() == mx.cpu else accelerators.MPS
+    except Exception as exc:
+        debug_failure("mlx", "device detection", exc)
+        return accelerators.MPS
 
 
 def stream_error_code(outcome: str) -> str | None:

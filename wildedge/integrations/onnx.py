@@ -8,7 +8,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from wildedge import constants
+from wildedge import accelerators, constants
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     HistogramSummary,
@@ -103,13 +103,13 @@ def is_ort_session(obj: object) -> bool:
 
 
 _PROVIDER_TO_ACCELERATOR: dict[str, str] = {
-    "CUDAExecutionProvider": "cuda",
-    "TensorrtExecutionProvider": "cuda",
-    "ROCMExecutionProvider": "rocm",
-    "MIGraphXExecutionProvider": "rocm",
-    "CoreMLExecutionProvider": "coreml",
-    "DmlExecutionProvider": "directml",
-    "OpenVINOExecutionProvider": "openvino",
+    "CUDAExecutionProvider": accelerators.CUDA,
+    "TensorrtExecutionProvider": accelerators.CUDA,
+    "ROCMExecutionProvider": accelerators.ROCM,
+    "MIGraphXExecutionProvider": accelerators.ROCM,
+    "CoreMLExecutionProvider": accelerators.COREML,
+    "DmlExecutionProvider": accelerators.DIRECTML,
+    "OpenVINOExecutionProvider": accelerators.OPENVINO,
 }
 
 
@@ -121,7 +121,7 @@ def detect_accelerator(session: Any) -> str:
                 return acc
     except Exception as exc:
         debug_onnx_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def detect_quantization(session: Any) -> str | None:
