@@ -32,9 +32,7 @@ for framework integrations.  Internally the client routes hub names to
 """
 
 from wildedge.hubs.base import BaseHubTracker
-from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.registry import HUB_SPECS, HUBS_BY_NAME, HubSpec, supported_hubs
-from wildedge.hubs.torchhub import TorchHubTracker
 
 __all__ = [
     "HUBS_BY_NAME",
@@ -45,3 +43,14 @@ __all__ = [
     "TorchHubTracker",
     "supported_hubs",
 ]
+
+
+def __getattr__(name: str):
+    # Tracker classes are re-exported here but imported only when accessed,
+    # because importing a tracker imports its hub library.
+    from wildedge.loading import resolve  # noqa: PLC0415
+
+    for spec in HUB_SPECS:
+        if spec.tracker_class == name:
+            return resolve(spec.tracker)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

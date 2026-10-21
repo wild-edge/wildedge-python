@@ -22,29 +22,16 @@ from wildedge.dead_letters import DeadLetterStore
 from wildedge.events import SpanEvent
 from wildedge.events.span import SpanKind, SpanStatus
 from wildedge.hubs.base import BaseHubTracker
-from wildedge.hubs.huggingface import HuggingFaceHubTracker
-from wildedge.hubs.registry import supported_hubs
-from wildedge.hubs.torchhub import TorchHubTracker
+from wildedge.hubs.registry import HUB_SPECS, supported_hubs
 from wildedge.instrumentation import claim_instrumentation, has_other_live_owner
-from wildedge.integrations.anthropic import AnthropicExtractor
 from wildedge.integrations.base import BaseExtractor
-from wildedge.integrations.faster_whisper import (
-    install_auto_load_patch as install_faster_whisper,
+from wildedge.integrations.registry import (
+    INTEGRATION_SPECS,
+    find_extractor,
+    noop_integrations,
+    supported_integrations,
 )
-from wildedge.integrations.gguf import GgufExtractor
-from wildedge.integrations.keras import KerasExtractor
-from wildedge.integrations.mlx import MlxExtractor
-from wildedge.integrations.mlx_whisper import (
-    install_auto_load_patch as install_mlx_whisper,
-)
-from wildedge.integrations.onnx import OnnxExtractor
-from wildedge.integrations.openai import OpenAIExtractor
-from wildedge.integrations.pytorch import PytorchExtractor
-from wildedge.integrations.registry import noop_integrations, supported_integrations
-from wildedge.integrations.tensorflow import TensorflowExtractor
-from wildedge.integrations.transformers import TransformersExtractor
-from wildedge.integrations.ultralytics import UltralyticsExtractor
-from wildedge.integrations.whisper import WhisperExtractor
+from wildedge.loading import lazy_callable
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
 from wildedge.paths import (
@@ -119,20 +106,6 @@ def parse_dsn(dsn: str) -> tuple[str, str, str]:
 
 # One informative log line per process for the intentional no-DSN mode.
 _noop_notice_logged = False
-
-DEFAULT_EXTRACTORS: list[BaseExtractor] = [
-    OnnxExtractor(),
-    GgufExtractor(),
-    OpenAIExtractor(),
-    AnthropicExtractor(),
-    UltralyticsExtractor(),
-    TransformersExtractor(),
-    WhisperExtractor(),
-    MlxExtractor(),
-    PytorchExtractor(),
-    TensorflowExtractor(),
-    KerasExtractor(),
-]
 
 
 class SpanContextManager:
@@ -258,24 +231,15 @@ class WildEdge:
     SUPPORTED_INTEGRATIONS = supported_integrations()
     NOOP_INTEGRATIONS = noop_integrations()
     PATCH_INSTALLERS: ClassVar[dict[str, Callable[[object], None]]] = {
-        "anthropic": AnthropicExtractor.install_auto_load_patch,
-        "gguf": GgufExtractor.install_auto_load_patch,
-        "mlx": MlxExtractor.install_auto_load_patch,
-        "mlx_whisper": install_mlx_whisper,
-        "faster_whisper": install_faster_whisper,
-        "onnx": OnnxExtractor.install_auto_load_patch,
-        "openai": OpenAIExtractor.install_auto_load_patch,
-        "timm": PytorchExtractor.install_timm_patch,
-        "tensorflow": TensorflowExtractor.install_auto_load_patch,
-        "transformers": TransformersExtractor.install_auto_load_patch,
-        "ultralytics": UltralyticsExtractor.install_auto_load_patch,
+        spec.name: lazy_callable(spec.installer)
+        for spec in INTEGRATION_SPECS
+        if spec.installer is not None
     }
 
     # Hub trackers: record download provenance (where models came from).
     SUPPORTED_HUBS = supported_hubs()
-    HUB_TRACKER_CLASSES: ClassVar[dict[str, type[BaseHubTracker]]] = {
-        "huggingface": HuggingFaceHubTracker,
-        "torchhub": TorchHubTracker,
+    HUB_TRACKER_CLASSES: ClassVar[dict[str, Callable[[], BaseHubTracker]]] = {
+        spec.name: lazy_callable(spec.tracker) for spec in HUB_SPECS
     }
 
     def __init__(
@@ -706,10 +670,7 @@ class WildEdge:
         return correlation["span_id"]
 
     def _find_extractor(self, model_obj: object) -> BaseExtractor | None:
-        for candidate in DEFAULT_EXTRACTORS:
-            if candidate.can_handle(model_obj):
-                return candidate
-        return None
+        return find_extractor(model_obj)
 
     def _memory_bytes_for(self, model_obj: object) -> int | None:
         extractor = self._find_extractor(model_obj)
