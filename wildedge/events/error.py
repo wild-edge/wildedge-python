@@ -20,8 +20,27 @@ class ErrorCode(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+ELLIPSIS = " … "
+
+
 def truncate(value: str | None, limit: int) -> str | None:
     return None if value is None else str(value)[:limit]
+
+
+def truncate_message(value: str | None, limit: int) -> str | None:
+    """Keep the start and the end of a long message.
+
+    Errors put their detail at either end. mlx-whisper prints the ffmpeg banner
+    first and the failure last, and Hugging Face Hub starts with a request id.
+    """
+    if value is None:
+        return None
+    value = str(value)
+    if len(value) <= limit:
+        return value
+    keep = limit - len(ELLIPSIS)
+    head = keep - keep // 2
+    return value[:head] + ELLIPSIS + value[len(value) - keep // 2 :]
 
 
 @dataclass
@@ -54,9 +73,9 @@ class ErrorEvent:
         error_data = add_optional_fields(
             {"error_code": code},
             {
-                # Capped here so manual track_error() calls get the same
-                # limits as the integrations.
-                "error_message": truncate(
+                # Capped here, so every error event gets the same limit,
+                # from an integration or a manual track_error() call.
+                "error_message": truncate_message(
                     self.error_message, constants.ERROR_MSG_MAX_LEN
                 ),
                 "stack_trace_hash": self.stack_trace_hash,

@@ -89,6 +89,22 @@ def test_error_event_caps_message_and_provider_code():
     assert len(event["provider_error_code"]) == constants.PROVIDER_ERROR_CODE_MAX_LEN
 
 
+def test_long_error_message_keeps_start_and_end():
+    message = "ffmpeg banner " * 100 + "Error opening input file audio.wav"
+    sent = ErrorEvent(
+        model_id="m1", error_code=ErrorCode.UNKNOWN, error_message=message
+    ).to_dict()["error"]["error_message"]
+    assert len(sent) == constants.ERROR_MSG_MAX_LEN
+    assert sent.startswith("ffmpeg banner")
+    assert sent.endswith("Error opening input file audio.wav")
+    assert " … " in sent
+
+
+def test_short_error_message_is_unchanged():
+    event = ErrorEvent(model_id="m1", error_code="UNKNOWN", error_message="boom")
+    assert event.to_dict()["error"]["error_message"] == "boom"
+
+
 def test_span_event_to_dict_includes_required_fields():
     event = SpanEvent(
         kind="tool",
