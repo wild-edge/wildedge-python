@@ -67,6 +67,12 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- Every error event now caps `error_message` at 500 characters, keeping the
+  start and the end of a longer message. Integrations used to cut it to the
+  first 200, which lost the cause in messages that end with it, such as
+  mlx-whisper audio errors that start with the ffmpeg banner. Manual
+  `track_error()` calls had no limit at all. `provider_error_code` is capped
+  at 64 characters for every event.
 - The llama.cpp integration now tracks `Llama.create_chat_completion()` and
   `Llama.create_completion()`, streaming or not. It used to patch only
   `Llama.__call__`, so chat apps on llama-cpp-python reported model loads but

@@ -9,7 +9,7 @@ import time
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from wildedge import accelerators, constants, quantizations
+from wildedge import accelerators, quantizations
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     EmbeddingOutputMeta,
@@ -463,7 +463,7 @@ class TransformersExtractor(BaseExtractor):
             except Exception as exc:
                 handle.track_error(
                     error_code="UNKNOWN",
-                    error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                    error_message=str(exc),
                 )
                 raise
             finally:

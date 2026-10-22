@@ -13,7 +13,7 @@ try:
 except ImportError:
     _np = None  # type: ignore[assignment]
 
-from wildedge import accelerators, constants
+from wildedge import accelerators
 from wildedge.events.inference import ClassificationOutputMeta, TopKPrediction
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.integrations.common import (
@@ -117,7 +117,7 @@ def build_patched_call(
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
@@ -161,7 +161,7 @@ def patch_predict_once(
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 

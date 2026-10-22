@@ -49,7 +49,7 @@
 Releases follow a `release/<version>` branching flow:
 
 1. Cut a `release/<version>` branch from `devel`.
-2. Bump the version in `pyproject.toml`.
+2. Bump the version in `pyproject.toml` and move the Unreleased entries in `CHANGELOG.md` into a `## <version> - <date>` section. The release notes are that section, so the release fails without it.
 3. Open a pull request targeting `main`. CI will automatically run the full compatibility matrix and post a changelog preview comment.
 4. Once merged, tag the commit as `v<version>`. The release workflow publishes to PyPI and creates a GitHub release.
 

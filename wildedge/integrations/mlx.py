@@ -8,7 +8,7 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from wildedge import constants, quantizations
+from wildedge import quantizations
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.integrations.common import (
@@ -116,7 +116,7 @@ def build_mlx_call_patch(original_call):  # type: ignore[no-untyped-def]
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
@@ -273,7 +273,7 @@ class MlxExtractor(BaseExtractor):
                 if handle is not None:
                     handle.track_error(
                         error_code="UNKNOWN",
-                        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                        error_message=str(exc),
                     )
                 raise
             finally:
