@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from wildedge import constants
 from wildedge.events import common
 from wildedge.events.error import ErrorCode, ErrorEvent
 from wildedge.events.feedback import FeedbackEvent, FeedbackType
@@ -75,6 +76,17 @@ def test_feedback_event_enum_and_string_forms():
     )
     assert enum_event.to_dict()["feedback"]["feedback_type"] == "accept"
     assert string_event.to_dict()["feedback"]["feedback_type"] == "reject"
+
+
+def test_error_event_caps_message_and_provider_code():
+    event = ErrorEvent(
+        model_id="m1",
+        error_code=ErrorCode.UNKNOWN,
+        error_message="x" * 5000,
+        provider_error_code="c" * 500,
+    ).to_dict()["error"]
+    assert len(event["error_message"]) == constants.ERROR_MSG_MAX_LEN
+    assert len(event["provider_error_code"]) == constants.PROVIDER_ERROR_CODE_MAX_LEN
 
 
 def test_span_event_to_dict_includes_required_fields():

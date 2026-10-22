@@ -67,6 +67,10 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- `track_error()` now caps `error_message` at 200 characters and
+  `provider_error_code` at 64, the limits the integrations already used.
+  Manual calls sent the full text, so a long exception message could make
+  large error events.
 - The llama.cpp integration now tracks `Llama.create_chat_completion()` and
   `Llama.create_completion()`, streaming or not. It used to patch only
   `Llama.__call__`, so chat apps on llama-cpp-python reported model loads but
