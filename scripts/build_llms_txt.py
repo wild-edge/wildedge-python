@@ -26,6 +26,7 @@ SOURCES: list[tuple[str, str, str]] = [
     ("docs/providers.md", "providers", "Providers"),
     ("docs/streaming.md", "streaming", "Streaming lifecycle"),
     ("docs/whisper.md", "whisper", "Whisper"),
+    ("docs/apple_fm.md", "apple_fm", "Apple Foundation Models"),
     ("docs/compatibility.md", "compatibility", "Compatibility matrix"),
 ]
 

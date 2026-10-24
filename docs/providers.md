@@ -49,6 +49,9 @@ wildedge.llm_api(model="gemma-7b", provider="ollama")
 wildedge.register_model(client, source="ollama", model_id="gemma-7b")
 ```
 
+The same applies to `fm serve`, Apple's local server for its on-device model on
+macOS 27. To track that model without a server, see [Apple Foundation Models](apple_fm.md).
+
 ## Caveats
 
 - `tokens_in` / `tokens_out` are populated by every provider above.
