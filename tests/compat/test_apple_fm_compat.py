@@ -32,7 +32,7 @@ def test_respond_records_one_event(compat_client):
     )
     available, reason = model.is_available()
     session = fm.LanguageModelSession(model=model)
-    options = fm.GenerationOptions(maximum_response_tokens=8)
+    options = fm.GenerationOptions(maximum_response_tokens=64)
 
     async def respond():
         try:
@@ -51,7 +51,7 @@ def test_respond_records_one_event(compat_client):
     if available:
         assert isinstance(result, str), result
         assert event["event_type"] == "inference"
-        assert event["inference"]["generation_config"]["max_tokens"] == 8
+        assert event["inference"]["generation_config"]["max_tokens"] == 64
     else:
         assert isinstance(result, fm.FoundationModelsError), (reason, result)
         assert event["event_type"] == "error"
