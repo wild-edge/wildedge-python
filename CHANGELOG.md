@@ -5,16 +5,7 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
-### Fixed
-
-- Enabling the `huggingface` hub no longer imports unused transformers model
-  modules. To find references to `hf_hub_download` and `snapshot_download`,
-  the hub tracker looked up the name on every loaded module, and transformers'
-  lazy modules import code on lookup. With transformers loaded this imported
-  about 140 extra modules, took about 0.15 s and logged about 430 "failed to
-  patch" debug lines. The tracker now reads each module's namespace instead.
-
-## 0.3.0 - 2026-10-21
+## 0.3.0 - 2026-10-24
 
 ### Added
 
@@ -48,10 +39,6 @@ under Unreleased and move into a version section at release time.
   and environment configuration. `gguf` remains a compatibility alias; `all`
   selects the integration once under its new name. Model format metadata
   remains `gguf`.
-- Automatic integrations no longer attach raw payloads, including GGUF prompts,
-  chat messages and replies. `attachments_enabled=True` enables uploads only for
-  attachments explicitly passed to `track_inference(attachments=[...])`.
-  Apps relying on automatic GGUF capture must supply attachments explicitly.
 - `wildedge.init(dsn=...)` reuses the existing default client when the DSN
   points to the same project, for example `dsn=os.environ["WILDEDGE_DSN"]`
   under `wildedge run`. It used to create a second client.
@@ -76,6 +63,12 @@ under Unreleased and move into a version section at release time.
 
 ### Fixed
 
+- Every error event now caps `error_message` at 500 characters, keeping the
+  start and the end of a longer message. Integrations used to cut it to the
+  first 200, which lost the cause in messages that end with it, such as
+  mlx-whisper audio errors that start with the ffmpeg banner. Manual
+  `track_error()` calls had no limit at all. `provider_error_code` is capped
+  at 64 characters for every event.
 - The llama.cpp integration now tracks `Llama.create_chat_completion()` and
   `Llama.create_completion()`, streaming or not. It used to patch only
   `Llama.__call__`, so chat apps on llama-cpp-python reported model loads but
@@ -85,7 +78,8 @@ under Unreleased and move into a version section at release time.
   calls, the generation config (`temperature`, `top_p`, `top_k`, `max_tokens`,
   `repeat_penalty`, penalties, `seed`, stop sequence count), and, for chat
   calls, `prompt_type="chat"` and `turn_index` measured on the last user
-  message.
+  message. Prompts, chat messages and replies are never attached. As before,
+  attachments upload only when passed to `track_inference(attachments=[...])`.
 - `import wildedge` no longer imports every installed ML framework and API
   client. Each library is imported when its integration is activated or a
   model from it is registered, so SDK import is faster and a broken unrelated
@@ -142,6 +136,12 @@ under Unreleased and move into a version section at release time.
   queue, so events were duplicated and, depending on timing, later events
   could be removed without being sent. This showed up when a process started
   with events saved by an earlier run and flushed soon after.
+- Enabling the `huggingface` hub no longer imports unused transformers model
+  modules. To find references to `hf_hub_download` and `snapshot_download`,
+  the hub tracker looked up the name on every loaded module, and transformers'
+  lazy modules import code on lookup. With transformers loaded this imported
+  about 140 extra modules, took about 0.15 s and logged about 430 "failed to
+  patch" debug lines. The tracker now reads each module's namespace instead.
 
 ## 0.2.2 - 2026-09-30
 

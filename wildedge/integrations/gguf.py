@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import accelerators, constants, quantizations
+from wildedge import accelerators, quantizations
 from wildedge.events.inference import (
     GenerationConfig,
     GenerationOutputMeta,
@@ -333,7 +333,7 @@ def build_patched_call(original_call):
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 

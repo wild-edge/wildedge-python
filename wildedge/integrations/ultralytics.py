@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import accelerators, constants
+from wildedge import accelerators
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     DetectionOutputMeta,
@@ -323,7 +323,7 @@ def build_patched_call(original_call):  # type: ignore[no-untyped-def]
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
