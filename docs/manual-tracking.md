@@ -233,6 +233,25 @@ except Exception as exc:
 
 `wildedge.track` (decorator and context manager) captures errors automatically when `capture_errors=True` (the default).
 
+Use the most specific `ErrorCode` that fits, or `UNKNOWN`:
+
+| Code | Meaning |
+|---|---|
+| `OOM` | Ran out of memory |
+| `CORRUPTED_MODEL` | Model file is damaged or unreadable |
+| `INFERENCE_TIMEOUT` | The call timed out |
+| `UNSUPPORTED_OP` | The runtime can't run an operation in the model |
+| `THERMAL_SHUTDOWN` | The device stopped work because it was too hot |
+| `CONNECTION_ERROR` | A remote model API couldn't be reached |
+| `MODEL_UNAVAILABLE` | The model or its assets aren't on the device yet |
+| `CONTEXT_LENGTH_EXCEEDED` | The prompt and history don't fit the model's context window |
+| `CONTENT_FILTERED` | A safety filter blocked the input or output, or the model refused |
+| `RATE_LIMITED` | Too many requests, or too many at once |
+| `BAD_REQUEST` | The request was invalid, such as an unsupported language or schema |
+| `INVALID_OUTPUT` | The model's output couldn't be parsed into the requested structure |
+| `TOOL_CALL_FAILED` | A tool the model called raised an error |
+| `UNKNOWN` | Anything else |
+
 For failed calls to a remote model API, pass `http_status` and, if the provider returned one, `provider_error_code` with `error_code="UNKNOWN"`; Wild Edge derives the error code from them. The openai and anthropic integrations do this automatically, and report timeouts and connection failures as `INFERENCE_TIMEOUT` and `CONNECTION_ERROR`.
 
 ## Track feedback

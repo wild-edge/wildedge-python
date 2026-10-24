@@ -180,6 +180,7 @@ explicit registration through `client.load(...)` or `client.register_model(...)`
 | Transformers | `transformers` | Automatically through `pipeline` / `from_pretrained` | [Example](examples/transformers_example.py) |
 | llama.cpp (`llama-cpp-python`) | `llama_cpp` | Automatically when constructing `Llama` | [Example](examples/gguf_example.py) |
 | MLX-LM | `mlx` | Automatically through `mlx_lm.load` | [Example](examples/mlx_example.py) |
+| Apple Foundation Models (`apple-fm-sdk`) | `apple_fm` | Automatically for sessions created after initialization ([docs](docs/apple_fm.md)) | [Example](examples/apple_fm_example.py) |
 | faster-whisper / MLX Whisper | `faster_whisper` / `mlx_whisper` | Automatically through supported model loaders | [Example](examples/whisper_example.py) |
 | ONNX Runtime | `onnx` | Automatically when constructing `InferenceSession` | [Example](examples/onnx_example.py) |
 | timm | `timm` | Automatically through `create_model` | [Example](examples/timm_example.py) |

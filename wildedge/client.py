@@ -789,6 +789,10 @@ class WildEdge:
         ``"onnx"``
             Replaces ``ort.InferenceSession`` with a timed subclass.
             Requires ``onnxruntime``.
+        ``"apple_fm"``
+            Patches ``apple_fm_sdk.LanguageModelSession`` to track
+            ``respond()`` and ``stream_response()`` on Apple's on-device
+            model. Requires ``apple-fm-sdk``.
         ``"mlx_whisper"`` / ``"faster_whisper"``
             Tracks local speech recognition, including lazy segment consumption.
         ``"timm"``

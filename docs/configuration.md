@@ -47,6 +47,15 @@ inputs or outputs.
 
 See [Track attachments](manual-tracking.md#track-attachments) for usage.
 
+## Integration settings
+
+Settings for a single integration are environment variables only. They are
+read when the integration is activated.
+
+| Env var | Default | Description |
+|---|---|---|
+| `WILDEDGE_APPLE_FM_COUNT_TOKENS` | `false` | Count tokens for Apple's on-device model, at about 80 ms of background work per call. See [Token counts](apple_fm.md#token-counts) |
+
 ### When ML libraries are imported
 
 `import wildedge` does not import any ML framework or API client. The SDK imports a library only when you use it:
