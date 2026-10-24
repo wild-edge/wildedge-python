@@ -32,7 +32,7 @@ async def main() -> None:
     model = fm.SystemLanguageModel()
     available, reason = model.is_available()
     if not available:
-        raise SystemExit(f"Apple's on-device model is unavailable: {reason}")
+        raise SystemExit(f"Apple's on-device model is unavailable: {reason.name}")
 
     session = fm.LanguageModelSession(
         instructions="Answer in one sentence.", model=model
