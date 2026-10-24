@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from wildedge import constants
 from wildedge.events import common
 from wildedge.events.error import ErrorCode, ErrorEvent
 from wildedge.events.feedback import FeedbackEvent, FeedbackType
@@ -75,6 +76,33 @@ def test_feedback_event_enum_and_string_forms():
     )
     assert enum_event.to_dict()["feedback"]["feedback_type"] == "accept"
     assert string_event.to_dict()["feedback"]["feedback_type"] == "reject"
+
+
+def test_error_event_caps_message_and_provider_code():
+    event = ErrorEvent(
+        model_id="m1",
+        error_code=ErrorCode.UNKNOWN,
+        error_message="x" * 5000,
+        provider_error_code="c" * 500,
+    ).to_dict()["error"]
+    assert len(event["error_message"]) == constants.ERROR_MSG_MAX_LEN
+    assert len(event["provider_error_code"]) == constants.PROVIDER_ERROR_CODE_MAX_LEN
+
+
+def test_long_error_message_keeps_start_and_end():
+    message = "ffmpeg banner " * 100 + "Error opening input file audio.wav"
+    sent = ErrorEvent(
+        model_id="m1", error_code=ErrorCode.UNKNOWN, error_message=message
+    ).to_dict()["error"]["error_message"]
+    assert len(sent) == constants.ERROR_MSG_MAX_LEN
+    assert sent.startswith("ffmpeg banner")
+    assert sent.endswith("Error opening input file audio.wav")
+    assert " … " in sent
+
+
+def test_short_error_message_is_unchanged():
+    event = ErrorEvent(model_id="m1", error_code="UNKNOWN", error_message="boom")
+    assert event.to_dict()["error"]["error_message"] == "boom"
 
 
 def test_span_event_to_dict_includes_required_fields():

@@ -196,7 +196,7 @@ def track_api_error(
         error_code = no_response_error_code(exc) or fallback_code
     handle.track_error(
         error_code=error_code,
-        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+        error_message=str(exc),
         http_status=http_status,
         provider_error_code=provider_error_code,
         duration_ms=duration_ms,
