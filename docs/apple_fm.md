@@ -43,6 +43,15 @@ general model, and `apple-foundation-model-content-tagging` for
 `SystemLanguageModelUseCase.CONTENT_TAGGING`. The model version is the macOS
 version, since the model ships with the OS.
 
+### Availability
+
+`SystemLanguageModel.is_available()` records a model load event. When the
+model can't be used, the load fails with the SDK's reason as its error code:
+`APPLE_INTELLIGENCE_NOT_ENABLED`, `DEVICE_NOT_ELIGIBLE`, `MODEL_NOT_READY`
+(still downloading) or `UNKNOWN`. Apps often poll `is_available()` while the
+model downloads, so an event is sent only when the answer changes, once per
+process and model.
+
 ### Errors
 
 Failed calls record an error event. Its `provider_error_code` is the SDK's

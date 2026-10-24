@@ -11,7 +11,9 @@ under Unreleased and move into a version section at release time.
   `LanguageModelSession.respond()` and `stream_response()` record duration,
   time to first token for streams, prompt size and generation options.
   Failures record the SDK's error name and a matching error code.
-  Token counts are not recorded because the SDK doesn't report them. See
+  `SystemLanguageModel.is_available()` records a model load, failed with
+  the reason when the model can't be used, such as `MODEL_NOT_READY`. Token
+  counts are not recorded because the SDK doesn't report them. See
   docs/apple_fm.md.
 - Error codes `MODEL_UNAVAILABLE`, `CONTEXT_LENGTH_EXCEEDED`,
   `CONTENT_FILTERED`, `RATE_LIMITED` and `BAD_REQUEST`, listed in

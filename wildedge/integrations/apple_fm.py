@@ -84,6 +84,11 @@ ERROR_CODES_BY_PROVIDER_CODE = {
 
 debug_apple_fm_failure = functools.partial(debug_failure, "apple_fm")
 
+# The last is_available() answer reported per model id. A load event is sent
+# only when the answer changes, since apps poll while the model downloads.
+_reported_availability: dict[str, str | None] = {}
+_AVAILABILITY_LOCK = threading.Lock()
+
 
 def model_id_for(use_case: object) -> str:
     """``apple-foundation-model``, plus the use case when it is not GENERAL."""
@@ -118,6 +123,28 @@ def track_apple_fm_error(
         provider_error_code=provider_error_code,
         duration_ms=duration_ms,
     )
+
+
+def unavailable_error_code(reason: object) -> str:
+    """``MODEL_NOT_READY`` and the like, from the SDK's unavailable reason."""
+    name = getattr(reason, "name", None)
+    return name if isinstance(name, str) and name else ErrorCode.UNKNOWN.value
+
+
+def track_availability(
+    handle: ModelHandle, available: bool, reason: object, duration_ms: int
+) -> None:
+    """Send a load event for an is_available() answer that changed."""
+    error_code = None if available else unavailable_error_code(reason)
+    with _AVAILABILITY_LOCK:
+        model_id = handle.model_id
+        if (
+            model_id in _reported_availability
+            and _reported_availability[model_id] == error_code
+        ):
+            return
+        _reported_availability[model_id] = error_code
+    handle.track_load(duration_ms=duration_ms, success=available, error_code=error_code)
 
 
 def build_input_meta(prompt: object) -> tuple[str, TextInputMeta | None]:
@@ -195,6 +222,27 @@ def build_model_init_patch(original_init):  # type: ignore[no-untyped-def]
                 debug_apple_fm_failure("use case capture", exc)
 
     return patched_init
+
+
+def build_availability_patch(original_is_available, client_ref):  # type: ignore[no-untyped-def]
+    @functools.wraps(original_is_available)
+    def patched_is_available(self_inner, *args, **kwargs):  # type: ignore[no-untyped-def]
+        t0 = time.perf_counter()
+        result = original_is_available(self_inner, *args, **kwargs)
+        duration_ms = elapsed_ms(t0)
+        c = client_ref()  # type: ignore[call-arg]
+        if c is None or c.closed:
+            return result
+        try:
+            available, reason = result
+            model_id = model_id_for(getattr(self_inner, APPLE_FM_USE_CASE_ATTR, None))
+            handle = c.register_model(self_inner, model_id=model_id)
+            track_availability(handle, bool(available), reason, duration_ms)
+        except Exception as exc:
+            debug_apple_fm_failure("availability tracking", exc)
+        return result
+
+    return patched_is_available
 
 
 def build_session_init_patch(original_init, client_ref):  # type: ignore[no-untyped-def]
@@ -334,6 +382,8 @@ class AppleFmExtractor(BaseExtractor):
 
         - ``SystemLanguageModel.__init__`` keeps the use case, which names the
           model.
+        - ``SystemLanguageModel.is_available()`` records a load event when
+          its answer changes, failed with the reason the model is unavailable.
         - ``LanguageModelSession.__init__`` registers the session's model.
         - ``respond()`` and ``stream_response()`` record inference events.
         """
@@ -350,6 +400,9 @@ class AppleFmExtractor(BaseExtractor):
             model_cls = _fm.SystemLanguageModel
             session_cls = _fm.LanguageModelSession
             patch_method(model_cls, "__init__", build_model_init_patch)
+            patch_method(
+                model_cls, "is_available", build_availability_patch, client_ref
+            )
             patch_method(session_cls, "__init__", build_session_init_patch, client_ref)
             patch_method(session_cls, "respond", build_respond_patch)
             patch_method(session_cls, "stream_response", build_stream_patch)

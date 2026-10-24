@@ -25,6 +25,13 @@ from wildedge.model import ModelHandle
 # ---------------------------------------------------------------------------
 
 
+class SystemLanguageModelUnavailableReason(enum.IntEnum):
+    APPLE_INTELLIGENCE_NOT_ENABLED = 0
+    DEVICE_NOT_ELIGIBLE = 1
+    MODEL_NOT_READY = 2
+    UNKNOWN = 255
+
+
 class SystemLanguageModelUseCase(enum.IntEnum):
     GENERAL = 0
     CONTENT_TAGGING = 1
@@ -56,6 +63,7 @@ def make_fake_sdk(
     snapshots=("Hel", "Hello", "Hello there"),
     error=None,
     stream_error=None,
+    availability=(True, None),
 ) -> ModuleType:
     """A fresh module per test, since the integration patches its classes."""
 
@@ -67,6 +75,9 @@ def make_fake_sdk(
             _ptr=None,
         ):
             self._ptr = object()
+
+        def is_available(self):
+            return availability() if callable(availability) else availability
 
     class LanguageModelSession:
         def __init__(self, instructions=None, model=None, tools=None, _ptr=None):
@@ -137,6 +148,7 @@ def install(monkeypatch):
         client = client or FakeClient()
         monkeypatch.setattr(apple_fm_mod, "_fm", sdk)
         monkeypatch.setattr(apple_fm_mod, "_apple_fm_patched", False)
+        monkeypatch.setattr(apple_fm_mod, "_reported_availability", {})
         AppleFmExtractor.install_auto_load_patch(lambda: client)
         return sdk, client
 
@@ -331,6 +343,58 @@ def test_every_mapped_provider_code_is_a_known_sdk_error():
     assert set(apple_fm_mod.ERROR_CODES_BY_PROVIDER_CODE) <= set(
         apple_fm_mod.PROVIDER_ERROR_CODES.values()
     )
+
+
+# ---------------------------------------------------------------------------
+# Availability
+# ---------------------------------------------------------------------------
+
+
+def test_available_model_records_one_successful_load(install):
+    sdk, client = install()
+    model = sdk.SystemLanguageModel()
+
+    assert model.is_available() == (True, None)
+    model.is_available()
+    sdk.SystemLanguageModel().is_available()
+
+    [event] = client.of_type("model_load")
+    assert event["model_id"] == MODEL_ID
+    assert event["load"]["success"] is True
+    assert event["load"]["error_code"] is None
+
+
+def test_unavailable_model_records_the_reason(install):
+    reason = SystemLanguageModelUnavailableReason.MODEL_NOT_READY
+    sdk, client = install(availability=(False, reason))
+
+    assert sdk.SystemLanguageModel().is_available() == (False, reason)
+
+    [event] = client.of_type("model_load")
+    assert event["load"]["success"] is False
+    assert event["load"]["error_code"] == "MODEL_NOT_READY"
+
+
+def test_availability_is_recorded_again_when_it_changes(install):
+    not_ready = (False, SystemLanguageModelUnavailableReason.MODEL_NOT_READY)
+    answers = iter([not_ready, not_ready, (True, None), (True, None)])
+    sdk, client = install(availability=lambda: next(answers))
+    model = sdk.SystemLanguageModel()
+
+    for _ in range(4):
+        model.is_available()
+
+    loads = [e["load"] for e in client.of_type("model_load")]
+    assert [(load["success"], load["error_code"]) for load in loads] == [
+        (False, "MODEL_NOT_READY"),
+        (True, None),
+    ]
+
+
+def test_closed_client_leaves_availability_untracked(install):
+    sdk, client = install(client=FakeClient(closed=True))
+    assert sdk.SystemLanguageModel().is_available() == (True, None)
+    assert client.events == []
 
 
 async def test_closed_client_leaves_sessions_untracked(install):

@@ -1,8 +1,8 @@
 """Real apple-fm-sdk sessions.
 
 CI runners can't turn on Apple Intelligence, so a call there fails with the
-SDK's own error. Either way the call must produce exactly one event for the
-model it ran on.
+SDK's own error. Either way the availability check must produce one load
+event, and the call exactly one event, for the model it ran on.
 """
 
 import asyncio
@@ -42,7 +42,11 @@ def test_respond_records_one_event(compat_client):
 
     result = asyncio.run(respond())
 
-    [event] = compat_client.events
+    [load, event] = compat_client.events
+    assert load["event_type"] == "model_load"
+    assert load["load"]["success"] is available
+    if not available:
+        assert load["load"]["error_code"] == reason.name
     assert event["model_id"] == "apple-foundation-model-content-tagging"
     if available:
         assert isinstance(result, str), result
@@ -51,3 +55,4 @@ def test_respond_records_one_event(compat_client):
     else:
         assert isinstance(result, fm.FoundationModelsError), (reason, result)
         assert event["event_type"] == "error"
+        assert event["error"]["provider_error_code"] is not None
