@@ -16,8 +16,8 @@ under Unreleased and move into a version section at release time.
   counts are not recorded because the SDK doesn't report them. See
   docs/apple_fm.md.
 - Error codes `MODEL_UNAVAILABLE`, `CONTEXT_LENGTH_EXCEEDED`,
-  `CONTENT_FILTERED`, `RATE_LIMITED` and `BAD_REQUEST`, listed in
-  docs/manual-tracking.md.
+  `CONTENT_FILTERED`, `RATE_LIMITED`, `BAD_REQUEST`, `INVALID_OUTPUT` and
+  `TOOL_CALL_FAILED`, listed in docs/manual-tracking.md.
 
 ## 0.3.0 - 2026-10-24
 

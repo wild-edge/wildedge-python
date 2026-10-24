@@ -248,6 +248,8 @@ Use the most specific `ErrorCode` that fits, or `UNKNOWN`:
 | `CONTENT_FILTERED` | A safety filter blocked the input or output, or the model refused |
 | `RATE_LIMITED` | Too many requests, or too many at once |
 | `BAD_REQUEST` | The request was invalid, such as an unsupported language or schema |
+| `INVALID_OUTPUT` | The model's output couldn't be parsed into the requested structure |
+| `TOOL_CALL_FAILED` | A tool the model called raised an error |
 | `UNKNOWN` | Anything else |
 
 For failed calls to a remote model API, pass `http_status` and, if the provider returned one, `provider_error_code` with `error_code="UNKNOWN"`; Wild Edge derives the error code from them. The openai and anthropic integrations do this automatically, and report timeouts and connection failures as `INFERENCE_TIMEOUT` and `CONNECTION_ERROR`.

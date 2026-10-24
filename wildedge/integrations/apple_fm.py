@@ -80,6 +80,8 @@ ERROR_CODES_BY_PROVIDER_CODE = {
     "unsupported_guide": ErrorCode.BAD_REQUEST,
     "unsupported_language_or_locale": ErrorCode.BAD_REQUEST,
     "invalid_schema": ErrorCode.BAD_REQUEST,
+    "decoding_failure": ErrorCode.INVALID_OUTPUT,
+    "tool_call": ErrorCode.TOOL_CALL_FAILED,
 }
 
 debug_apple_fm_failure = functools.partial(debug_failure, "apple_fm")

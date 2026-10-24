@@ -57,6 +57,11 @@ class DecodingFailureError(GenerationError):
     pass
 
 
+class ToolCallError(FoundationModelsError):
+    def __init__(self, tool_name, underlying_error):
+        super().__init__(f"Tool '{tool_name}' failed: {underlying_error}")
+
+
 def make_fake_sdk(
     *,
     reply="Hello there",
@@ -329,14 +334,35 @@ async def test_stream_error_records_the_sdk_error_name(install):
     assert client.of_type("inference") == []
 
 
-async def test_error_without_a_specific_code_is_unknown(install):
+async def test_decoding_failure_is_invalid_output(install):
     sdk, client = install(error=DecodingFailureError("bad output"))
     with pytest.raises(DecodingFailureError):
         await sdk.LanguageModelSession().respond("hi")
 
     [error] = client.of_type("error")
-    assert error["error"]["error_code"] == "UNKNOWN"
+    assert error["error"]["error_code"] == "INVALID_OUTPUT"
     assert error["error"]["provider_error_code"] == "decoding_failure"
+
+
+async def test_tool_failure_is_tool_call_failed(install):
+    sdk, client = install(error=ToolCallError("weather", ValueError("no city")))
+    with pytest.raises(ToolCallError):
+        await sdk.LanguageModelSession().respond("hi")
+
+    [error] = client.of_type("error")
+    assert error["error"]["error_code"] == "TOOL_CALL_FAILED"
+    assert error["error"]["provider_error_code"] == "tool_call"
+    assert "weather" in error["error"]["error_message"]
+
+
+async def test_error_without_a_specific_code_is_unknown(install):
+    sdk, client = install(error=FoundationModelsError("something else"))
+    with pytest.raises(FoundationModelsError):
+        await sdk.LanguageModelSession().respond("hi")
+
+    [error] = client.of_type("error")
+    assert error["error"]["error_code"] == "UNKNOWN"
+    assert "provider_error_code" not in error["error"]
 
 
 def test_every_mapped_provider_code_is_a_known_sdk_error():

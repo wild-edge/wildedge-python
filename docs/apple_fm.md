@@ -68,8 +68,10 @@ error name, and its error code says what kind of failure it was:
 | `UnsupportedGuideError` | `unsupported_guide` | `BAD_REQUEST` |
 | `UnsupportedLanguageOrLocaleError` | `unsupported_language_or_locale` | `BAD_REQUEST` |
 | `InvalidGenerationSchemaError` | `invalid_schema` | `BAD_REQUEST` |
-| `DecodingFailureError` | `decoding_failure` | `UNKNOWN` |
-| `ToolCallError` | `tool_call` | `UNKNOWN` |
+| `DecodingFailureError` | `decoding_failure` | `INVALID_OUTPUT` |
+| `ToolCallError` | `tool_call` | `TOOL_CALL_FAILED` |
+
+Any other failure records `UNKNOWN`.
 
 Calling the model before it's ready fails with `AssetsUnavailableError`.
 
