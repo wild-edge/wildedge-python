@@ -4,20 +4,23 @@ Tracks the on-device model behind Apple Intelligence through Apple's Python
 SDK. Sessions are tied to a model handle when they are created, and
 ``respond()`` and ``stream_response()`` record one inference event per call.
 
-The SDK reports no token usage, and counting tokens takes an extra call into
-the model, so token counts are left empty.
+The SDK reports no token usage. Counting tokens takes two extra calls into
+the model service per request, so it is opt-in: set
+``WILDEDGE_APPLE_FM_COUNT_TOKENS=1``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import functools
+import os
 import platform
 import sys
 import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from wildedge import accelerators
+from wildedge import accelerators, constants
 from wildedge.events.error import ErrorCode
 from wildedge.events.inference import (
     GenerationConfig,
@@ -32,6 +35,7 @@ from wildedge.integrations.common import (
 )
 from wildedge.loading import optional_module
 from wildedge.model import ModelInfo
+from wildedge.settings import parse_bool
 from wildedge.timing import elapsed_ms
 
 # Imported when the integration is activated: importing the SDK loads its
@@ -47,6 +51,15 @@ APPLE_FM_PATCH_NAME = "apple_fm_auto_load"
 APPLE_FM_HANDLE_ATTR = "__wildedge_apple_fm_handle__"
 # SystemLanguageModel passes its use case to native code without keeping it.
 APPLE_FM_USE_CASE_ATTR = "__wildedge_apple_fm_use_case__"
+# The model a session was created with, which counts its tokens.
+APPLE_FM_MODEL_ATTR = "__wildedge_apple_fm_model__"
+
+# Read from WILDEDGE_APPLE_FM_COUNT_TOKENS when the integration is activated.
+_count_tokens = False
+# A default model counts tokens for sessions created without one.
+_default_model: Any = None
+# Strong references, so pending token counts aren't garbage collected.
+_counting_tasks: set[asyncio.Task] = set()
 
 MODEL_ID = "apple-foundation-model"
 MODEL_SOURCE = "apple"
@@ -207,6 +220,94 @@ class AppleFmStream(AsyncStreamWrapper):
             self._safe(track_apple_fm_error, self._handle, exc, elapsed_ms(self._t0))
 
 
+def prompt_of(args: tuple, kwargs: dict) -> object:
+    return kwargs.get("prompt", args[0] if args else None)
+
+
+def counting_model(session: object) -> Any:
+    """The model that counts a session's tokens."""
+    global _default_model
+    model = getattr(session, APPLE_FM_MODEL_ATTR, None)
+    if model is not None:
+        return model
+    if _default_model is None and _fm is not None:
+        _default_model = _fm.SystemLanguageModel()
+    return _default_model
+
+
+async def count_tokens(
+    model: Any, prompt: object, reply: object
+) -> tuple[int | None, int | None]:
+    tokens_in = await model.token_count(prompt) if prompt is not None else None
+    tokens_out = await model.token_count(reply) if isinstance(reply, str) else None
+    return tokens_in, tokens_out
+
+
+def add_token_counts(
+    kwargs: dict, tokens_in: int | None, tokens_out: int | None
+) -> None:
+    output_meta: GenerationOutputMeta = kwargs["output_meta"]
+    output_meta.tokens_in = tokens_in
+    output_meta.tokens_out = tokens_out
+    duration_ms = kwargs["duration_ms"]
+    if tokens_out and duration_ms > 0:
+        output_meta.tokens_per_second = round(tokens_out / duration_ms * 1000, 1)
+    input_meta: TextInputMeta | None = kwargs.get("input_meta")
+    if input_meta is not None:
+        input_meta.token_count = tokens_in
+
+
+async def count_into(kwargs: dict, model: Any, prompt: object, reply: object) -> None:
+    try:
+        add_token_counts(kwargs, *await count_tokens(model, prompt, reply))
+    except Exception as exc:
+        debug_apple_fm_failure("token count", exc)
+
+
+def send_counted_inference(
+    handle: ModelHandle, kwargs: dict, task: asyncio.Task
+) -> None:
+    """Send the inference once counting ends, however it ends.
+
+    A failed count, or one cancelled before it ran (as when asyncio.run()
+    shuts down), sends the event without token counts.
+    """
+    _counting_tasks.discard(task)
+    try:
+        handle.track_inference(**kwargs)
+    except Exception as exc:
+        debug_apple_fm_failure("inference tracking", exc)
+
+
+def track_generation(
+    handle: ModelHandle,
+    session: object,
+    prompt: object,
+    reply: object,
+    **kwargs: Any,
+) -> None:
+    """Record an inference, counting its tokens first when that is enabled.
+
+    Counting runs in a background task, so the call returns as soon as the
+    model has answered.
+    """
+    if _count_tokens:
+        try:
+            loop = asyncio.get_running_loop()
+            model = counting_model(session)
+            if model is not None:
+                task = loop.create_task(count_into(kwargs, model, prompt, reply))
+                _counting_tasks.add(task)
+                task.add_done_callback(
+                    functools.partial(send_counted_inference, handle, kwargs)
+                )
+                return
+        except Exception as exc:
+            # No running loop, as when an abandoned stream is collected.
+            debug_apple_fm_failure("token count scheduling", exc)
+    handle.track_inference(**kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Method patches
 # ---------------------------------------------------------------------------
@@ -259,6 +360,7 @@ def build_session_init_patch(original_init, client_ref):  # type: ignore[no-unty
             model_id = model_id_for(getattr(model, APPLE_FM_USE_CASE_ATTR, None))
             handle = c.register_model(self_inner, model_id=model_id)
             setattr(self_inner, APPLE_FM_HANDLE_ATTR, handle)
+            setattr(self_inner, APPLE_FM_MODEL_ATTR, model)
         except Exception as exc:
             debug_apple_fm_failure("session registration", exc)
 
@@ -281,7 +383,11 @@ def build_respond_patch(original_respond):  # type: ignore[no-untyped-def]
         except Exception as exc:
             track_apple_fm_error(handle, exc, elapsed_ms(t0))
             raise
-        handle.track_inference(
+        track_generation(
+            handle,
+            self_inner,
+            prompt_of(args, kwargs),
+            result,
             duration_ms=elapsed_ms(t0),
             input_modality=modality,
             output_modality="generation",
@@ -306,11 +412,20 @@ def build_stream_patch(original_stream):  # type: ignore[no-untyped-def]
         modality, input_meta, config = describe_call(args, kwargs, options_position=1)
 
         # Each chunk is the full text so far, so the first one marks the
-        # first output and nothing needs to be joined.
+        # first output, the last one is the reply, and nothing is joined.
+        last_snapshot: list[object] = [None]
+
+        def on_chunk(chunk: object) -> None:
+            last_snapshot[0] = chunk
+
         def on_done(
             duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
         ) -> None:
-            handle.track_inference(
+            track_generation(
+                handle,
+                self_inner,
+                prompt_of(args, kwargs),
+                last_snapshot[0] if outcome == "completed" else None,
                 duration_ms=duration_ms,
                 input_modality=modality,
                 output_modality="generation",
@@ -323,7 +438,7 @@ def build_stream_patch(original_stream):  # type: ignore[no-untyped-def]
                 generation_config=config,
             )
 
-        return AppleFmStream(stream, handle, time.perf_counter(), None, on_done)
+        return AppleFmStream(stream, handle, time.perf_counter(), on_chunk, on_done)
 
     return patched_stream
 
@@ -389,7 +504,7 @@ class AppleFmExtractor(BaseExtractor):
         - ``LanguageModelSession.__init__`` registers the session's model.
         - ``respond()`` and ``stream_response()`` record inference events.
         """
-        global _apple_fm_patched, _fm
+        global _apple_fm_patched, _fm, _count_tokens
         if _apple_fm_patched:
             return
         _fm = _fm or optional_module(APPLE_FM_PACKAGE)
@@ -408,6 +523,9 @@ class AppleFmExtractor(BaseExtractor):
             patch_method(session_cls, "__init__", build_session_init_patch, client_ref)
             patch_method(session_cls, "respond", build_respond_patch)
             patch_method(session_cls, "stream_response", build_stream_patch)
+            _count_tokens = parse_bool(
+                os.environ.get(constants.ENV_APPLE_FM_COUNT_TOKENS)
+            )
             _apple_fm_patched = True
 
 

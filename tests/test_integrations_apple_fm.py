@@ -10,6 +10,7 @@ import pytest
 
 import wildedge.integrations.apple_fm as apple_fm_mod
 from wildedge import accelerators
+from wildedge.events.inference import GenerationOutputMeta
 from wildedge.integrations.apple_fm import (
     MODEL_ID,
     AppleFmExtractor,
@@ -69,6 +70,7 @@ def make_fake_sdk(
     error=None,
     stream_error=None,
     availability=(True, None),
+    token_count_error=None,
 ) -> ModuleType:
     """A fresh module per test, since the integration patches its classes."""
 
@@ -83,6 +85,12 @@ def make_fake_sdk(
 
         def is_available(self):
             return availability() if callable(availability) else availability
+
+        async def token_count(self, value=None, *, instructions=None):
+            await asyncio.sleep(0)
+            if token_count_error is not None:
+                raise token_count_error
+            return len(str(value).split())
 
     class LanguageModelSession:
         def __init__(self, instructions=None, model=None, tools=None, _ptr=None):
@@ -148,9 +156,14 @@ class FakeClient:
 def install(monkeypatch):
     """Activate the integration on a fake SDK and return (sdk, client)."""
 
-    def _install(client=None, **sdk_kwargs):
+    def _install(client=None, count_tokens=False, **sdk_kwargs):
         sdk = make_fake_sdk(**sdk_kwargs)
         client = client or FakeClient()
+        if count_tokens:
+            monkeypatch.setenv("WILDEDGE_APPLE_FM_COUNT_TOKENS", "1")
+        else:
+            monkeypatch.delenv("WILDEDGE_APPLE_FM_COUNT_TOKENS", raising=False)
+        monkeypatch.setattr(apple_fm_mod, "_default_model", None)
         monkeypatch.setattr(apple_fm_mod, "_fm", sdk)
         monkeypatch.setattr(apple_fm_mod, "_apple_fm_patched", False)
         monkeypatch.setattr(apple_fm_mod, "_reported_availability", {})
@@ -162,6 +175,12 @@ def install(monkeypatch):
 
 def inference_of(event):
     return event["inference"]
+
+
+async def counted():
+    """Wait for pending token counts to send their events."""
+    await asyncio.gather(*apple_fm_mod._counting_tasks, return_exceptions=True)
+    await asyncio.sleep(0)  # done callbacks run on the next loop iteration
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +440,93 @@ def test_closed_client_leaves_availability_untracked(install):
     sdk, client = install(client=FakeClient(closed=True))
     assert sdk.SystemLanguageModel().is_available() == (True, None)
     assert client.events == []
+
+
+# ---------------------------------------------------------------------------
+# Token counting
+# ---------------------------------------------------------------------------
+
+
+async def test_tokens_are_not_counted_by_default(install):
+    sdk, client = install()
+    await sdk.LanguageModelSession().respond("How does rain form?")
+
+    [event] = client.of_type("inference")
+    assert "tokens_in" not in inference_of(event)["output_meta"]
+    assert apple_fm_mod._counting_tasks == set()
+
+
+async def test_respond_counts_prompt_and_reply_tokens(install):
+    sdk, client = install(count_tokens=True, reply="Water vapour condenses")
+    session = sdk.LanguageModelSession(model=sdk.SystemLanguageModel())
+
+    assert await session.respond("How does rain form?") == "Water vapour condenses"
+    await counted()
+
+    [event] = client.of_type("inference")
+    inference = inference_of(event)
+    assert inference["output_meta"]["tokens_in"] == 4
+    assert inference["output_meta"]["tokens_out"] == 3
+    assert inference["input_meta"]["token_count"] == 4
+
+
+def test_tokens_per_second_needs_a_duration():
+    meta = GenerationOutputMeta()
+    apple_fm_mod.add_token_counts(
+        {"output_meta": meta, "duration_ms": 500}, tokens_in=10, tokens_out=20
+    )
+    assert (meta.tokens_in, meta.tokens_out, meta.tokens_per_second) == (10, 20, 40.0)
+
+    meta = GenerationOutputMeta()
+    apple_fm_mod.add_token_counts(
+        {"output_meta": meta, "duration_ms": 0}, tokens_in=10, tokens_out=20
+    )
+    assert meta.tokens_per_second is None
+
+
+async def test_stream_counts_the_last_snapshot(install):
+    sdk, client = install(count_tokens=True, snapshots=("Rain", "Rain falls down"))
+    async for _ in sdk.LanguageModelSession().stream_response("Tell me"):
+        pass
+    await counted()
+
+    [event] = client.of_type("inference")
+    output_meta = inference_of(event)["output_meta"]
+    assert (output_meta["tokens_in"], output_meta["tokens_out"]) == (2, 3)
+    assert "time_to_first_token_ms" in output_meta
+
+
+async def test_session_without_a_model_counts_with_the_default_model(install):
+    sdk, client = install(count_tokens=True)
+    await sdk.LanguageModelSession().respond("hi there")
+    await counted()
+
+    assert apple_fm_mod._default_model is not None
+    [event] = client.of_type("inference")
+    assert inference_of(event)["output_meta"]["tokens_in"] == 2
+
+
+async def test_failed_count_still_records_the_inference(install):
+    sdk, client = install(
+        count_tokens=True, token_count_error=FoundationModelsError("no assets")
+    )
+    await sdk.LanguageModelSession().respond("hi")
+    await counted()
+
+    [event] = client.of_type("inference")
+    assert inference_of(event)["success"] is True
+    assert "tokens_in" not in inference_of(event)["output_meta"]
+
+
+async def test_cancelled_count_still_records_the_inference_once(install):
+    sdk, client = install(count_tokens=True)
+    await sdk.LanguageModelSession().respond("hi")
+    for task in apple_fm_mod._counting_tasks:
+        task.cancel()
+    await counted()
+
+    [event] = client.of_type("inference")
+    assert "tokens_in" not in inference_of(event)["output_meta"]
 
 
 async def test_closed_client_leaves_sessions_untracked(install):

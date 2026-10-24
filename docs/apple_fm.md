@@ -43,6 +43,24 @@ general model, and `apple-foundation-model-content-tagging` for
 `SystemLanguageModelUseCase.CONTENT_TAGGING`. The model version is the macOS
 version, since the model ships with the OS.
 
+### Token counts
+
+The SDK doesn't report token usage, so token counts are empty by default. Set
+`WILDEDGE_APPLE_FM_COUNT_TOKENS=1` to count them with
+`SystemLanguageModel.token_count()`. Each call then records tokens in (the
+prompt, not the instructions or earlier turns), tokens out (the reply) and
+tokens per second.
+
+Counting costs two calls to the model service per request, about 40 ms each
+on an M2 Mac. They run in the background after the response returns, so your
+call is never slower. macOS queues them behind generation, though, so they
+can delay a request that follows right after by about 80 ms. The event is
+sent once counting finishes, usually soon after the model is idle.
+
+Structured replies (`generating=` or a schema) count tokens in only. A count
+that fails sends the event without token counts. So does the last call before
+the event loop closes, since `asyncio.run()` cancels the pending count.
+
 ### Availability
 
 `SystemLanguageModel.is_available()` records a model load event. When the
@@ -77,9 +95,7 @@ Calling the model before it's ready fails with `AssetsUnavailableError`.
 
 ## Caveats
 
-- Token counts and tokens per second are empty. The SDK doesn't report token
-  usage, and counting tokens with `SystemLanguageModel.token_count()` is an
-  extra call to the model, so WildEdge doesn't make it for you.
+- Token counts are opt-in, see [Token counts](#token-counts).
 - Prompts and responses are not uploaded.
 
 ## `fm serve`
