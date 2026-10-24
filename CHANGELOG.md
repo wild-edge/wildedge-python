@@ -39,10 +39,6 @@ under Unreleased and move into a version section at release time.
   and environment configuration. `gguf` remains a compatibility alias; `all`
   selects the integration once under its new name. Model format metadata
   remains `gguf`.
-- Automatic integrations no longer attach raw payloads, including GGUF prompts,
-  chat messages and replies. `attachments_enabled=True` enables uploads only for
-  attachments explicitly passed to `track_inference(attachments=[...])`.
-  Apps relying on automatic GGUF capture must supply attachments explicitly.
 - `wildedge.init(dsn=...)` reuses the existing default client when the DSN
   points to the same project, for example `dsn=os.environ["WILDEDGE_DSN"]`
   under `wildedge run`. It used to create a second client.
@@ -82,7 +78,8 @@ under Unreleased and move into a version section at release time.
   calls, the generation config (`temperature`, `top_p`, `top_k`, `max_tokens`,
   `repeat_penalty`, penalties, `seed`, stop sequence count), and, for chat
   calls, `prompt_type="chat"` and `turn_index` measured on the last user
-  message.
+  message. Prompts, chat messages and replies are never attached. As before,
+  attachments upload only when passed to `track_inference(attachments=[...])`.
 - `import wildedge` no longer imports every installed ML framework and API
   client. Each library is imported when its integration is activated or a
   model from it is registered, so SDK import is faster and a broken unrelated
