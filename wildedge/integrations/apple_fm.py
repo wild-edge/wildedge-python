@@ -68,6 +68,20 @@ PROVIDER_ERROR_CODES = {
     "ToolCallError": "tool_call",
 }
 
+# The error code sent for each SDK error. The server keeps a specific code
+# as sent, and none of these failures has an HTTP status to derive one from.
+ERROR_CODES_BY_PROVIDER_CODE = {
+    "assets_unavailable": ErrorCode.MODEL_UNAVAILABLE,
+    "exceeded_context_window_size": ErrorCode.CONTEXT_LENGTH_EXCEEDED,
+    "guardrail_violation": ErrorCode.CONTENT_FILTERED,
+    "refusal": ErrorCode.CONTENT_FILTERED,
+    "rate_limited": ErrorCode.RATE_LIMITED,
+    "concurrent_requests": ErrorCode.RATE_LIMITED,
+    "unsupported_guide": ErrorCode.BAD_REQUEST,
+    "unsupported_language_or_locale": ErrorCode.BAD_REQUEST,
+    "invalid_schema": ErrorCode.BAD_REQUEST,
+}
+
 debug_apple_fm_failure = functools.partial(debug_failure, "apple_fm")
 
 
@@ -95,10 +109,13 @@ def provider_error_code_of(exc: BaseException) -> str | None:
 def track_apple_fm_error(
     handle: ModelHandle, exc: BaseException, duration_ms: int
 ) -> None:
+    provider_error_code = provider_error_code_of(exc)
     handle.track_error(
-        error_code=ErrorCode.UNKNOWN,
+        error_code=ERROR_CODES_BY_PROVIDER_CODE.get(
+            provider_error_code, ErrorCode.UNKNOWN
+        ),
         error_message=str(exc),
-        provider_error_code=provider_error_code_of(exc),
+        provider_error_code=provider_error_code,
         duration_ms=duration_ms,
     )
 

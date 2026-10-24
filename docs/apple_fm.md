@@ -43,10 +43,26 @@ general model, and `apple-foundation-model-content-tagging` for
 `SystemLanguageModelUseCase.CONTENT_TAGGING`. The model version is the macOS
 version, since the model ships with the OS.
 
-Failed calls record an error event named after the SDK's error, such as
-`guardrail_violation`, `exceeded_context_window_size`, `assets_unavailable` or
-`refusal`. A model that isn't ready because Apple Intelligence is off fails
-this way too.
+### Errors
+
+Failed calls record an error event. Its `provider_error_code` is the SDK's
+error name, and its error code says what kind of failure it was:
+
+| SDK error | `provider_error_code` | Error code |
+|---|---|---|
+| `AssetsUnavailableError` | `assets_unavailable` | `MODEL_UNAVAILABLE` |
+| `ExceededContextWindowSizeError` | `exceeded_context_window_size` | `CONTEXT_LENGTH_EXCEEDED` |
+| `GuardrailViolationError` | `guardrail_violation` | `CONTENT_FILTERED` |
+| `RefusalError` | `refusal` | `CONTENT_FILTERED` |
+| `RateLimitedError` | `rate_limited` | `RATE_LIMITED` |
+| `ConcurrentRequestsError` | `concurrent_requests` | `RATE_LIMITED` |
+| `UnsupportedGuideError` | `unsupported_guide` | `BAD_REQUEST` |
+| `UnsupportedLanguageOrLocaleError` | `unsupported_language_or_locale` | `BAD_REQUEST` |
+| `InvalidGenerationSchemaError` | `invalid_schema` | `BAD_REQUEST` |
+| `DecodingFailureError` | `decoding_failure` | `UNKNOWN` |
+| `ToolCallError` | `tool_call` | `UNKNOWN` |
+
+Calling the model before it's ready fails with `AssetsUnavailableError`.
 
 ## Caveats
 

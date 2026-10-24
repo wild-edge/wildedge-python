@@ -46,6 +46,10 @@ class ExceededContextWindowSizeError(GenerationError):
     pass
 
 
+class DecodingFailureError(GenerationError):
+    pass
+
+
 def make_fake_sdk(
     *,
     reply="Hello there",
@@ -270,7 +274,7 @@ async def test_respond_error_records_the_sdk_error_name(install):
         await session.respond("something unsafe")
 
     [error] = client.of_type("error")
-    assert error["error"]["error_code"] == "UNKNOWN"
+    assert error["error"]["error_code"] == "CONTENT_FILTERED"
     assert error["error"]["provider_error_code"] == "guardrail_violation"
     assert "duration_ms" in error["error"]
     assert client.of_type("inference") == []
@@ -308,8 +312,25 @@ async def test_stream_error_records_the_sdk_error_name(install):
             pass
 
     [error] = client.of_type("error")
+    assert error["error"]["error_code"] == "CONTEXT_LENGTH_EXCEEDED"
     assert error["error"]["provider_error_code"] == "exceeded_context_window_size"
     assert client.of_type("inference") == []
+
+
+async def test_error_without_a_specific_code_is_unknown(install):
+    sdk, client = install(error=DecodingFailureError("bad output"))
+    with pytest.raises(DecodingFailureError):
+        await sdk.LanguageModelSession().respond("hi")
+
+    [error] = client.of_type("error")
+    assert error["error"]["error_code"] == "UNKNOWN"
+    assert error["error"]["provider_error_code"] == "decoding_failure"
+
+
+def test_every_mapped_provider_code_is_a_known_sdk_error():
+    assert set(apple_fm_mod.ERROR_CODES_BY_PROVIDER_CODE) <= set(
+        apple_fm_mod.PROVIDER_ERROR_CODES.values()
+    )
 
 
 async def test_closed_client_leaves_sessions_untracked(install):

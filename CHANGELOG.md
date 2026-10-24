@@ -9,9 +9,13 @@ under Unreleased and move into a version section at release time.
 
 - `apple_fm` integration tracks Apple's on-device model through apple-fm-sdk.
   `LanguageModelSession.respond()` and `stream_response()` record duration,
-  time to first token for streams, prompt size and generation options, and
-  failures record the SDK's error name. Token counts are not recorded because
-  the SDK doesn't report them. See docs/apple_fm.md.
+  time to first token for streams, prompt size and generation options.
+  Failures record the SDK's error name and a matching error code.
+  Token counts are not recorded because the SDK doesn't report them. See
+  docs/apple_fm.md.
+- Error codes `MODEL_UNAVAILABLE`, `CONTEXT_LENGTH_EXCEEDED`,
+  `CONTENT_FILTERED`, `RATE_LIMITED` and `BAD_REQUEST`, listed in
+  docs/manual-tracking.md.
 
 ## 0.3.0 - 2026-10-24
 
