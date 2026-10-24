@@ -56,3 +56,24 @@ def test_respond_records_one_event(compat_client):
         assert isinstance(result, fm.FoundationModelsError), (reason, result)
         assert event["event_type"] == "error"
         assert event["error"]["provider_error_code"] is not None
+
+
+def test_resumed_session_keeps_its_model(compat_client):
+    """from_transcript() creates the session without passing the model to __init__."""
+    compat_client.instrument("apple_fm")
+    model = fm.SystemLanguageModel(
+        use_case=fm.SystemLanguageModelUseCase.CONTENT_TAGGING
+    )
+    original = fm.LanguageModelSession(model=model)
+    session = fm.LanguageModelSession.from_transcript(original.transcript, model=model)
+
+    async def respond():
+        try:
+            return await session.respond("Tag this: snow")
+        except fm.FoundationModelsError as exc:
+            return exc
+
+    asyncio.run(respond())
+
+    [event] = [e for e in compat_client.events if e["event_type"] != "model_load"]
+    assert event["model_id"] == "apple-foundation-model-content-tagging"

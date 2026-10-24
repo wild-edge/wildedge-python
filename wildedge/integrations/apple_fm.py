@@ -348,23 +348,42 @@ def build_availability_patch(original_is_available, client_ref):  # type: ignore
     return patched_is_available
 
 
+def register_session(client_ref, session: object, model: object) -> None:  # type: ignore[no-untyped-def]
+    """Tie a session to the handle for its model's use case."""
+    c = client_ref()  # type: ignore[call-arg]
+    if c is None or c.closed:
+        return
+    try:
+        model_id = model_id_for(getattr(model, APPLE_FM_USE_CASE_ATTR, None))
+        handle = c.register_model(session, model_id=model_id)
+        setattr(session, APPLE_FM_HANDLE_ATTR, handle)
+        setattr(session, APPLE_FM_MODEL_ATTR, model)
+    except Exception as exc:
+        debug_apple_fm_failure("session registration", exc)
+
+
 def build_session_init_patch(original_init, client_ref):  # type: ignore[no-untyped-def]
     @functools.wraps(original_init)
     def patched_init(self_inner, *args, **kwargs):  # type: ignore[no-untyped-def]
         original_init(self_inner, *args, **kwargs)
-        c = client_ref()  # type: ignore[call-arg]
-        if c is None or c.closed:
-            return
-        try:
-            model = kwargs.get("model", args[1] if len(args) > 1 else None)
-            model_id = model_id_for(getattr(model, APPLE_FM_USE_CASE_ATTR, None))
-            handle = c.register_model(self_inner, model_id=model_id)
-            setattr(self_inner, APPLE_FM_HANDLE_ATTR, handle)
-            setattr(self_inner, APPLE_FM_MODEL_ATTR, model)
-        except Exception as exc:
-            debug_apple_fm_failure("session registration", exc)
+        model = kwargs.get("model", args[1] if len(args) > 1 else None)
+        register_session(client_ref, self_inner, model)
 
     return patched_init
+
+
+def build_from_transcript_patch(original_from_transcript, client_ref):  # type: ignore[no-untyped-def]
+    # from_transcript(transcript, model=None, tools=None) creates the session
+    # as cls(_ptr=...), so __init__ never sees the model.
+    @functools.wraps(original_from_transcript)
+    def patched_from_transcript(cls_inner, *args, **kwargs):  # type: ignore[no-untyped-def]
+        session = original_from_transcript(cls_inner, *args, **kwargs)
+        model = kwargs.get("model", args[1] if len(args) > 1 else None)
+        if model is not None:
+            register_session(client_ref, session, model)
+        return session
+
+    return patched_from_transcript
 
 
 def build_respond_patch(original_respond):  # type: ignore[no-untyped-def]
@@ -453,6 +472,19 @@ def patch_method(cls: type, name: str, make_patch, *extra) -> None:  # type: ign
     setattr(cls, name, patched)
 
 
+def patch_classmethod(cls: type, name: str, make_patch, *extra) -> None:  # type: ignore[no-untyped-def]
+    original = cls.__dict__.get(name)
+    if not isinstance(original, classmethod):
+        return
+    func = original.__func__
+    if getattr(func, "__wildedge_patch_name__", None) == APPLE_FM_PATCH_NAME:
+        return
+    patched = make_patch(func, *extra)
+    patched.__wildedge_patch_name__ = APPLE_FM_PATCH_NAME
+    patched.__wildedge_original_call__ = func
+    setattr(cls, name, classmethod(patched))
+
+
 # ---------------------------------------------------------------------------
 # Extractor
 # ---------------------------------------------------------------------------
@@ -500,7 +532,8 @@ class AppleFmExtractor(BaseExtractor):
           model.
         - ``SystemLanguageModel.is_available()`` records a load event when
           its answer changes, failed with the reason the model is unavailable.
-        - ``LanguageModelSession.__init__`` registers the session's model.
+        - ``LanguageModelSession.__init__`` registers the session's model, and
+          ``from_transcript()`` the model passed to it.
         - ``respond()`` and ``stream_response()`` record inference events.
         """
         global _apple_fm_patched, _fm, _count_tokens
@@ -520,6 +553,9 @@ class AppleFmExtractor(BaseExtractor):
                 model_cls, "is_available", build_availability_patch, client_ref
             )
             patch_method(session_cls, "__init__", build_session_init_patch, client_ref)
+            patch_classmethod(
+                session_cls, "from_transcript", build_from_transcript_patch, client_ref
+            )
             patch_method(session_cls, "respond", build_respond_patch)
             patch_method(session_cls, "stream_response", build_stream_patch)
             _count_tokens = parse_bool(

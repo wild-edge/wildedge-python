@@ -40,7 +40,8 @@ sampling top-k, threshold and seed). Streams also record time to first token.
 
 Sessions share one model per use case: `apple-foundation-model` for the
 general model, and `apple-foundation-model-content-tagging` for
-`SystemLanguageModelUseCase.CONTENT_TAGGING`. The model version is the macOS
+`SystemLanguageModelUseCase.CONTENT_TAGGING`, also for sessions resumed with
+`from_transcript()`. The model version is the macOS
 version, since the model ships with the OS. The accelerator is `npu`, since
 the model runs on the Neural Engine.
 

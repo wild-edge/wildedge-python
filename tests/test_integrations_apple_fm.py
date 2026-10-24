@@ -296,9 +296,19 @@ async def test_sessions_share_a_handle_per_use_case(install):
     await sdk.LanguageModelSession(model=sdk.SystemLanguageModel()).respond("b")
     await sdk.LanguageModelSession(model=tagging).respond("c")
     await sdk.LanguageModelSession.from_transcript(object()).respond("d")
+    await sdk.LanguageModelSession.from_transcript(object(), model=tagging).respond("e")
+    await sdk.LanguageModelSession.from_transcript(object(), tagging).respond("f")
 
     model_ids = [e["model_id"] for e in client.of_type("inference")]
-    assert model_ids == [MODEL_ID, MODEL_ID, f"{MODEL_ID}-content-tagging", MODEL_ID]
+    tagging_id = f"{MODEL_ID}-content-tagging"
+    assert model_ids == [
+        MODEL_ID,
+        MODEL_ID,
+        tagging_id,
+        MODEL_ID,
+        tagging_id,
+        tagging_id,
+    ]
     assert set(client.handles) == {MODEL_ID, f"{MODEL_ID}-content-tagging"}
 
 
@@ -537,13 +547,30 @@ async def test_closed_client_leaves_sessions_untracked(install):
     assert client.events == []
 
 
+async def test_from_transcript_counts_tokens_with_the_passed_model(install):
+    sdk, client = install(count_tokens=True)
+    tagging = sdk.SystemLanguageModel(
+        use_case=SystemLanguageModelUseCase.CONTENT_TAGGING
+    )
+    session = sdk.LanguageModelSession.from_transcript(object(), model=tagging)
+    assert getattr(session, apple_fm_mod.APPLE_FM_MODEL_ATTR) is tagging
+    await session.respond("tag this")
+    await counted()
+
+    [event] = client.of_type("inference")
+    assert inference_of(event)["output_meta"]["tokens_in"] == 2
+    assert apple_fm_mod._default_model is None
+
+
 def test_install_is_idempotent(install):
     sdk, _client = install()
     respond = sdk.LanguageModelSession.respond
+    from_transcript = sdk.LanguageModelSession.__dict__["from_transcript"]
     AppleFmExtractor.install_auto_load_patch(lambda: None)
     apple_fm_mod._apple_fm_patched = False
     AppleFmExtractor.install_auto_load_patch(lambda: None)
     assert sdk.LanguageModelSession.respond is respond
+    assert sdk.LanguageModelSession.__dict__["from_transcript"] is from_transcript
 
 
 def test_install_skips_when_sdk_missing(monkeypatch):
