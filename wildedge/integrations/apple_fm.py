@@ -487,9 +487,7 @@ class AppleFmExtractor(BaseExtractor):
         return model_id, info
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
-        # The system model runs on the Neural Engine. While it generates,
-        # Neural Engine power rises from 0 to about 5 W on an M2, and GPU
-        # power stays near idle.
+        # Apple's system model runs on the Neural Engine.
         handle.detected_accelerator = accelerators.NPU
         if type(obj).__name__ == "LanguageModelSession":
             setattr(obj, APPLE_FM_HANDLE_ATTR, handle)
