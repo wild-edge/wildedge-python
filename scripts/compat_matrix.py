@@ -62,6 +62,7 @@ MATRIX = {
         "current": ["faster-whisper==1.2.1", "ctranslate2==4.8.2", "numpy==2.2.6"]
     },
     "mlx_whisper": {"current": ["mlx-whisper==0.4.3", "mlx==0.32.3", "numpy==2.2.6"]},
+    "apple_fm": {"current": ["apple-fm-sdk==0.2.1"]},
 }
 
 SUPPORTED_PYTHON = {
@@ -77,6 +78,7 @@ SUPPORTED_PYTHON = {
     "mlx": ["3.12", "3.13"],
     "faster_whisper": ["3.12", "3.13"],
     "mlx_whisper": ["3.12", "3.13"],
+    "apple_fm": ["3.12", "3.13"],
 }
 
 # Integrations without a row of their own, and the row that exercises them.
@@ -88,6 +90,8 @@ COVERED_BY = {
 RUNNER = {
     "mlx": "macos-14",
     "mlx_whisper": "macos-14",
+    # apple-fm-sdk builds Swift bindings at install, which needs Xcode 26.
+    "apple_fm": "macos-26",
 }
 
 # Python versions run as non-blocking canaries, and only with current pins.

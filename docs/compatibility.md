@@ -29,7 +29,8 @@ once the bug is fixed and the marker has to come off.
 On pull requests into `main` or a release branch, on pushes to them, nightly
 against `devel`, and on manual runs. Every run covers all the combinations
 below. Python 3.14 rows are canaries and don't fail the run. mlx runs on
-macOS.
+macOS. apple_fm runs on macOS 26, where Apple Intelligence is off, so its
+test checks that a failed call is recorded as an error event.
 
 To run the full matrix locally: `python scripts/run_compat_local.py`.
 `python scripts/compat_matrix.py table` prints the table below.
@@ -69,3 +70,4 @@ To run the full matrix locally: `python scripts/run_compat_local.py`.
 | `mlx` | `current` | `mlx==0.32.4`, `mlx-lm==0.32.2` | 3.12, 3.13 |
 | `faster_whisper` | `current` | `faster-whisper==1.2.1`, `ctranslate2==4.8.2`, `numpy==2.2.6` | 3.12, 3.13 |
 | `mlx_whisper` | `current` | `mlx-whisper==0.4.3`, `mlx==0.32.3`, `numpy==2.2.6` | 3.12, 3.13 |
+| `apple_fm` | `current` | `apple-fm-sdk==0.2.1` | 3.12, 3.13 |
