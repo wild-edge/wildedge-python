@@ -35,6 +35,7 @@ OPTIONAL = (
     "llama_cpp",
     "openai",
     "anthropic",
+    "apple_fm_sdk",
     "huggingface_hub",
     "numpy",
 )

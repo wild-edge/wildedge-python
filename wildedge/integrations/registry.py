@@ -44,6 +44,7 @@ class IntegrationSpec:
 
 INTEGRATION_SPECS: tuple[IntegrationSpec, ...] = (
     IntegrationSpec("anthropic", ("anthropic",), "client_patch"),
+    IntegrationSpec("apple_fm", ("apple_fm_sdk",), "client_patch"),
     IntegrationSpec("llama_cpp", ("llama_cpp",), "client_patch", adapter_module="gguf"),
     IntegrationSpec("onnx", ("onnxruntime",), "client_patch"),
     IntegrationSpec("openai", ("openai",), "client_patch"),
@@ -147,6 +148,7 @@ EXTRACTOR_SPECS: tuple[ExtractorSpec, ...] = (
         "AnthropicExtractor",
         class_names=("Anthropic", "AsyncAnthropic", "Messages", "AsyncMessages"),
     ),
+    ExtractorSpec("apple_fm", "AppleFmExtractor", ("apple_fm_sdk",)),
     ExtractorSpec("ultralytics", "UltralyticsExtractor", class_names=("YOLO",)),
     ExtractorSpec("transformers", "TransformersExtractor", ("transformers",)),
     # Before MLX, which would otherwise claim MLX Whisper models.
