@@ -4,8 +4,8 @@ Tracks the on-device model behind Apple Intelligence through Apple's Python
 SDK. Sessions are tied to a model handle when they are created, and
 ``respond()`` and ``stream_response()`` record one inference event per call.
 
-The SDK reports no token usage. Counting tokens takes two extra calls into
-the model service per request, so it is opt-in: set
+Token counts come from ``SystemLanguageModel.token_count()``. That takes two
+extra calls into the model service per request, so it is opt-in: set
 ``WILDEDGE_APPLE_FM_COUNT_TOKENS=1``.
 """
 

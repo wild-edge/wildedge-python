@@ -45,9 +45,8 @@ version, since the model ships with the OS.
 
 ### Token counts
 
-The SDK doesn't report token usage, so token counts are empty by default. Set
-`WILDEDGE_APPLE_FM_COUNT_TOKENS=1` to count them with
-`SystemLanguageModel.token_count()`. Each call then records tokens in (the
+Token counts come from `SystemLanguageModel.token_count()` and are opt-in.
+Set `WILDEDGE_APPLE_FM_COUNT_TOKENS=1`, and each call records tokens in (the
 prompt, not the instructions or earlier turns), tokens out (the reply) and
 tokens per second.
 

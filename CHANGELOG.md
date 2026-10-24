@@ -12,10 +12,9 @@ under Unreleased and move into a version section at release time.
   time to first token for streams, prompt size and generation options.
   Failures record the SDK's error name and a matching error code.
   `SystemLanguageModel.is_available()` records a model load, failed with
-  the reason when the model can't be used, such as `MODEL_NOT_READY`. The SDK
-  doesn't report token usage, and `WILDEDGE_APPLE_FM_COUNT_TOKENS=1` counts
-  it with `SystemLanguageModel.token_count()` in the background. See
-  docs/apple_fm.md.
+  the reason when the model can't be used, such as `MODEL_NOT_READY`. Token
+  counts, from `SystemLanguageModel.token_count()`, are opt-in with
+  `WILDEDGE_APPLE_FM_COUNT_TOKENS=1`. See docs/apple_fm.md.
 - Error codes `MODEL_UNAVAILABLE`, `CONTEXT_LENGTH_EXCEEDED`,
   `CONTENT_FILTERED`, `RATE_LIMITED`, `BAD_REQUEST`, `INVALID_OUTPUT` and
   `TOOL_CALL_FAILED`, listed in docs/manual-tracking.md.
