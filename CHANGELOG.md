@@ -5,6 +5,12 @@ under Unreleased and move into a version section at release time.
 
 ## Unreleased
 
+### Changed
+
+- Apple silicon Macs list the Neural Engine as `npu` in the device's
+  accelerators, next to `cpu` and `mps`. It was missing, so a model that runs
+  there had no matching entry. The Swift SDK already lists it.
+
 ## 0.3.0 - 2026-10-24
 
 ### Added

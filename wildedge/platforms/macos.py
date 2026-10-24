@@ -118,6 +118,10 @@ class MacOSPlatform(Platform):
     def gpu_accelerator_for_offload(self) -> str:
         return accelerators.MPS if platform.machine() == "arm64" else accelerators.CPU
 
+    def npu_accelerators(self) -> list[str]:
+        # Every Apple silicon Mac has a Neural Engine.
+        return [accelerators.NPU] if platform.machine() == "arm64" else []
+
     def cpu_freq(self) -> tuple[int | None, int | None]:
         """Read CPU frequency via sysctl.
 
