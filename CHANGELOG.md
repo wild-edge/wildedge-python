@@ -14,7 +14,9 @@ under Unreleased and move into a version section at release time.
   `SystemLanguageModel.is_available()` records a model load, failed with
   the reason when the model can't be used, such as `MODEL_NOT_READY`. Token
   counts, from `SystemLanguageModel.token_count()`, are opt-in with
-  `WILDEDGE_APPLE_FM_COUNT_TOKENS=1`. See docs/apple_fm.md.
+  `WILDEDGE_APPLE_FM_COUNT_TOKENS=1`. Its accelerator is `npu`, a new
+  accelerator name, since the model runs on the Neural Engine. See
+  docs/apple_fm.md.
 - Error codes `MODEL_UNAVAILABLE`, `CONTEXT_LENGTH_EXCEEDED`,
   `CONTENT_FILTERED`, `RATE_LIMITED`, `BAD_REQUEST`, `INVALID_OUTPUT` and
   `TOOL_CALL_FAILED`, listed in docs/manual-tracking.md.

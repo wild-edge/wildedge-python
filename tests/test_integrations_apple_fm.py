@@ -248,7 +248,7 @@ def test_registering_a_session_through_the_client(client_with_stubbed_runtime):
     handle = client_with_stubbed_runtime.register_model(session)
     assert handle.model_id == MODEL_ID
     assert handle.info.model_format == "apple_fm"
-    assert handle.detected_accelerator == accelerators.COREML
+    assert handle.detected_accelerator == accelerators.NPU
     assert getattr(session, apple_fm_mod.APPLE_FM_HANDLE_ATTR) is handle
     client_with_stubbed_runtime.close()
 

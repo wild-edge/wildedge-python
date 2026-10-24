@@ -9,5 +9,6 @@ CUDA = "cuda"  # NVIDIA GPU
 ROCM = "rocm"  # AMD GPU
 MPS = "mps"  # Apple GPU (Metal)
 COREML = "coreml"  # Apple Core ML, which may use the GPU or Neural Engine
+NPU = "npu"  # Neural processing unit, such as Apple's Neural Engine
 DIRECTML = "directml"  # Windows DirectML
 OPENVINO = "openvino"  # Intel OpenVINO
