@@ -6,9 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from wildedge import cli, constants
+from wildedge import cli, constants, instrumentation
+from wildedge.defaults import peek_default_client
 from wildedge.integrations.registry import IntegrationSpec
+from wildedge.platforms.device_info import DeviceInfo
 from wildedge.runtime import bootstrap
+from wildedge.settings import parse_integration_list
+from wildedge.transmitter import IngestResponse, TransmitError
 
 
 def _fake_execle(captured: dict):
@@ -233,6 +237,36 @@ def test_install_runtime_strict_integrations_raises(monkeypatch):
         bootstrap.install_runtime()
 
 
+@pytest.mark.parametrize("strict", ["0", "1"])
+def test_install_runtime_records_strict_ownership(monkeypatch, strict):
+    class FakeWildEdge:
+        SUPPORTED_INTEGRATIONS = {"onnx"}
+
+        def __init__(self, *, dsn, app_version, debug, sampling_interval_s=None):  # type: ignore[no-untyped-def]
+            pass
+
+        def instrument(self, name):  # type: ignore[no-untyped-def]
+            pass
+
+        def flush(self, timeout):  # type: ignore[no-untyped-def]
+            pass
+
+        def close(self):  # type: ignore[no-untyped-def]
+            pass
+
+    monkeypatch.setattr(bootstrap, "WildEdge", FakeWildEdge)
+    monkeypatch.setenv(constants.ENV_DSN, "https://secret@ingest.wildedge.dev/key")
+    monkeypatch.setenv(constants.ENV_INTEGRATIONS, "onnx")
+    monkeypatch.setenv(constants.ENV_STRICT_INTEGRATIONS, strict)
+    monkeypatch.setattr(bootstrap.importlib.util, "find_spec", lambda _: object())
+
+    context = bootstrap.install_runtime()
+    try:
+        assert instrumentation.strict_ownership() is (strict == "1")
+    finally:
+        context.shutdown()
+
+
 def test_doctor_reports_missing_dsn_and_unknown_integration(monkeypatch, capsys):
     monkeypatch.delenv("WILDEDGE_DSN", raising=False)
     rc = cli.main(["doctor", "--integrations", "madeup"])
@@ -432,8 +466,6 @@ def test_parse_run_args_only_double_dash_raises():
 
 
 def test_install_runtime_registers_default_client(monkeypatch):
-    from wildedge.defaults import peek_default_client
-
     class FakeWildEdge:
         SUPPORTED_INTEGRATIONS = {"onnx"}
 
@@ -467,14 +499,10 @@ def _doctor_env(monkeypatch):
 
 
 def _fake_device(api_key, app_version, overrides=None):
-    from wildedge.platforms.device_info import DeviceInfo
-
     return DeviceInfo(device_id="d", device_type="linux")
 
 
 def test_doctor_send_test_event_accepted(monkeypatch, capsys):
-    from wildedge.transmitter import IngestResponse
-
     _doctor_env(monkeypatch)
     monkeypatch.setattr(cli, "detect_device", _fake_device)
     sent_batches: list[dict] = []
@@ -504,8 +532,6 @@ def test_doctor_send_test_event_accepted(monkeypatch, capsys):
 
 
 def test_doctor_send_test_event_unauthorized_exits_2(monkeypatch, capsys):
-    from wildedge.transmitter import IngestResponse
-
     _doctor_env(monkeypatch)
     monkeypatch.setattr(cli, "detect_device", _fake_device)
 
@@ -530,8 +556,6 @@ def test_doctor_send_test_event_unauthorized_exits_2(monkeypatch, capsys):
 
 
 def test_doctor_send_test_event_network_error_exits_2(monkeypatch, capsys):
-    from wildedge.transmitter import TransmitError
-
     _doctor_env(monkeypatch)
     monkeypatch.setattr(cli, "detect_device", _fake_device)
 
@@ -585,3 +609,12 @@ def test_doctor_json_includes_environment_and_statuses(monkeypatch, capsys):
     assert data["environment"]["autoload_on_pythonpath"] is False
     assert data["config_status"] == "PASS"
     assert data["connectivity_status"] == "SKIP"
+
+
+@pytest.mark.parametrize("names", ["gguf", "llama_cpp", "gguf,llama_cpp"])
+def test_llama_cpp_names_resolve_once_in_cli_and_environment(names):
+    assert cli.integration_list(names) == ["llama_cpp"]
+    assert parse_integration_list(names, []) == ["llama_cpp"]
+    assert cli.INTEGRATIONS_BY_NAME["gguf"] is cli.INTEGRATIONS_BY_NAME["llama_cpp"]
+    assert "llama_cpp" in cli.integration_list("all")
+    assert "gguf" not in cli.integration_list("all")

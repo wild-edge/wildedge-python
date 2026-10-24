@@ -51,12 +51,12 @@ PROMPTS = [
 
 with wildedge.trace(agent_id="llm-api-example", run_id=str(uuid.uuid4())):
     for step, prompt in enumerate(PROMPTS):
-        with wildedge.span(kind="agent_step", name="ask", step_index=step):
-            with wildedge.llm_api(
-                model=MODEL, provider="openrouter", prompt=prompt
-            ) as call:
-                data = chat(prompt)
-                call.response(data)
+        with (
+            wildedge.span(kind="agent_step", name="ask", step_index=step),
+            wildedge.llm_api(model=MODEL, provider="openrouter", prompt=prompt) as call,
+        ):
+            data = chat(prompt)
+            call.response(data)
         print(f"Q: {prompt}\nA: {data['choices'][0]['message']['content']}\n")
 
 wildedge.flush()

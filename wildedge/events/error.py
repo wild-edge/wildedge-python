@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from wildedge import constants
 from wildedge.events.common import add_optional_fields
 
 
@@ -17,6 +18,29 @@ class ErrorCode(str, Enum):
     THERMAL_SHUTDOWN = "THERMAL_SHUTDOWN"
     CONNECTION_ERROR = "CONNECTION_ERROR"
     UNKNOWN = "UNKNOWN"
+
+
+ELLIPSIS = " … "
+
+
+def truncate(value: str | None, limit: int) -> str | None:
+    return None if value is None else str(value)[:limit]
+
+
+def truncate_message(value: str | None, limit: int) -> str | None:
+    """Keep the start and the end of a long message.
+
+    Errors put their detail at either end. mlx-whisper prints the ffmpeg banner
+    first and the failure last, and Hugging Face Hub starts with a request id.
+    """
+    if value is None:
+        return None
+    value = str(value)
+    if len(value) <= limit:
+        return value
+    keep = limit - len(ELLIPSIS)
+    head = keep - keep // 2
+    return value[:head] + ELLIPSIS + value[len(value) - keep // 2 :]
 
 
 @dataclass
@@ -49,11 +73,17 @@ class ErrorEvent:
         error_data = add_optional_fields(
             {"error_code": code},
             {
-                "error_message": self.error_message,
+                # Capped here, so every error event gets the same limit,
+                # from an integration or a manual track_error() call.
+                "error_message": truncate_message(
+                    self.error_message, constants.ERROR_MSG_MAX_LEN
+                ),
                 "stack_trace_hash": self.stack_trace_hash,
                 "related_event_id": self.related_event_id,
                 "http_status": self.http_status,
-                "provider_error_code": self.provider_error_code,
+                "provider_error_code": truncate(
+                    self.provider_error_code, constants.PROVIDER_ERROR_CODE_MAX_LEN
+                ),
                 "duration_ms": self.duration_ms,
             },
         )

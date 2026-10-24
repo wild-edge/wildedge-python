@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import constants
+from wildedge import accelerators
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     DetectionOutputMeta,
@@ -22,19 +22,34 @@ from wildedge.integrations.common import (
     debug_failure,
     dtype_to_quantization,
     image_brightness_histogram,
+    torch_module_accelerator,
 )
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
+# Oldest supported release; earlier ones keep their helpers under
+# ultralytics.yolo.utils instead of ultralytics.utils.
+MIN_ULTRALYTICS_VERSION = "8.0.200"
+
 try:
     import ultralytics as _ultralytics
-    from ultralytics.utils import (
-        WEIGHTS_DIR as _ULTRALYTICS_WEIGHTS_DIR,  # type: ignore[import-untyped]
-    )
 except ImportError:
     _ultralytics = None  # type: ignore[assignment]
-    _ULTRALYTICS_WEIGHTS_DIR = None  # type: ignore[assignment]
+
+_ULTRALYTICS_WEIGHTS_DIR = None
+# Set when ultralytics is installed but older than MIN_ULTRALYTICS_VERSION.
+_unsupported_ultralytics_version: str | None = None
+if _ultralytics is not None:
+    try:
+        from ultralytics.utils import (
+            WEIGHTS_DIR as _ULTRALYTICS_WEIGHTS_DIR,  # type: ignore[import-untyped]
+        )
+    except ImportError:
+        _unsupported_ultralytics_version = getattr(
+            _ultralytics, "__version__", "unknown"
+        )
+        _ultralytics = None  # type: ignore[assignment]
 
 try:
     import numpy as np  # type: ignore[import-untyped]
@@ -49,7 +64,7 @@ _ultralytics_patched = False
 _ULTRALYTICS_PATCH_LOCK = threading.Lock()
 
 # --- Marker names written onto patched objects and classes ---
-YOLO_CALL_PATCH_NAME = "ultralytics_call"
+YOLO_PREDICT_PATCH_NAME = "ultralytics_predict"
 YOLO_HANDLE_ATTR = "__wildedge_yolo_handle__"
 YOLO_AUTO_LOAD_PATCH_NAME = "ultralytics_auto_load"
 
@@ -67,18 +82,12 @@ def is_yolo(obj: object) -> bool:
 
 def detect_accelerator(obj: object) -> str:
     try:
-        inner = getattr(obj, "model", None)
+        inner = getattr(obj, "model", None)  # the torch module inside YOLO
         if inner is not None:
-            try:
-                first_param = next(inner.parameters())
-                device_type = str(getattr(first_param.device, "type", ""))
-                if device_type:
-                    return device_type
-            except StopIteration:
-                pass
+            return torch_module_accelerator(inner) or accelerators.CPU
     except Exception as exc:
         debug_ultralytics_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def detect_quantization(obj: object) -> str | None:
@@ -155,7 +164,7 @@ def detection_output_meta(
             total_preds += len(confs)
             all_confs.extend(confs)
 
-            for i, (conf, cls_id) in enumerate(zip(confs, classes)):
+            for i, (conf, cls_id) in enumerate(zip(confs, classes, strict=False)):
                 if len(top_preds) >= 5:
                     break
                 label = (names or {}).get(int(cls_id), str(int(cls_id)))
@@ -199,7 +208,7 @@ def classify_output_meta(
                 top5conf = (
                     probs.top5conf.tolist() if hasattr(probs.top5conf, "tolist") else []
                 )
-                for cls_id, conf in zip(top5, top5conf):
+                for cls_id, conf in zip(top5, top5conf, strict=False):
                     label = (names or {}).get(int(cls_id), str(int(cls_id)))
                     top_preds.append(
                         TopKPrediction(label=label, confidence=round(float(conf), 4))
@@ -228,12 +237,10 @@ def weights_file_exists(model_arg: object) -> bool:
     if p.is_file():
         return True
     # ultralytics resolves short names (e.g. "yolov8n.pt") against its assets dir
-    if (
+    return (
         _ULTRALYTICS_WEIGHTS_DIR is not None
         and (_ULTRALYTICS_WEIGHTS_DIR / p.name).is_file()
-    ):
-        return True
-    return False
+    )
 
 
 def build_download_record(obj: object, load_ms: int) -> dict | None:
@@ -316,7 +323,7 @@ def build_patched_call(original_call):  # type: ignore[no-untyped-def]
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
@@ -379,9 +386,11 @@ class UltralyticsExtractor(BaseExtractor):
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
         handle.detected_accelerator = detect_accelerator(obj)
         setattr(obj, YOLO_HANDLE_ATTR, handle)
+        # YOLO.__call__ delegates to predict; patch their common entry point.
         patch_instance_call_once(
             obj,
-            patch_name=YOLO_CALL_PATCH_NAME,
+            patch_name=YOLO_PREDICT_PATCH_NAME,
+            method="predict",
             make_patched_call=build_patched_call,
         )
 
@@ -395,6 +404,14 @@ class UltralyticsExtractor(BaseExtractor):
         is emitted with the file size and the total load duration.
         """
         global _ultralytics_patched
+        if _unsupported_ultralytics_version is not None:
+            logger.warning(
+                "wildedge: ultralytics %s is older than %s, the oldest supported "
+                "release; the ultralytics integration is disabled",
+                _unsupported_ultralytics_version,
+                MIN_ULTRALYTICS_VERSION,
+            )
+            return
         if _ultralytics_patched or _ultralytics is None:
             return
 
@@ -433,3 +450,7 @@ class UltralyticsExtractor(BaseExtractor):
             patched_init.__wildedge_original_call__ = original_init  # type: ignore[attr-defined]
             _ultralytics.YOLO.__init__ = patched_init
             _ultralytics_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = UltralyticsExtractor.install_auto_load_patch

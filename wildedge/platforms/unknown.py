@@ -5,6 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from wildedge import accelerators
 from wildedge.platforms.base import Platform, debug_detection_failure
 
 
@@ -41,4 +42,4 @@ class UnknownPlatform(Platform):
         return [], None
 
     def gpu_accelerator_for_offload(self) -> str:
-        return "cpu"
+        return accelerators.CPU

@@ -4,7 +4,6 @@ import functools
 import time
 from typing import TYPE_CHECKING, Any
 
-from wildedge import constants
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:
@@ -54,16 +53,16 @@ class track:
         self.input_meta = input_meta
         self.output_meta = output_meta
         self.generation_config = generation_config
-        self._correlation = dict(
-            trace_id=trace_id,
-            span_id=span_id,
-            parent_span_id=parent_span_id,
-            run_id=run_id,
-            agent_id=agent_id,
-            step_index=step_index,
-            conversation_id=conversation_id,
-            context=context,
-        )
+        self._correlation = {
+            "trace_id": trace_id,
+            "span_id": span_id,
+            "parent_span_id": parent_span_id,
+            "run_id": run_id,
+            "agent_id": agent_id,
+            "step_index": step_index,
+            "conversation_id": conversation_id,
+            "context": context,
+        }
         self.start_time: float | None = None
 
     def __call__(self, func):
@@ -87,7 +86,7 @@ class track:
                 if self.capture_errors:
                     self.handle.track_error(
                         error_code="UNKNOWN",
-                        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                        error_message=str(exc),
                         **self._correlation,
                     )
                 raise
@@ -106,9 +105,7 @@ class track:
             if self.capture_errors:
                 self.handle.track_error(
                     error_code="UNKNOWN",
-                    error_message=str(exc_val)[: constants.ERROR_MSG_MAX_LEN]
-                    if exc_val
-                    else None,
+                    error_message=str(exc_val) if exc_val else None,
                     **self._correlation,
                 )
         else:

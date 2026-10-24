@@ -22,6 +22,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from wildedge.defaults import get_client
 from wildedge.events.inference import ApiMeta, GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.common import (
     build_input_meta,
@@ -179,7 +180,6 @@ class LLMCall:
         return self.__exit__(exc_type, exc_val, exc_tb)
 
     def _handle(self) -> ModelHandle | None:
-        from wildedge.defaults import get_client  # noqa: PLC0415  (import cycle)
 
         try:
             return get_client().register_model(

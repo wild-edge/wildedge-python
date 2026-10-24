@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 from abc import ABC, abstractmethod
 
@@ -44,9 +45,9 @@ class BaseHubTracker(ABC):
         """
         Monkey-patch the hub library's download or load functions.
 
-        Called at most once per process. ``client_ref`` is a ``weakref.ref``
-        to the ``WildEdge`` client; dereference it before use and guard against
-        ``None`` (client may have been closed or garbage-collected).
+        Patches are installed at most once per process. ``client_ref`` is a
+        callable resolving the current enabled owner, or ``None`` when inactive.
+        Call it before publishing; activation may repeat for a replacement owner.
         """
 
     @abstractmethod
@@ -77,10 +78,8 @@ class BaseHubTracker(ABC):
                     path = os.path.join(dirpath, filename)
                     if os.path.islink(path):
                         continue
-                    try:
+                    with contextlib.suppress(OSError):
                         snapshot[path] = os.path.getsize(path)
-                    except OSError:
-                        pass
         except Exception:
             pass
         return snapshot

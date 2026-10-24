@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -12,25 +13,25 @@ try:
 except ImportError:
     _np = None  # type: ignore[assignment]
 
-from wildedge import constants
+from wildedge import accelerators
 from wildedge.events.inference import ClassificationOutputMeta, TopKPrediction
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
 from wildedge.integrations.common import (
     debug_failure,
     infer_input_modality_from_layer_types,
     num_classes_from_output_shape,
+    tf_weights_accelerator,
 )
+from wildedge.loading import optional_module
 from wildedge.model import ModelInfo
-from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:
     from wildedge.model import ModelHandle
 
-try:
-    import tensorflow as _tf  # type: ignore[import-untyped]
-except ImportError:
-    _tf = None  # type: ignore[assignment]
+# Imported when the integration is activated, so registering a Keras model
+# does not import TensorFlow.
+_tf = sys.modules.get("tensorflow")
 
 TENSORFLOW_CALL_PATCH_NAME = "tensorflow_call"
 TENSORFLOW_HANDLE_ATTR = "__wildedge_tensorflow_handle__"
@@ -80,14 +81,10 @@ def is_tensorflow_model(obj: object) -> bool:
 
 def detect_accelerator(obj: object) -> str:
     try:
-        weights = getattr(obj, "weights", None) or []
-        if weights:
-            device = str(getattr(weights[0], "device", "") or "")
-            if any(g in device.upper() for g in ("GPU", "CUDA")):
-                return CURRENT_PLATFORM.gpu_accelerator_for_offload()
+        return tf_weights_accelerator(obj)
     except Exception as exc:
         debug_tensorflow_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def build_patched_call(
@@ -120,7 +117,7 @@ def build_patched_call(
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
@@ -164,11 +161,11 @@ def patch_predict_once(
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
-    setattr(obj, "predict", patched_predict)
+    obj.predict = patched_predict
     setattr(obj, TENSORFLOW_PREDICT_PATCHED_ATTR, True)
 
 
@@ -249,8 +246,11 @@ class TensorflowExtractor(BaseExtractor):
 
     @classmethod
     def install_auto_load_patch(cls, client_ref: object) -> None:
-        global _tf_auto_patched
-        if _tf_auto_patched or _tf is None:
+        global _tf_auto_patched, _tf
+        if _tf_auto_patched:
+            return
+        _tf = _tf or optional_module("tensorflow")
+        if _tf is None:
             return
 
         with _TF_AUTO_PATCH_LOCK:
@@ -281,3 +281,7 @@ class TensorflowExtractor(BaseExtractor):
                 saved_model.load = build_load_patch(client_ref, saved_model_load)
 
             _tf_auto_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = TensorflowExtractor.install_auto_load_patch

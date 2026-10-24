@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
+import itertools
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from wildedge import constants
+from wildedge import accelerators, constants, quantizations
 from wildedge.events.error import ErrorCode
 from wildedge.events.inference import TextInputMeta
 from wildedge.logging import logger
+from wildedge.platforms import CURRENT_PLATFORM
 from wildedge.timing import elapsed_ms
 
 if TYPE_CHECKING:
@@ -18,6 +22,69 @@ if TYPE_CHECKING:
 
 def debug_failure(framework: str, context: str, exc: BaseException) -> None:
     logger.debug("wildedge: %s %s failed: %s", framework, context, exc)
+
+
+# Folder prefix of a repo in the Hugging Face hub cache: models--org--name.
+HF_CACHE_REPO_PREFIX = "models--"
+
+
+def hf_repo_from_cache_path(path: str) -> str | None:
+    """``org/name`` for a path inside the Hugging Face hub cache, else None."""
+    for part in path.replace("\\", "/").split("/"):
+        if part.startswith(HF_CACHE_REPO_PREFIX):
+            return part[len(HF_CACHE_REPO_PREFIX) :].replace("--", "/", 1)
+    return None
+
+
+def torch_module_accelerator(module: object) -> str | None:
+    """Device type of a torch module's first parameter, such as cpu, cuda,
+    mps or xpu. None when the module has no parameters."""
+    try:
+        first = next(module.parameters())  # type: ignore[attr-defined]
+    except StopIteration:
+        return None
+    device_type = getattr(first.device, "type", None)
+    return str(device_type) if device_type else None
+
+
+def tf_weights_accelerator(model: object) -> str:
+    """The platform's GPU when a TensorFlow/Keras model's first weight is on a
+    GPU, else CPU. TF names devices like ``/job:localhost/.../device:GPU:0``."""
+    weights = getattr(model, "weights", None) or []
+    if weights:
+        device = str(getattr(weights[0], "device", "") or "").upper()
+        if "GPU" in device or "CUDA" in device:
+            return CURRENT_PLATFORM.gpu_accelerator_for_offload()
+    return accelerators.CPU
+
+
+def mlx_accelerator() -> str:
+    """MLX runs on the Apple GPU unless the app switched its default to CPU."""
+    try:
+        import mlx.core as mx  # noqa: PLC0415 -- optional runtime
+
+        return accelerators.CPU if mx.default_device() == mx.cpu else accelerators.MPS
+    except Exception as exc:
+        debug_failure("mlx", "device detection", exc)
+        return accelerators.MPS
+
+
+def mlx_layer_quantization(model: object) -> str | None:
+    """Quantization of an MLX model's layers: the bit width of the first
+    quantized layer, ``quantized`` when the width is unknown, or None when no
+    layer is quantized."""
+    for _, layer in model.named_modules():  # type: ignore[attr-defined]
+        bits = getattr(layer, "bits", None)
+        if isinstance(bits, int):
+            return quantizations.int_bits(bits)
+        if "quantized" in type(layer).__name__.lower():
+            return quantizations.QUANTIZED
+    return None
+
+
+def stream_error_code(outcome: str) -> str | None:
+    """None for a stream that completed, else ``STREAM_<OUTCOME>``."""
+    return None if outcome == "completed" else "STREAM_" + outcome.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +196,7 @@ def track_api_error(
         error_code = no_response_error_code(exc) or fallback_code
     handle.track_error(
         error_code=error_code,
-        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+        error_message=str(exc),
         http_status=http_status,
         provider_error_code=provider_error_code,
         duration_ms=duration_ms,
@@ -161,14 +228,17 @@ def build_input_meta(messages: list, tokens_in: int | None) -> TextInputMeta | N
     )
 
 
+# Substrings of framework dtype names (torch.float16, tensor(float16),
+# mlx.core.bfloat16, torch.qint8). Checked in order, so bfloat16 must come
+# before float16, which it contains.
 DTYPE_QUANTIZATION_MAP: dict[str, str] = {
-    "bfloat16": "bf16",
-    "float16": "f16",
-    "float32": "f32",
-    "int8": "int8",
-    "qint": "int8",
-    "quint": "int8",
-    "uint8": "int8",
+    "bfloat16": quantizations.BF16,
+    "float16": quantizations.F16,
+    "float32": quantizations.F32,
+    "int8": quantizations.INT8,
+    "qint": quantizations.INT8,
+    "quint": quantizations.INT8,
+    "uint8": quantizations.INT8,
 }
 
 
@@ -191,7 +261,7 @@ def image_brightness_histogram(norm_flat: Any) -> tuple[float, float, list[int]]
     edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
     buckets = [
         int(((norm_flat >= lo) & (norm_flat < hi)).sum())
-        for lo, hi in zip(edges, edges[1:])
+        for lo, hi in itertools.pairwise(edges)
     ]
     buckets[-1] += int((norm_flat == 1.0).sum())
 
@@ -267,105 +337,241 @@ def num_classes_from_output_shape(shape: tuple) -> int:
 # ---------------------------------------------------------------------------
 # Each integration provides:
 #   on_chunk(chunk) -> None        : update mutable state from a single chunk
-#   on_done(duration_ms, ttft_ms)  : record inference once the stream is exhausted
+#   on_done(duration_ms, ttft_ms, *, outcome="completed") : record one outcome
 #
 # The wrappers handle TTFT capture, error tracking, context-manager delegation,
 # and attribute proxying so callers get a drop-in replacement for the raw stream.
 
 
-class SyncStreamWrapper:
-    """Wraps a sync iterable stream to capture TTFT and record inference on exhaustion."""
+def stream_chunk_has_output(chunk: object) -> bool:
+    """Ignore role, usage, and lifecycle chunks when measuring first output."""
+
+    def field(value: object, name: str) -> Any:
+        return (
+            value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+        )
+
+    choices = field(chunk, "choices")
+    if choices is not None:
+        for choice in choices:
+            delta = field(choice, "delta")
+            if field(choice, "text") or any(
+                field(delta, key)
+                for key in ("content", "refusal", "tool_calls", "function_call")
+            ):
+                return True
+        return False
+    event_type = field(chunk, "type")
+    if event_type is not None:
+        if event_type == "content_block_delta":
+            delta = field(chunk, "delta")
+            return any(
+                field(delta, key)
+                for key in ("text", "thinking", "partial_json", "data")
+            )
+        return event_type in (
+            "response.output_text.delta",
+            "response.refusal.delta",
+            "response.function_call_arguments.delta",
+            "response.output_audio.delta",
+        ) and bool(field(chunk, "delta"))
+    return True
+
+
+class StreamState:
+    """One lifecycle per stream, with telemetry isolated from application code."""
 
     def __init__(
         self,
-        original: object,
         handle: ModelHandle,
         t0: float,
         on_chunk: Callable[[object], None] | None,
-        on_done: Callable[[int, int | None], None],
+        on_done: Callable[..., None],
     ) -> None:
-        self._original = original
         self._handle = handle
         self._t0 = t0
         self._on_chunk = on_chunk
         self._on_done = on_done
+        self._finished = False
+        self._ttft_ms = None
+        self._context = contextvars.copy_context()
 
-    def __iter__(self):
-        return self._track()
+    @property
+    def finished(self) -> bool:
+        return self._finished
 
-    def _track(self):
-        ttft_ms: int | None = None
+    def _safe(self, callback: Callable, *args: Any, **kwargs: Any) -> Any:
         try:
-            for chunk in self._original:  # type: ignore[union-attr]
-                if ttft_ms is None:
-                    ttft_ms = elapsed_ms(self._t0)
-                if self._on_chunk is not None:
-                    self._on_chunk(chunk)
-                yield chunk
+            return self._context.run(callback, *args, **kwargs)
         except Exception as exc:
-            track_api_error(self._handle, exc, elapsed_ms(self._t0))
-            raise
+            debug_failure("stream", "telemetry callback", exc)
+            return None
+
+    def _chunk(self, chunk: object) -> None:
+        if self._ttft_ms is None and self._safe(stream_chunk_has_output, chunk):
+            self._ttft_ms = elapsed_ms(self._t0)
+        if self._on_chunk is not None:
+            self._safe(self._on_chunk, chunk)
+
+    def _finish(self, outcome: str = "completed") -> None:
+        if self._finished:
+            return
+        self._finished = True
+        if outcome == "completed":
+            self._safe(self._on_done, elapsed_ms(self._t0), self._ttft_ms)
         else:
-            self._on_done(elapsed_ms(self._t0), ttft_ms)
+            self._safe(
+                self._on_done, elapsed_ms(self._t0), self._ttft_ms, outcome=outcome
+            )
+
+    def _error(self, exc: Exception) -> None:
+        if not self._finished:
+            self._finished = True
+            self._safe(track_api_error, self._handle, exc, elapsed_ms(self._t0))
+
+
+class SyncStreamWrapper(StreamState):
+    """A single-pass iterator tracking exhaustion, failure, and explicit closure."""
+
+    def __init__(
+        self,
+        original: Any,
+        handle: ModelHandle,
+        t0: float,
+        on_chunk: Callable[[object], None] | None,
+        on_done: Callable[..., None],
+    ) -> None:
+        super().__init__(handle, t0, on_chunk, on_done)
+        self._original = original
+        self._iterator = None
+
+    @property
+    def started(self) -> bool:
+        """Whether iteration has begun."""
+        return self._iterator is not None
+
+    def __iter__(self) -> SyncStreamWrapper:
+        return self
+
+    def __next__(self) -> Any:
+        if self._finished:
+            raise StopIteration
+        try:
+            if self._iterator is None:
+                self._iterator = iter(self._original)
+            chunk = next(self._iterator)
+        except StopIteration:
+            self._finish()
+            raise
+        except Exception as exc:
+            self._error(exc)
+            raise
+        self._chunk(chunk)
+        return chunk
+
+    def close(self) -> Any:
+        try:
+            close = getattr(self._original, "close", None)
+            if close is not None:
+                return close()
+            return None
+        finally:
+            self._finish("closed")
 
     def __enter__(self) -> SyncStreamWrapper:
         if hasattr(self._original, "__enter__"):
-            self._original.__enter__()  # type: ignore[union-attr]
+            self._original.__enter__()
         return self
 
-    def __exit__(self, *args: object) -> object:
-        if hasattr(self._original, "__exit__"):
-            return self._original.__exit__(*args)  # type: ignore[union-attr]
-        return None
+    def __exit__(self, *args: Any) -> Any:
+        try:
+            if hasattr(self._original, "__exit__"):
+                return self._original.__exit__(*args)
+            close = getattr(self._original, "close", None)
+            if close is not None:
+                close()
+            return None
+        finally:
+            self._finish("closed")
 
-    def __getattr__(self, name: str) -> object:
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._original, name)
 
 
-class AsyncStreamWrapper:
-    """Wraps an async iterable stream to capture TTFT and record inference on exhaustion."""
+class AsyncStreamWrapper(StreamState):
+    """Async counterpart, including cancellation while waiting for a chunk."""
 
     def __init__(
         self,
-        original: object,
+        original: Any,
         handle: ModelHandle,
         t0: float,
         on_chunk: Callable[[object], None] | None,
-        on_done: Callable[[int, int | None], None],
+        on_done: Callable[..., None],
     ) -> None:
+        super().__init__(handle, t0, on_chunk, on_done)
         self._original = original
-        self._handle = handle
-        self._t0 = t0
-        self._on_chunk = on_chunk
-        self._on_done = on_done
+        self._iterator = None
 
-    def __aiter__(self):
-        return self._track()
+    def __aiter__(self) -> AsyncStreamWrapper:
+        return self
 
-    async def _track(self):
-        ttft_ms: int | None = None
+    async def __anext__(self) -> Any:
+        if self._finished:
+            raise StopAsyncIteration
         try:
-            async for chunk in self._original:  # type: ignore[union-attr]
-                if ttft_ms is None:
-                    ttft_ms = elapsed_ms(self._t0)
-                if self._on_chunk is not None:
-                    self._on_chunk(chunk)
-                yield chunk
-        except Exception as exc:
-            track_api_error(self._handle, exc, elapsed_ms(self._t0))
+            if self._iterator is None:
+                self._iterator = self._original.__aiter__()
+            chunk = await self._iterator.__anext__()
+        except StopAsyncIteration:
+            self._finish()
             raise
-        else:
-            self._on_done(elapsed_ms(self._t0), ttft_ms)
+        except asyncio.CancelledError:
+            self._finish("cancelled")
+            raise
+        except Exception as exc:
+            self._error(exc)
+            raise
+        self._chunk(chunk)
+        return chunk
+
+    async def close(self) -> Any:
+        try:
+            close = getattr(self._original, "aclose", None) or getattr(
+                self._original, "close", None
+            )
+            if close is not None:
+                return await close()
+            return None
+        finally:
+            self._finish("closed")
+
+    async def aclose(self) -> Any:
+        return await self.close()
 
     async def __aenter__(self) -> AsyncStreamWrapper:
         if hasattr(self._original, "__aenter__"):
-            await self._original.__aenter__()  # type: ignore[union-attr]
+            await self._original.__aenter__()
         return self
 
-    async def __aexit__(self, *args: object) -> object:
-        if hasattr(self._original, "__aexit__"):
-            return await self._original.__aexit__(*args)  # type: ignore[union-attr]
-        return None
+    async def __aexit__(self, *args: Any) -> Any:
+        try:
+            if hasattr(self._original, "__aexit__"):
+                return await self._original.__aexit__(*args)
+            close = getattr(self._original, "aclose", None) or getattr(
+                self._original, "close", None
+            )
+            if close is not None:
+                await close()
+            return None
+        finally:
+            self._finish(
+                "cancelled"
+                if args
+                and args[0] is not None
+                and issubclass(args[0], asyncio.CancelledError)
+                else "closed"
+            )
 
-    def __getattr__(self, name: str) -> object:
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._original, name)

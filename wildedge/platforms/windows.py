@@ -6,6 +6,7 @@ import platform
 import shutil
 from pathlib import Path
 
+from wildedge import accelerators
 from wildedge.platforms.base import (
     Platform,
     cuda_device_count,
@@ -91,7 +92,7 @@ class WindowsPlatform(Platform):
 
     def disk_bytes(self) -> int | None:
         try:
-            drive = os.environ.get("SystemDrive", "C:\\")
+            drive = os.environ.get("SYSTEMDRIVE", "C:\\")
             return shutil.disk_usage(drive).total
         except Exception as exc:
             debug_detection_failure("windows disk_bytes", exc)
@@ -99,12 +100,12 @@ class WindowsPlatform(Platform):
 
     def gpu_accelerators(self) -> tuple[list[str], str | None]:
         if cuda_device_count("nvcuda.dll") > 0:
-            return ["cuda"], nvml_gpu_name("nvml.dll")
+            return [accelerators.CUDA], nvml_gpu_name("nvml.dll")
         return [], None
 
     def gpu_accelerator_for_offload(self) -> str:
         accs, _ = self.gpu_accelerators()
-        return accs[0] if accs else "cpu"
+        return accs[0] if accs else accelerators.CPU
 
     def battery(self) -> tuple[float | None, bool | None]:
         """Read battery level and charging state via GetSystemPowerStatus."""

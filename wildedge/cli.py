@@ -21,7 +21,11 @@ from wildedge.batch import build_batch
 from wildedge.client import parse_dsn
 from wildedge.events.span import SpanEvent
 from wildedge.hubs.registry import HUBS_BY_NAME, supported_hubs
-from wildedge.integrations.registry import INTEGRATIONS_BY_NAME, supported_integrations
+from wildedge.integrations.registry import (
+    INTEGRATIONS_BY_NAME,
+    canonical_integration,
+    supported_integrations,
+)
 from wildedge.paths import default_dead_letter_dir, default_pending_queue_dir
 from wildedge.platforms import detect_device, get_device_id_path
 from wildedge.settings import read_client_env, resolve_app_identity
@@ -44,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--integrations",
         default="all",
-        help="Comma-separated framework integrations to enable (gguf, onnx, timm, …). Default: all.",
+        help="Comma-separated framework integrations to enable (llama_cpp, onnx, timm, …). Default: all.",
     )
     run.add_argument(
         "--hubs",
@@ -291,7 +295,13 @@ def run_command(parsed: argparse.Namespace) -> int:
 def integration_list(value: str | None) -> list[str]:
     if not value or value == "all":
         return sorted(supported_integrations())
-    return [item.strip() for item in value.split(",") if item.strip()]
+    return list(
+        dict.fromkeys(
+            canonical_integration(item.strip())
+            for item in value.split(",")
+            if item.strip()
+        )
+    )
 
 
 def hub_list(value: str | None) -> list[str]:

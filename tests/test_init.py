@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import wildedge
 import wildedge.convenience as convenience
+from wildedge.defaults import peek_default_client, set_default_client
 
 
 def test_init_calls_instrument_for_integrations(monkeypatch):
@@ -70,11 +71,11 @@ def test_init_logs_debug_when_no_integrations_or_hubs(monkeypatch):
 
 
 def test_init_reuses_existing_default_client(monkeypatch):
-    from wildedge.defaults import peek_default_client, set_default_client
-
     calls: list[tuple[str | None, list[str] | None]] = []
 
     class ExistingClient:
+        closed = False
+
         def instrument(self, integration, *, hubs=None):
             calls.append((integration, hubs))
 
@@ -89,9 +90,9 @@ def test_init_reuses_existing_default_client(monkeypatch):
 
 
 def test_init_with_dsn_replaces_default_client(monkeypatch):
-    from wildedge.defaults import peek_default_client, set_default_client
-
     class ExistingClient:
+        closed = False
+
         def instrument(self, integration, *, hubs=None):
             raise AssertionError("existing client must not be touched")
 
@@ -114,9 +115,9 @@ def test_init_with_dsn_replaces_default_client(monkeypatch):
 
 
 def test_init_reuse_warns_about_ignored_kwargs(monkeypatch):
-    from wildedge.defaults import set_default_client
-
     class ExistingClient:
+        closed = False
+
         def instrument(self, integration, *, hubs=None):
             pass
 
@@ -134,8 +135,6 @@ def test_init_reuse_warns_about_ignored_kwargs(monkeypatch):
 
 
 def test_init_registers_new_client_as_default(monkeypatch):
-    from wildedge.defaults import peek_default_client
-
     class DummyClient:
         def __init__(self, **kwargs):
             self.kwargs = kwargs

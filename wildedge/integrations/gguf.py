@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
+import inspect
 import re
 import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from wildedge import constants
-from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
+from wildedge import accelerators, quantizations
+from wildedge.events.inference import (
+    GenerationConfig,
+    GenerationOutputMeta,
+    TextInputMeta,
+)
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.integrations.common import SyncStreamWrapper, debug_failure
+from wildedge.integrations.common import (
+    SyncStreamWrapper,
+    build_input_meta,
+    debug_failure,
+    stream_error_code,
+)
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.platforms import CURRENT_PLATFORM
@@ -34,12 +45,16 @@ _QUANT_RE = re.compile(
 
 _llama_patched = False
 _LLAMA_PATCH_LOCK = threading.Lock()
-GGUF_CALL_PATCH_NAME = "gguf_call"
+# llama-cpp-python's __call__ and create_chat_completion (via the chat handler)
+# both run create_completion, so patching it tracks every entry point once.
+GGUF_COMPLETION_PATCH_NAME = "gguf_create_completion"
+GGUF_PATCHED_METHOD = "create_completion"
+GGUF_CHAT_METHOD = "create_chat_completion"
 GGUF_HANDLE_ATTR = "__wildedge_gguf_handle__"
 LLAMA_AUTO_LOAD_PATCH_NAME = "gguf_auto_load"
 
 
-debug_gguf_failure = functools.partial(debug_failure, "gguf")
+debug_gguf_failure = functools.partial(debug_failure, "llama_cpp")
 
 
 def n_gpu_layers(obj: object) -> int:
@@ -59,17 +74,87 @@ def detect_accelerator(obj: object) -> str:
             return CURRENT_PLATFORM.gpu_accelerator_for_offload()
     except Exception as exc:
         debug_gguf_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
+
+
+# Filename suffixes that have a shared label under another name.
+_SUFFIX_LABELS = {"i8": quantizations.INT8}
+
+# llama.cpp file types (gguf-py's LlamaFileType) as stored in the model's
+# general.file_type metadata. Removed and unknown types are left out.
+GGUF_FILE_TYPES = {
+    0: quantizations.F32,
+    1: quantizations.F16,
+    2: "q4_0",
+    3: "q4_1",
+    7: "q8_0",
+    8: "q5_0",
+    9: "q5_1",
+    10: "q2_k",
+    11: "q3_k_s",
+    12: "q3_k_m",
+    13: "q3_k_l",
+    14: "q4_k_s",
+    15: "q4_k_m",
+    16: "q5_k_s",
+    17: "q5_k_m",
+    18: "q6_k",
+    19: "iq2_xxs",
+    20: "iq2_xs",
+    21: "q2_k_s",
+    22: "iq3_xs",
+    23: "iq3_xxs",
+    24: "iq1_s",
+    25: "iq4_nl",
+    26: "iq3_s",
+    27: "iq3_m",
+    28: "iq2_s",
+    29: "iq2_m",
+    30: "iq4_xs",
+    31: "iq1_m",
+    32: quantizations.BF16,
+    36: "tq1_0",
+    37: "tq2_0",
+    38: "mxfp4_moe",
+    39: "nvfp4",
+    40: "q1_0",
+}
 
 
 def parse_quantization(filename: str) -> str | None:
     match = _QUANT_RE.search(filename)
     if match:
-        return match.group(1).lower()
+        suffix = match.group(1).lower()
+        return _SUFFIX_LABELS.get(suffix, suffix)
     return None
 
 
-def make_gguf_input_meta(prompt: object, tokens_in: int | None) -> TextInputMeta | None:
+def file_type_quantization(file_type: object) -> str | None:
+    """Label for a general.file_type metadata value, such as "15" (q4_k_m)."""
+    try:
+        return GGUF_FILE_TYPES.get(int(str(file_type)))
+    except ValueError:
+        return None
+
+
+# Messages of the create_chat_completion call in progress, so the
+# create_completion it runs can record the event as a chat turn.
+_chat_messages: contextvars.ContextVar[list | None] = contextvars.ContextVar(
+    "wildedge_gguf_chat_messages", default=None
+)
+
+
+def make_gguf_input_meta(
+    prompt: object, tokens_in: int | None, messages: list | None = None
+) -> TextInputMeta | None:
+    if messages is not None:
+        meta = build_input_meta(messages, tokens_in)
+        if meta is not None:
+            user_turns = sum(
+                1 for m in messages if isinstance(m, dict) and m.get("role") == "user"
+            )
+            meta.turn_index = max(user_turns - 1, 0)
+        return meta
     if not isinstance(prompt, str) or not prompt:
         return None
     return TextInputMeta(
@@ -86,7 +171,7 @@ def make_gguf_output_meta(
     ttft_ms: int | None,
     duration_ms: int,
 ) -> GenerationOutputMeta | None:
-    if tokens_out is None and ttft_ms is None:
+    if tokens_out is None and ttft_ms is None and stop_reason is None:
         return None
     tps = (
         round(tokens_out / duration_ms * 1000, 1)
@@ -103,7 +188,34 @@ def make_gguf_output_meta(
     )
 
 
-def make_gguf_stream_callbacks(handle: object, prompt: object) -> tuple:
+def make_gguf_generation_config(kwargs: dict) -> GenerationConfig | None:
+    stop = kwargs.get("stop")
+    if isinstance(stop, str):
+        stop_count: int | None = 1
+    elif isinstance(stop, (list, tuple)):
+        stop_count = len(stop) or None
+    else:
+        stop_count = None
+    config = GenerationConfig(
+        temperature=kwargs.get("temperature"),
+        top_p=kwargs.get("top_p"),
+        top_k=kwargs.get("top_k"),
+        max_tokens=kwargs.get("max_tokens"),
+        repetition_penalty=kwargs.get("repeat_penalty"),
+        frequency_penalty=kwargs.get("frequency_penalty"),
+        presence_penalty=kwargs.get("presence_penalty"),
+        seed=kwargs.get("seed"),
+        stop_sequences_count=stop_count,
+    )
+    return config if config.to_dict() else None
+
+
+def make_gguf_stream_callbacks(
+    handle: object,
+    prompt: object,
+    messages: list | None = None,
+    generation_config: GenerationConfig | None = None,
+) -> tuple:
     """Return (on_chunk, on_done) callbacks for a llama-cpp-python streaming response.
 
     Chunks are dicts; usage appears in the final chunk when available.
@@ -120,68 +232,131 @@ def make_gguf_stream_callbacks(handle: object, prompt: object) -> tuple:
             tokens_in[0] = usage.get("prompt_tokens")
             tokens_out[0] = usage.get("completion_tokens")
         choices = chunk.get("choices") or []
-        if choices:
+        if choices and isinstance(choices[0], dict):
             reason = choices[0].get("finish_reason")
             if reason:
                 stop_reason[0] = reason
 
-    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+    def on_done(
+        duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
+    ) -> None:
         ti, to, sr = tokens_in[0], tokens_out[0], stop_reason[0]
         handle.track_inference(  # type: ignore[union-attr]
             duration_ms=duration_ms,
             input_modality="text",
             output_modality="generation",
-            input_meta=make_gguf_input_meta(prompt, ti),
-            success=True,
+            input_meta=make_gguf_input_meta(prompt, ti, messages),
+            success=outcome == "completed",
+            error_code=stream_error_code(outcome),
             output_meta=make_gguf_output_meta(ti, to, sr, ttft_ms, duration_ms),
+            generation_config=generation_config,
         )
 
     return on_chunk, on_done
 
 
+def call_arguments(signature, self_inner, args, kwargs) -> dict:
+    """Arguments of the call with the method's defaults filled in.
+
+    The chat handler and __call__ pass every sampling argument explicitly; this
+    gives a direct create_completion call the same generation config.
+    """
+    if signature is not None:
+        try:
+            bound = signature.bind(self_inner, *args, **kwargs)
+            bound.apply_defaults()
+            arguments = dict(bound.arguments)
+            arguments.update(arguments.pop("kwargs", None) or {})
+            return arguments
+        except Exception as exc:
+            debug_gguf_failure("argument binding", exc)
+    arguments = dict(kwargs)
+    if args:
+        arguments.setdefault("prompt", args[0])
+    return arguments
+
+
 def build_patched_call(original_call):
+    try:
+        signature = inspect.signature(original_call)
+    except (TypeError, ValueError):
+        signature = None
+
     def patched_call(self_inner, *args, **kwargs):
         handle = getattr(self_inner, GGUF_HANDLE_ATTR, None)
         if handle is None:
             return original_call(self_inner, *args, **kwargs)
 
-        prompt = args[0] if args else kwargs.get("prompt", "")
-        is_streaming: bool = bool(kwargs.get("stream", False))
+        arguments = call_arguments(signature, self_inner, args, kwargs)
+        prompt = arguments.get("prompt", "")
+        messages = _chat_messages.get()
+        is_streaming: bool = bool(arguments.get("stream", False))
+        generation_config = None
+        try:
+            generation_config = make_gguf_generation_config(arguments)
+        except Exception as exc:
+            debug_gguf_failure("generation config extraction", exc)
         t0 = time.perf_counter()
         try:
             result = original_call(self_inner, *args, **kwargs)
             if is_streaming:
-                on_chunk, on_done = make_gguf_stream_callbacks(handle, prompt)
+                on_chunk, on_done = make_gguf_stream_callbacks(
+                    handle, prompt, messages, generation_config
+                )
                 return SyncStreamWrapper(result, handle, t0, on_chunk, on_done)
             duration_ms = elapsed_ms(t0)
             tokens_in = None
             tokens_out = None
+            stop_reason = None
             try:
                 if isinstance(result, dict):
-                    usage = result.get("usage", {})
+                    usage = result.get("usage") or {}
                     tokens_in = usage.get("prompt_tokens")
                     tokens_out = usage.get("completion_tokens")
+                    choices = result.get("choices") or []
+                    if choices and isinstance(choices[0], dict):
+                        stop_reason = choices[0].get("finish_reason")
             except Exception as exc:
                 debug_gguf_failure("usage extraction", exc)
             handle.track_inference(
                 duration_ms=duration_ms,
                 input_modality="text",
                 output_modality="generation",
-                input_meta=make_gguf_input_meta(prompt, tokens_in),
+                input_meta=make_gguf_input_meta(prompt, tokens_in, messages),
                 success=True,
                 output_meta=make_gguf_output_meta(
-                    tokens_in, tokens_out, None, None, duration_ms
+                    tokens_in, tokens_out, stop_reason, None, duration_ms
                 ),
+                generation_config=generation_config,
             )
             return result
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
     return patched_call
+
+
+def build_patched_chat(original_chat):
+    """Expose the chat messages to the create_completion call the handler makes.
+
+    Tracking itself stays in create_completion, so each call is counted once.
+    """
+
+    def patched_chat(self_inner, *args, **kwargs):
+        if getattr(self_inner, GGUF_HANDLE_ATTR, None) is None:
+            return original_chat(self_inner, *args, **kwargs)
+        messages = args[0] if args else kwargs.get("messages")
+        token = _chat_messages.set(list(messages) if messages else None)
+        try:
+            return original_chat(self_inner, *args, **kwargs)
+        finally:
+            _chat_messages.reset(token)
+
+    return patched_chat
 
 
 class GgufExtractor(BaseExtractor):
@@ -206,8 +381,8 @@ class GgufExtractor(BaseExtractor):
             try:
                 metadata = getattr(obj, "metadata", {}) or {}
                 file_type = metadata.get("general.file_type")
-                if file_type:
-                    quantization = str(file_type).lower()
+                if file_type is not None:
+                    quantization = file_type_quantization(file_type)
             except Exception as exc:
                 debug_gguf_failure("quantization metadata read", exc)
         if quantization is None:
@@ -269,8 +444,10 @@ class GgufExtractor(BaseExtractor):
         setattr(obj, GGUF_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,
-            patch_name=GGUF_CALL_PATCH_NAME,
+            patch_name=GGUF_COMPLETION_PATCH_NAME,
             make_patched_call=build_patched_call,
+            method=GGUF_PATCHED_METHOD,
+            extra_methods={GGUF_CHAT_METHOD: build_patched_chat},
         )
 
     @classmethod
@@ -322,3 +499,7 @@ class GgufExtractor(BaseExtractor):
             patched_init.__wildedge_original_call__ = original_init  # type: ignore[attr-defined]
             _llama_cpp.Llama.__init__ = patched_init
             _llama_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = GgufExtractor.install_auto_load_patch

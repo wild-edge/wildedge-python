@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import os
+import sys
 import types
 from unittest.mock import patch
 
 import pytest
 
+import wildedge.hubs.huggingface as hf_mod
+import wildedge.hubs.torchhub as torchhub_mod
 from wildedge.hubs.huggingface import HuggingFaceHubTracker
 from wildedge.hubs.torchhub import TorchHubTracker
 
@@ -145,8 +148,6 @@ def test_torch_hub_diff_to_records_empty_when_no_new_files():
 
 
 def test_torch_hub_install_patch_is_idempotent(monkeypatch):
-    import wildedge.hubs.torchhub as torchhub_mod
-
     original_load_calls = []
 
     class FakeHub:
@@ -179,8 +180,6 @@ def test_torch_hub_install_patch_is_idempotent(monkeypatch):
 
 
 def test_hf_tracker_drain_returns_and_clears_buffer(monkeypatch):
-    import wildedge.hubs.huggingface as hf_mod
-
     tracker = HuggingFaceHubTracker()
     # Directly inject a record into the thread-local buffer
     hf_mod._buffer().append({"repo_id": "test/model", "source_type": "huggingface"})
@@ -190,3 +189,35 @@ def test_hf_tracker_drain_returns_and_clears_buffer(monkeypatch):
     assert result[0]["repo_id"] == "test/model"
     # Buffer should be cleared
     assert tracker.drain() == []
+
+
+class _LazyModule(types.ModuleType):
+    """Imports on attribute access, like transformers' lazy modules."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.lookups: list[str] = []
+
+    def __getattr__(self, name: str):
+        self.lookups.append(name)
+        raise ModuleNotFoundError("No module named 'torchvision'")
+
+
+def test_patch_symbol_references_skips_lazy_attribute_lookup(monkeypatch):
+    def original():
+        pass
+
+    def replacement():
+        pass
+
+    eager = types.ModuleType("eager_mod")
+    eager.hf_hub_download = original
+    lazy = _LazyModule("lazy_mod")
+    monkeypatch.setitem(sys.modules, "eager_mod", eager)
+    monkeypatch.setitem(sys.modules, "lazy_mod", lazy)
+
+    count = hf_mod._patch_symbol_references("hf_hub_download", original, replacement)
+
+    assert count >= 1
+    assert eager.hf_hub_download is replacement
+    assert lazy.lookups == []

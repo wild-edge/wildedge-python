@@ -5,6 +5,7 @@ import platform
 import shutil
 from pathlib import Path
 
+from wildedge import accelerators
 from wildedge.platforms.base import Platform, debug_detection_failure
 from wildedge.platforms.hardware import ThermalContext
 
@@ -21,7 +22,7 @@ def _get_libc() -> ctypes.CDLL:
 CF_STRING_ENCODING_UTF8 = 0x08000100
 CF_NUMBER_SINT32_TYPE = 3
 
-# NSProcessInfoThermalState values (0–3)
+# NSProcessInfoThermalState values (0-3)
 MACOS_THERMAL_STATES: dict[int, tuple[str, str]] = {
     0: ("nominal", "nominal"),
     1: ("fair", "fair"),
@@ -111,11 +112,11 @@ class MacOSPlatform(Platform):
 
     def gpu_accelerators(self) -> tuple[list[str], str | None]:
         if platform.machine() == "arm64":
-            return ["mps"], None
+            return [accelerators.MPS], None
         return [], None
 
     def gpu_accelerator_for_offload(self) -> str:
-        return "mps" if platform.machine() == "arm64" else "cpu"
+        return accelerators.MPS if platform.machine() == "arm64" else accelerators.CPU
 
     def cpu_freq(self) -> tuple[int | None, int | None]:
         """Read CPU frequency via sysctl.

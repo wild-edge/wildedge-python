@@ -218,3 +218,6 @@ internal/
 
 # macOS
 .DS_Store
+
+# Models downloaded by the compat tests
+tests/compat/.cache/

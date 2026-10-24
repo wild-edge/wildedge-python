@@ -56,7 +56,7 @@ class TestTrackDecorator:
         def failing_func():
             raise ValueError("oops")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="oops"):
             failing_func()
 
         assert len(publish_spy.events) == 0
@@ -95,9 +95,11 @@ class TestTrackContextManager:
     def test_context_manager_tracks_error_and_does_not_suppress(self, publish_spy):
         handle = make_handle(publish_spy)
 
-        with pytest.raises(ValueError, match="boom"):
-            with track(handle, capture_errors=True):
-                raise ValueError("boom")
+        with (
+            pytest.raises(ValueError, match="boom"),
+            track(handle, capture_errors=True),
+        ):
+            raise ValueError("boom")
 
         assert len(publish_spy.events) == 1
         event = publish_spy.events[0]

@@ -128,7 +128,7 @@ class FakeAsyncIterator:
         try:
             return next(self._iter)
         except StopIteration:
-            raise StopAsyncIteration
+            raise StopAsyncIteration from None
 
 
 # Named "Anthropic" / "AsyncAnthropic" so can_handle sees the right type name.
@@ -426,6 +426,7 @@ class TestWrapSyncMessages:
             ),
             make_content_block_delta_event("Hello world"),
             make_message_delta_event(output_tokens=20, stop_reason="end_turn"),
+            SimpleNamespace(type="message_stop"),
         ]
         messages = FakeStreamingMessages(events)
         client = make_fake_client()
@@ -449,6 +450,7 @@ class TestWrapSyncMessages:
         events = [
             make_message_start_event(input_tokens=8, cached=2),
             make_message_delta_event(output_tokens=15, stop_reason="end_turn"),
+            SimpleNamespace(type="message_stop"),
         ]
         messages = FakeStreamingMessages(events)
         client = make_fake_client()
@@ -555,6 +557,7 @@ class TestWrapAsyncMessages:
             make_message_start_event(input_tokens=10, model="claude-opus-4-6-20251101"),
             make_content_block_delta_event("Hello world"),
             make_message_delta_event(output_tokens=20, stop_reason="end_turn"),
+            SimpleNamespace(type="message_stop"),
         ]
         messages = FakeAsyncStreamingMessages(events)
         client = make_fake_client()

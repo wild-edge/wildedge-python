@@ -3,6 +3,7 @@ from __future__ import annotations
 import types
 from unittest.mock import MagicMock, patch
 
+import wildedge.integrations.tensorflow as tf_mod
 from wildedge.integrations.tensorflow import TensorflowExtractor
 from wildedge.model import ModelHandle, ModelInfo
 
@@ -60,8 +61,6 @@ class TestTensorflowExtractor:
         assert publish_spy.events[0]["event_type"] == "inference"
 
     def test_install_auto_load_patch_is_idempotent(self, monkeypatch):
-        import wildedge.integrations.tensorflow as tf_mod
-
         def load_model(*args, **kwargs):
             return object()
 

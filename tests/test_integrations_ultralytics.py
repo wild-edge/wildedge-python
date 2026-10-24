@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import wildedge.integrations.ultralytics as ultralytics_mod
 from wildedge.integrations.ultralytics import (
     YOLO_FAMILY_RE,
     UltralyticsExtractor,
@@ -82,18 +84,21 @@ class YOLO:
     model = FakeInnerModel()
 
     def __call__(self, source=None, stream=False, **kwargs):
+        return self.predict(source, stream=stream, **kwargs)
+
+    def predict(self, source=None, stream=False, **kwargs):
         return [FakeResult([(10, 20, 100, 200, 0.9, 0)])]
 
 
 class FailingYOLO(YOLO):
-    def __call__(self, source=None, stream=False, **kwargs):
+    def predict(self, source=None, stream=False, **kwargs):
         raise RuntimeError("cuda oom")
 
 
 class ClassifyYOLO(YOLO):
     task = "classify"
 
-    def __call__(self, source=None, stream=False, **kwargs):
+    def predict(self, source=None, stream=False, **kwargs):
         return [FakeClassifyResult()]
 
 
@@ -130,7 +135,7 @@ def test_is_yolo_false_for_string():
 
 
 @pytest.mark.parametrize(
-    "name,expected",
+    ("name", "expected"),
     [
         ("yolov8n", "yolov8"),
         ("yolov8s-seg", "yolov8"),
@@ -208,8 +213,7 @@ def test_image_input_meta_returns_none_when_numpy_absent():
 
 
 def test_image_input_meta_extracts_hwc_array():
-    pytest.importorskip("numpy")
-    import numpy as np
+    np = pytest.importorskip("numpy")
 
     arr = np.zeros((480, 640, 3), dtype=np.uint8)
     meta = image_input_meta(arr)
@@ -446,3 +450,53 @@ def test_extractor_install_hooks_batch_size_from_list_source(publish_spy):
     frames = [np.zeros((480, 640, 3), dtype=np.uint8)] * 3
     model(frames)
     assert publish_spy.events[0]["inference"]["batch_size"] == 3
+
+
+def test_unsupported_ultralytics_version_warns_and_does_not_patch(monkeypatch, caplog):
+    fake_yolo = type("YOLO", (), {"__init__": lambda self, *a, **k: None})
+    original_init = fake_yolo.__init__
+    monkeypatch.setattr(
+        ultralytics_mod, "_ultralytics", types.SimpleNamespace(YOLO=fake_yolo)
+    )
+    monkeypatch.setattr(ultralytics_mod, "_unsupported_ultralytics_version", "8.0.0")
+    monkeypatch.setattr(ultralytics_mod, "_ultralytics_patched", False)
+
+    with caplog.at_level("WARNING", logger="wildedge"):
+        UltralyticsExtractor.install_auto_load_patch(lambda: None)
+
+    assert fake_yolo.__init__ is original_init
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("ultralytics 8.0.0 is older than 8.0.200" in m for m in messages)
+
+
+@pytest.mark.parametrize("entrypoint", ["predict", "__call__"])
+def test_predict_and_call_track_once_with_repeated_registration(
+    publish_spy, entrypoint
+):
+    model = YOLO()
+    handle = make_handle(publish_spy)
+    _extractor.install_hooks(model, handle)
+    _extractor.install_hooks(model, handle)
+    results = getattr(model, entrypoint)(source="image.png", verbose=False)
+    assert len(results) == 1
+    assert len(publish_spy.events) == 1
+    assert publish_spy.events[0]["event_type"] == "inference"
+    assert publish_spy.events[0]["inference"]["output_meta"]["num_predictions"] == 1
+
+
+def test_predict_error_is_preserved_and_tracked_once(publish_spy):
+    model = FailingYOLO()
+    _extractor.install_hooks(model, make_handle(publish_spy))
+    with pytest.raises(RuntimeError, match="cuda oom"):
+        model.predict(source="image.png")
+    assert len(publish_spy.events) == 1
+    assert publish_spy.events[0]["event_type"] == "error"
+
+
+def test_predict_does_not_instrument_unregistered_instances(publish_spy):
+    tracked, untouched = YOLO(), YOLO()
+    _extractor.install_hooks(tracked, make_handle(publish_spy))
+    untouched.predict()
+    assert not publish_spy.events
+    tracked.predict()
+    assert len(publish_spy.events) == 1

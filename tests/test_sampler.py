@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from wildedge import platforms
+from wildedge.model import ModelHandle
 from wildedge.platforms import (
     capture_hardware,
     is_sampling,
@@ -87,9 +89,8 @@ class TestSamplerModule:
         platform = make_platform(HardwareContext(memory_available_bytes=1))
         with patch("wildedge.platforms.CURRENT_PLATFORM", platform):
             start_sampler(interval_s=60)
-        from wildedge.platforms import _sampler
 
-        original = _sampler.snapshot()
+        original = platforms._sampler.snapshot()
         capture_hardware(accelerator_actual="cuda")
         assert original.accelerator_actual is None
 
@@ -103,8 +104,6 @@ class TestSamplerModule:
 
 class TestTrackInferenceHardware:
     def test_auto_attaches_when_sampling(self, monkeypatch):
-        from wildedge.model import ModelHandle
-
         platform = make_platform(HardwareContext(memory_available_bytes=512))
         with patch("wildedge.platforms.CURRENT_PLATFORM", platform):
             start_sampler(interval_s=60)
@@ -115,16 +114,12 @@ class TestTrackInferenceHardware:
         assert events[0]["inference"]["hardware"]["memory_available_bytes"] == 512
 
     def test_no_hardware_when_not_sampling(self):
-        from wildedge.model import ModelHandle
-
         events = []
         handle = ModelHandle("m1", MagicMock(), events.append)
         handle.track_inference(duration_ms=10)
         assert "hardware" not in events[0]["inference"]
 
     def test_explicit_hardware_takes_precedence_over_sampler(self):
-        from wildedge.model import ModelHandle
-
         platform = make_platform(HardwareContext(memory_available_bytes=1))
         with patch("wildedge.platforms.CURRENT_PLATFORM", platform):
             start_sampler(interval_s=60)

@@ -15,6 +15,7 @@ import threading
 import time
 
 from wildedge.hubs.base import BaseHubTracker
+from wildedge.instrumentation import ClientRoute
 from wildedge.logging import logger
 from wildedge.timing import elapsed_ms
 
@@ -28,9 +29,16 @@ except ImportError:
 _local = threading.local()
 _hf_hub_download_patched = False
 _snapshot_download_patched = False
+_client_route: ClientRoute | None = None
 
 
 def _buffer() -> list[dict]:
+    if _client_route is not None:
+        client = _client_route()
+        session = client.session_id if client is not None else None
+        if getattr(_local, "owner_session", None) != session:
+            _local.records = []
+            _local.owner_session = session
     if not hasattr(_local, "records"):
         _local.records = []
     return _local.records
@@ -44,7 +52,10 @@ def _record_download(
     cache_hit: bool,
     bandwidth_bps: int | None,
 ) -> None:
-    _buffer().append(
+    records = _buffer()
+    if _client_route is not None and _client_route() is None:
+        return
+    records.append(
         {
             "repo_id": repo_id,
             "size": size,
@@ -61,7 +72,16 @@ def _patch_symbol_references(symbol: str, original: object, replacement: object)
     patched_count = 0
     for mod in list(sys.modules.values()):
         try:
-            if getattr(mod, symbol, None) is original:
+            # Read the module dict, not getattr: lazy modules (transformers)
+            # import submodules on attribute access. A name a lazy module has
+            # not loaded yet cannot hold a reference to the original. The lazy
+            # huggingface_hub package resolves names from its submodules on
+            # each access, so patching those covers `from huggingface_hub import`.
+            namespace = vars(mod)
+        except TypeError:
+            continue
+        try:
+            if namespace.get(symbol) is original:
                 setattr(mod, symbol, replacement)
                 patched_count += 1
         except Exception as exc:
@@ -242,16 +262,16 @@ class HuggingFaceHubTracker(BaseHubTracker):
         records.clear()
         return result
 
-    def install_patch(self, client_ref: object) -> None:  # noqa: ARG002
+    def install_patch(self, client_ref: object) -> None:
         """
         Patch ``hf_hub_download`` and ``snapshot_download`` for thread-local tracking.
 
-        ``client_ref`` is accepted for interface consistency but not used: the HF
-        hub tracker buffers records in a thread-local store and relies on the
-        client draining them via ``_drain_hub_trackers()`` in
-        ``_on_model_auto_loaded``.
+        Thread-local records are scoped to the enabled owner's session so a
+        replacement cannot drain provenance buffered for a previous project.
         """
-        global _hf_hub_download_patched, _snapshot_download_patched
+        global _hf_hub_download_patched, _snapshot_download_patched, _client_route
+        if isinstance(client_ref, ClientRoute):
+            _client_route = client_ref
 
         if _hf_hub_download_patched and _snapshot_download_patched:
             return

@@ -16,8 +16,9 @@ There are three ways a process gets its client, in order of coverage:
 
 All three produce the same thing: one process-wide default client that
 `wildedge.span()`, `wildedge.register_model()` and the rest delegate to.
-`init()` without `dsn` reuses whatever client already exists, so code written
-for in-process init runs unchanged under `wildedge run`.
+`init()` without `dsn`, or with the DSN that client already uses, reuses
+whatever client already exists, so code written for in-process init runs
+unchanged under `wildedge run`.
 
 The lazy mode configures itself from the environment: `WILDEDGE_DSN`,
 `WILDEDGE_INTEGRATIONS`, `WILDEDGE_HUBS`. Unset integration variables mean
@@ -34,6 +35,22 @@ do not want telemetry (local dev, test runs, build and migration steps).
 Under `wildedge run`, a missing DSN warns on stderr and your program runs
 untracked. Telemetry failing must not take production down; that is the
 default policy.
+
+## CLI options
+
+| Flag | Description |
+|---|---|
+| `--integrations` | Comma-separated runtime integrations, such as `llama_cpp`, `onnx`, or `openai`; default: `all` |
+| `--hubs` | Download tracking via `huggingface` or `torchhub` |
+| `--print-startup-report` | Print activation status for each integration |
+| `--strict-integrations` | Exit with 121 if a requested integration cannot be instrumented |
+| `--strict` | Exit on bootstrap failure; see the exit codes below |
+| `--attachments` | Enable upload of explicitly supplied attachments |
+| `--no-propagate` | Scrub run-scoped environment variables after initialization |
+
+Use `llama_cpp` for the `llama-cpp-python` runtime. The older name `gguf` is
+accepted as a compatibility alias in Python, CLI, and environment settings.
+The recorded model format remains `gguf`.
 
 ## Strict mode
 
@@ -82,15 +99,52 @@ them unwrapped or unset `WILDEDGE_DSN` there.
 
 ## One client per process
 
-- Framework patches are installed at most once per process; the first client
-  to instrument owns the patch.
-- `init()` reuses the existing default client unless you pass `dsn`
-  explicitly, so the CLI-installed client and application code share one
-  client instead of racing.
+- Framework patches are installed at most once per process. One live client
+  owns process-wide auto-instrumentation. When another client enables an
+  integration or hub while that owner is live, it logs a warning and
+  automatic events keep going to the owner's project. The new client still
+  sends its manual tracking. With `wildedge run --strict-integrations`, the
+  conflict raises `RuntimeError` instead. Manual tracking does not claim
+  ownership.
+- `init()` reuses the live default client unless you pass a `dsn` for a
+  different project, so the CLI-installed client and application code share
+  one client instead of racing.
 - Trace and span correlation lives in contextvars at module level, not on a
   client. Auto-instrumented events emitted inside `wildedge.trace(...)` /
   `wildedge.span(...)` blocks correlate into the same trace no matter which
   client emits them.
+
+### Replacing a client
+
+Sequential replacement is supported. Finish any in-flight work and close the
+old SDK client before initializing its replacement. Enable integrations and hubs
+explicitly on the replacement: previously enabled integrations do not carry over.
+Factory patches resolve the new owner without being installed again. Buffered
+HuggingFace download provenance is scoped to its owner session and does not
+carry over to another project.
+
+```python
+first = wildedge.init(dsn=dsn, integrations=["onnx"])
+session = ort.InferenceSession("model.onnx")
+# Run and finish work with session.
+first.close(timeout=10)
+
+second = wildedge.init(dsn=other_dsn, integrations=["onnx"])
+session = ort.InferenceSession("model.onnx")  # create after replacement init
+```
+
+Existing model objects, provider clients, model handles and in-flight streams
+remain bound to the original client; they are not automatically transferred to
+another project. Recreate auto-instrumented models/provider clients after
+initializing the replacement. Attempts to emit inference/error telemetry through
+a closed client are dropped with a one-time warning; application inference can
+still run. Simply changing the default client does not change instrumentation
+ownership. Repeated `close()` calls are harmless.
+
+`init()` replaces a closed default even when no explicit `dsn` is supplied,
+reading the new client's configuration from the environment. If initialization
+fails (including an ownership conflict), a newly created client is closed and
+the existing default is preserved.
 
 ## Verifying a deployment
 

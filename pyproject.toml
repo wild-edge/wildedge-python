@@ -1,6 +1,6 @@
 [project]
 name = "wildedge-sdk"
-version = "0.2.2"
+version = "0.3.0"
 description = "ML inference monitoring for Python: on-device and remote models"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -52,11 +52,22 @@ packages = ["wildedge"]
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "TID252"]
+select = [
+    "E", "F", "W", "I", "N", "UP", "TID252",
+    "B",        # likely bugs (bugbear)
+    "C4",       # comprehensions
+    "PIE",      # misc. simplifications
+    "PLC0415",  # imports belong at the top of the module
+    "PT",       # pytest style
+    "RET",      # return statements
+    "RUF",      # ruff-specific checks
+    "SIM",      # simplifications
+]
 ignore = ["E501"]  # line-length is set above
 
 [tool.ruff.lint.per-file-ignores]
 "wildedge/decorators.py" = ["N801"]  # track is a decorator class, not following CapWords
+"tests/**" = ["RUF012"]  # test doubles mimic library objects with class-level lists and dicts
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -65,6 +76,9 @@ ban-relative-imports = "all"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/compat needs the pinned ML libraries; the Compatibility workflow runs
+# it file by file (scripts/compat_matrix.py).
+norecursedirs = [".*", "*.egg", "build", "dist", "node_modules", "venv", "compat"]
 log_level = "ERROR"
 asyncio_mode = "auto"
 markers = [

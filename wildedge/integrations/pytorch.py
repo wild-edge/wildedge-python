@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import functools
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING
 
+from wildedge import accelerators, quantizations
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     HistogramSummary,
@@ -20,17 +22,16 @@ from wildedge.integrations.common import (
     dtype_to_quantization,
     image_brightness_histogram,
     infer_input_modality_from_names,
+    torch_module_accelerator,
 )
+from wildedge.loading import optional_module
 from wildedge.logging import logger
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
-try:
-    import timm as _timm
-    from timm.data import ImageNetInfo as _ImageNetInfo
-except ImportError:
-    _timm = None  # type: ignore[assignment]
-    _ImageNetInfo = None  # type: ignore[assignment,misc]
+# Imported when the timm integration is activated, so registering a plain
+# PyTorch model does not import timm.
+_timm = sys.modules.get("timm")
 
 try:
     import torch as _torch
@@ -44,6 +45,7 @@ _GENERIC_MODULE_NAMES = {"Module", "Sequential", "ModuleList", "ModuleDict"}
 _timm_patched = False
 _TIMM_PATCH_LOCK = threading.Lock()
 TIMM_AUTO_LOAD_PATCH_NAME = "timm_auto_load"
+TIMM_MODEL_NAME_ATTR = "__wildedge_timm_model_name__"
 
 
 debug_pytorch_failure = functools.partial(debug_failure, "pytorch")
@@ -56,22 +58,12 @@ def is_torch_module(obj: object) -> bool:
     )
 
 
-def parameter_device_type(obj: object) -> str | None:
-    try:
-        first_param = next(obj.parameters())  # type: ignore[union-attr]
-    except StopIteration:
-        return None
-    except Exception as exc:
-        debug_pytorch_failure("parameter device discovery", exc)
-        return None
-    return str(getattr(first_param.device, "type", "") or None)
-
-
 def detect_accelerator(obj: object) -> str:
-    device_type = parameter_device_type(obj)
-    if device_type:
-        return device_type  # 'cpu', 'cuda', 'mps', 'xpu', etc.
-    return "cpu"
+    try:
+        return torch_module_accelerator(obj) or accelerators.CPU
+    except Exception as exc:
+        debug_pytorch_failure("accelerator detection", exc)
+        return accelerators.CPU
 
 
 def detect_quantization(obj: object) -> str | None:
@@ -79,10 +71,10 @@ def detect_quantization(obj: object) -> str | None:
         for module in obj.modules():  # type: ignore[union-attr]
             cls = type(module)
             if "quantized" in cls.__module__ or "quant" in cls.__name__.lower():
-                return "int8"
+                return quantizations.INT8
         for p in obj.parameters():  # type: ignore[union-attr]
             q = dtype_to_quantization(str(p.dtype))
-            if q and q != "f32":
+            if q and q != quantizations.F32:
                 return q
     except Exception as exc:
         debug_pytorch_failure("quantization detection", exc)
@@ -102,10 +94,7 @@ def image_input_meta(tensor: object) -> ImageInputMeta | None:
         t_min = float(tensor.min().item())  # type: ignore[union-attr]
         t_max = float(tensor.max().item())  # type: ignore[union-attr]
         span = t_max - t_min
-        if span > 0:
-            norm = (tensor - t_min) / span  # type: ignore[operator]
-        else:
-            norm = tensor  # type: ignore[assignment]
+        norm = (tensor - t_min) / span if span > 0 else tensor  # type: ignore[operator]
 
         brightness_mean, brightness_stddev, buckets = image_brightness_histogram(
             norm.flatten()
@@ -129,7 +118,9 @@ def image_input_meta(tensor: object) -> ImageInputMeta | None:
 def build_imagenet_labels() -> list[str] | None:
     """Return a 1000-entry description list using timm's bundled ImageNet metadata."""
     try:
-        info = _ImageNetInfo()  # type: ignore[misc]
+        from timm.data import ImageNetInfo  # noqa: PLC0415 -- optional, 1000-class only
+
+        info = ImageNetInfo()
         return [info.index_to_description(i) for i in range(1000)]
     except Exception as exc:
         debug_pytorch_failure("imagenet label build", exc)
@@ -157,7 +148,7 @@ def classification_output_meta(
             label=labels[int(idx.item())] if labels else str(int(idx.item())),
             confidence=round(float(conf.item()), 4),
         )
-        for conf, idx in zip(top_vals, top_idx)
+        for conf, idx in zip(top_vals, top_idx, strict=True)
     ]
 
     return ClassificationOutputMeta(
@@ -165,6 +156,20 @@ def classification_output_meta(
         num_predictions=num_classes,
         top_k=predictions,
     )
+
+
+def timm_model_name(obj: object) -> str | None:
+    """Prefer the full requested name, including pretrained tags or hub paths."""
+    name = getattr(obj, TIMM_MODEL_NAME_ATTR, None)
+    if isinstance(name, str) and name:
+        return name
+    for key in ("pretrained_cfg", "default_cfg"):
+        config = getattr(obj, key, None)
+        if isinstance(config, dict):
+            name = config.get("architecture")
+            if isinstance(name, str) and name:
+                return name
+    return None
 
 
 class PytorchExtractor(BaseExtractor):
@@ -175,9 +180,15 @@ class PytorchExtractor(BaseExtractor):
         self, obj: object, overrides: dict
     ) -> tuple[str | None, ModelInfo]:
         class_name = type(obj).__name__
-        model_id = overrides.pop("id", None) or class_name
+        model_name = timm_model_name(obj) or class_name
+        explicit_id = overrides.pop("id", None)
+        model_id = explicit_id or model_name
 
-        if class_name in _GENERIC_MODULE_NAMES:
+        if (
+            model_name == class_name
+            and class_name in _GENERIC_MODULE_NAMES
+            and not explicit_id
+        ):
             logger.warning(
                 "wildedge: PyTorch model_id defaults to generic class name '%s' - "
                 "pass model_id= to register_model() for a stable unique ID",
@@ -190,7 +201,7 @@ class PytorchExtractor(BaseExtractor):
         source = overrides.pop("source", "local")
 
         info = ModelInfo(
-            model_name=class_name,
+            model_name=model_name,
             model_version=version,
             model_source=source,
             model_format="pytorch",
@@ -224,7 +235,7 @@ class PytorchExtractor(BaseExtractor):
             nc = getattr(obj, "num_classes", 0)
             if isinstance(nc, int) and nc > 1:
                 num_classes = nc
-                if num_classes == 1000 and _timm is not None:
+                if num_classes == 1000:
                     labels = build_imagenet_labels()
         except Exception as exc:
             debug_pytorch_failure("num_classes detection", exc)
@@ -292,8 +303,11 @@ class PytorchExtractor(BaseExtractor):
         the duration of the call and emitted as a model_download event.
         Inference tracking is handled by the existing PyTorch forward hooks.
         """
-        global _timm_patched
-        if _timm_patched or _timm is None:
+        global _timm_patched, _timm
+        if _timm_patched:
+            return
+        _timm = _timm or optional_module("timm")
+        if _timm is None:
             return
 
         with _TIMM_PATCH_LOCK:
@@ -318,6 +332,9 @@ class PytorchExtractor(BaseExtractor):
                 load_ms = elapsed_ms(t0)
                 logger.debug("wildedge: timm.create_model done load_ms=%d", load_ms)
                 if c is not None and not c.closed:
+                    name = args[0] if args else kwargs.get("model_name")
+                    if isinstance(name, str) and name:
+                        setattr(model, TIMM_MODEL_NAME_ATTR, name)
                     downloads = c._diff_hub_caches(hub_before, load_ms) or None
                     c._on_model_auto_loaded(model, load_ms=load_ms, downloads=downloads)
                 return model

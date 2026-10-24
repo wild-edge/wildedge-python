@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from wildedge import constants
+from wildedge.events import common
 from wildedge.events.error import ErrorCode, ErrorEvent
 from wildedge.events.feedback import FeedbackEvent, FeedbackType
 from wildedge.events.inference import InferenceEvent, TextInputMeta
@@ -76,6 +78,33 @@ def test_feedback_event_enum_and_string_forms():
     assert string_event.to_dict()["feedback"]["feedback_type"] == "reject"
 
 
+def test_error_event_caps_message_and_provider_code():
+    event = ErrorEvent(
+        model_id="m1",
+        error_code=ErrorCode.UNKNOWN,
+        error_message="x" * 5000,
+        provider_error_code="c" * 500,
+    ).to_dict()["error"]
+    assert len(event["error_message"]) == constants.ERROR_MSG_MAX_LEN
+    assert len(event["provider_error_code"]) == constants.PROVIDER_ERROR_CODE_MAX_LEN
+
+
+def test_long_error_message_keeps_start_and_end():
+    message = "ffmpeg banner " * 100 + "Error opening input file audio.wav"
+    sent = ErrorEvent(
+        model_id="m1", error_code=ErrorCode.UNKNOWN, error_message=message
+    ).to_dict()["error"]["error_message"]
+    assert len(sent) == constants.ERROR_MSG_MAX_LEN
+    assert sent.startswith("ffmpeg banner")
+    assert sent.endswith("Error opening input file audio.wav")
+    assert " … " in sent
+
+
+def test_short_error_message_is_unchanged():
+    event = ErrorEvent(model_id="m1", error_code="UNKNOWN", error_message="boom")
+    assert event.to_dict()["error"]["error_message"] == "boom"
+
+
 def test_span_event_to_dict_includes_required_fields():
     event = SpanEvent(
         kind="tool",
@@ -132,3 +161,78 @@ def test_error_event_to_dict_http_status():
         "duration_ms": 30_000,
     }
     assert "http_status" not in ErrorEvent("m1", "OOM").to_dict()["error"]
+
+
+def test_span_event_sends_non_scalar_attributes_as_json_strings():
+    event = SpanEvent(
+        kind="custom",
+        name="s",
+        duration_ms=1,
+        status="ok",
+        attributes={
+            "rejections": ["English", "too long"],
+            "scores": {"a": 1},
+            "count": 3,
+            "ratio": 0.5,
+            "ok": True,
+            "note": None,
+            "label": "x",
+        },
+    )
+    attrs = event.to_dict()["span"]["attributes"]
+    assert attrs == {
+        "rejections": '["English", "too long"]',
+        "scores": '{"a": 1}',
+        "count": 3,
+        "ratio": 0.5,
+        "ok": True,
+        "note": None,
+        "label": "x",
+    }
+    # The caller's dict is left as it was.
+    assert event.attributes["rejections"] == ["English", "too long"]
+
+
+def test_span_attribute_flattening_handles_unserializable_values():
+    class Thing:
+        def __str__(self):
+            return "thing"
+
+    event = SpanEvent(
+        kind="custom",
+        name="s",
+        duration_ms=1,
+        status="ok",
+        attributes={"obj": Thing(), "tags": ("a", Thing())},
+    )
+    attrs = event.to_dict()["span"]["attributes"]
+    assert attrs == {"obj": '"thing"', "tags": '["a", "thing"]'}
+
+
+def test_span_attribute_warning_is_logged_once_per_key(caplog):
+    common._warned_attribute_keys.discard("warn_once_tags")
+    with caplog.at_level("WARNING", logger="wildedge"):
+        for _ in range(3):
+            SpanEvent(
+                kind="custom",
+                name="s",
+                duration_ms=1,
+                status="ok",
+                attributes={"warn_once_tags": ["a"]},
+            ).to_dict()
+    warnings = [r for r in caplog.records if "warn_once_tags" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def test_span_attribute_falls_back_to_str_when_json_fails():
+    circular: list = []
+    circular.append(circular)
+    event = SpanEvent(
+        kind="custom",
+        name="s",
+        duration_ms=1,
+        status="ok",
+        attributes={"loop": circular, 7: "int key"},
+    )
+    attrs = event.to_dict()["span"]["attributes"]
+    assert attrs == {"loop": "[[...]]", "7": "int key"}

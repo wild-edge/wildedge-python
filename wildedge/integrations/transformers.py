@@ -6,9 +6,10 @@ import functools
 import os
 import threading
 import time
+from collections import Counter
 from typing import TYPE_CHECKING
 
-from wildedge import constants
+from wildedge import accelerators, quantizations
 from wildedge.events.inference import (
     ClassificationOutputMeta,
     EmbeddingOutputMeta,
@@ -17,7 +18,11 @@ from wildedge.events.inference import (
     TopKPrediction,
 )
 from wildedge.integrations.base import BaseExtractor
-from wildedge.integrations.common import debug_failure, dtype_to_quantization
+from wildedge.integrations.common import (
+    debug_failure,
+    dtype_to_quantization,
+    torch_module_accelerator,
+)
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -41,9 +46,23 @@ PIPELINE_CALL_PATCH_NAME = "transformers_pipeline_call"
 # Per-instance attribute that stores the ModelHandle on a pipeline object.
 PIPELINE_HANDLE_ATTR = "__wildedge_pipeline_handle__"
 
-# Thread-local flag: suppress from_pretrained tracking when called inside
-# Pipeline.__init__ so the pipeline-level tracking takes precedence.
-_tl = threading.local()
+
+class _ThreadState(threading.local):
+    """Per-thread state that keeps pipeline-level tracking the only record.
+
+    inside_pipeline_init: from_pretrained calls made by Pipeline.__init__ are
+    not tracked on their own.
+    pipeline_models: id() of the model each running tracked pipeline call
+    wraps, counted for nesting. That model's forward hooks record nothing
+    while it is here; other models called during the pipeline call do.
+    """
+
+    def __init__(self) -> None:
+        self.inside_pipeline_init = False
+        self.pipeline_models: Counter[int] = Counter()
+
+
+_tl = _ThreadState()
 
 
 debug_transformers_failure = functools.partial(debug_failure, "transformers")
@@ -108,7 +127,7 @@ def detect_quantization(obj: object) -> str | None:
                 if quant_type:
                     return str(quant_type).lower()
                 if bits:
-                    return f"int{int(bits)}"
+                    return quantizations.int_bits(bits)
         # Fall back to model dtype
         model = getattr(obj, "model", obj)
         dtype = getattr(model, "dtype", None)
@@ -121,12 +140,12 @@ def detect_quantization(obj: object) -> str | None:
 
 def detect_accelerator(obj: object) -> str:
     try:
+        # A pipeline wraps the model; a bare model is its own module.
         model = getattr(obj, "model", obj)
-        first = next(model.parameters())  # type: ignore[union-attr]
-        return str(getattr(first.device, "type", "cpu") or "cpu")
+        return torch_module_accelerator(model) or accelerators.CPU
     except Exception as exc:
         debug_transformers_failure("accelerator detection", exc)
-    return "cpu"
+    return accelerators.CPU
 
 
 def infer_task_from_arch(arch: str | None) -> str | None:
@@ -304,10 +323,16 @@ class TransformersExtractor(BaseExtractor):
             _, _, arch = extract_model_config(obj)
             task_hint = infer_task_from_arch(arch)
 
+            # A tracked pipeline call records its own model's forward passes,
+            # so both hooks skip them.
             def pre_hook(module, args):  # type: ignore[no-untyped-def]
+                if _tl.pipeline_models[id(module)]:
+                    return
                 _local.t0 = time.perf_counter()
 
             def post_hook(module, args, output):  # type: ignore[no-untyped-def]
+                if _tl.pipeline_models[id(module)]:
+                    return
                 t0 = getattr(_local, "t0", None)
                 duration_ms = elapsed_ms(t0) if t0 is not None else 0
 
@@ -419,6 +444,8 @@ class TransformersExtractor(BaseExtractor):
             input_modality, output_modality = pipeline_modalities(task)
 
             t0 = time.perf_counter()
+            model_key = id(getattr(self, "model", None))
+            _tl.pipeline_models[model_key] += 1
             try:
                 outputs = original_call(self, inputs, *args, **kwargs)
                 duration_ms = elapsed_ms(t0)
@@ -436,9 +463,13 @@ class TransformersExtractor(BaseExtractor):
             except Exception as exc:
                 handle.track_error(
                     error_code="UNKNOWN",
-                    error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                    error_message=str(exc),
                 )
                 raise
+            finally:
+                _tl.pipeline_models[model_key] -= 1
+                if not _tl.pipeline_models[model_key]:
+                    del _tl.pipeline_models[model_key]
 
         patched_call.__wildedge_patch_name__ = PIPELINE_CALL_PATCH_NAME  # type: ignore[attr-defined]
         patched_call.__wildedge_original_call__ = original_call  # type: ignore[attr-defined]
@@ -457,7 +488,7 @@ class TransformersExtractor(BaseExtractor):
 
         def patched_from_pretrained(model_cls, *args, **kwargs):  # type: ignore[no-untyped-def]
             # Don't double-track models loaded inside Pipeline.__init__
-            if getattr(_tl, "inside_pipeline_init", False):
+            if _tl.inside_pipeline_init:
                 return original_func(model_cls, *args, **kwargs)
             c = client_ref()  # type: ignore[call-arg]
             hub_before = (
@@ -478,3 +509,7 @@ class TransformersExtractor(BaseExtractor):
         _transformers.PreTrainedModel.from_pretrained = classmethod(  # type: ignore[assignment]
             patched_from_pretrained
         )
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = TransformersExtractor.install_auto_load_patch

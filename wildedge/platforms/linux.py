@@ -5,6 +5,7 @@ import platform
 import shutil
 from pathlib import Path
 
+from wildedge import accelerators
 from wildedge.platforms.base import (
     Platform,
     cuda_device_count,
@@ -91,18 +92,18 @@ class LinuxPlatform(Platform):
             return None
 
     def gpu_accelerators(self) -> tuple[list[str], str | None]:
-        accelerators = []
+        found = []
         gpu_name = None
         if cuda_device_count("libcuda.so.1") > 0:
-            accelerators.append("cuda")
+            found.append(accelerators.CUDA)
             gpu_name = nvml_gpu_name("libnvidia-ml.so.1")
         if hip_device_count("libamdhip64.so") > 0:
-            accelerators.append("rocm")
-        return accelerators, gpu_name
+            found.append(accelerators.ROCM)
+        return found, gpu_name
 
     def gpu_accelerator_for_offload(self) -> str:
         accs, _ = self.gpu_accelerators()
-        return accs[0] if accs else "cpu"
+        return accs[0] if accs else accelerators.CPU
 
     def cpu_freq(self) -> tuple[int | None, int | None]:
         """Read current and max CPU frequency (MHz) from cpufreq for cpu0."""

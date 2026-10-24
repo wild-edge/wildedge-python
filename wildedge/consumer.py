@@ -50,6 +50,10 @@ class Consumer:
 
         self.stop_event = threading.Event()
         self.stopped = False
+        # One drain at a time: flush() on the caller's thread and the background
+        # thread would otherwise send the same batch and both remove it.
+        self.drain_lock = threading.Lock()
+        self.fork_holds_drain_lock = False
         self.backoff = constants.BACKOFF_MIN
         self.created_at = datetime.now(timezone.utc)
 
@@ -133,7 +137,16 @@ class Consumer:
         self.queue.remove_first_n(len(events))
         self.notify_delivery_failure(reason, len(events))
 
-    def drain_once(self) -> bool:
+    def drain_once(self, timeout: float = -1) -> bool:
+        """Send one batch. Returns False if no progress was made."""
+        if not self.drain_lock.acquire(timeout=timeout):
+            return False
+        try:
+            return self.drain_once_locked()
+        finally:
+            self.drain_lock.release()
+
+    def drain_once_locked(self) -> bool:
         events = self.queue.peek_many(self.batch_size)
         if not events:
             return False
@@ -218,7 +231,7 @@ class Consumer:
         deadline = time.monotonic() + timeout
         backoff = constants.BACKOFF_MIN
         while self.queue.length() > 0 and time.monotonic() < deadline:
-            progressed = self.drain_once()
+            progressed = self.drain_once(timeout=max(0.0, deadline - time.monotonic()))
             if self.queue.length() == 0:
                 break
             remaining = deadline - time.monotonic()
@@ -243,6 +256,9 @@ class Consumer:
         """
         self.stop_event.set()
         self.thread.join(timeout=1.0)
+        # Hold the drain lock across fork() so the child never inherits it
+        # locked by a thread that does not exist there.
+        self.fork_holds_drain_lock = self.drain_lock.acquire(timeout=1.0)
         # Reset so _resume() can start a fresh thread in parent and child.
         self.stopped = False
 
@@ -253,6 +269,12 @@ class Consumer:
         Creates a new Event and Thread so parent and child each get an
         independent consumer.
         """
+        if self.fork_holds_drain_lock:
+            self.drain_lock.release()
+            self.fork_holds_drain_lock = False
+        else:
+            # A send outlived _pause(). Start over rather than wait on it.
+            self.drain_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.backoff = constants.BACKOFF_MIN
         self._held_snapshot = None

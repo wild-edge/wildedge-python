@@ -6,7 +6,7 @@ import uuid
 import weakref
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from wildedge import constants
@@ -22,21 +22,23 @@ from wildedge.dead_letters import DeadLetterStore
 from wildedge.events import SpanEvent
 from wildedge.events.span import SpanKind, SpanStatus
 from wildedge.hubs.base import BaseHubTracker
-from wildedge.hubs.huggingface import HuggingFaceHubTracker
-from wildedge.hubs.registry import supported_hubs
-from wildedge.hubs.torchhub import TorchHubTracker
-from wildedge.integrations.anthropic import AnthropicExtractor
+from wildedge.hubs.registry import HUB_SPECS, supported_hubs
+from wildedge.instrumentation import (
+    ClientRoute,
+    InstrumentationOwnedError,
+    claim_instrumentation,
+    has_other_live_owner,
+    strict_ownership,
+)
 from wildedge.integrations.base import BaseExtractor
-from wildedge.integrations.gguf import GgufExtractor
-from wildedge.integrations.keras import KerasExtractor
-from wildedge.integrations.mlx import MlxExtractor
-from wildedge.integrations.onnx import OnnxExtractor
-from wildedge.integrations.openai import OpenAIExtractor
-from wildedge.integrations.pytorch import PytorchExtractor
-from wildedge.integrations.registry import noop_integrations, supported_integrations
-from wildedge.integrations.tensorflow import TensorflowExtractor
-from wildedge.integrations.transformers import TransformersExtractor
-from wildedge.integrations.ultralytics import UltralyticsExtractor
+from wildedge.integrations.registry import (
+    INTEGRATION_SPECS,
+    canonical_integration,
+    find_extractor,
+    noop_integrations,
+    supported_integrations,
+)
+from wildedge.loading import lazy_callable
 from wildedge.logging import enable_debug, logger
 from wildedge.model import ModelHandle, ModelInfo, ModelRegistry
 from wildedge.paths import (
@@ -111,19 +113,6 @@ def parse_dsn(dsn: str) -> tuple[str, str, str]:
 
 # One informative log line per process for the intentional no-DSN mode.
 _noop_notice_logged = False
-
-DEFAULT_EXTRACTORS: list[BaseExtractor] = [
-    OnnxExtractor(),
-    GgufExtractor(),
-    OpenAIExtractor(),
-    AnthropicExtractor(),
-    UltralyticsExtractor(),
-    TransformersExtractor(),
-    MlxExtractor(),
-    PytorchExtractor(),
-    TensorflowExtractor(),
-    KerasExtractor(),
-]
 
 
 class SpanContextManager:
@@ -248,23 +237,16 @@ class WildEdge:
     # Framework integrations: patch ML runtime constructors for inference tracking.
     SUPPORTED_INTEGRATIONS = supported_integrations()
     NOOP_INTEGRATIONS = noop_integrations()
-    PATCH_INSTALLERS = {
-        "anthropic": AnthropicExtractor.install_auto_load_patch,
-        "gguf": GgufExtractor.install_auto_load_patch,
-        "mlx": MlxExtractor.install_auto_load_patch,
-        "onnx": OnnxExtractor.install_auto_load_patch,
-        "openai": OpenAIExtractor.install_auto_load_patch,
-        "timm": PytorchExtractor.install_timm_patch,
-        "tensorflow": TensorflowExtractor.install_auto_load_patch,
-        "transformers": TransformersExtractor.install_auto_load_patch,
-        "ultralytics": UltralyticsExtractor.install_auto_load_patch,
+    PATCH_INSTALLERS: ClassVar[dict[str, Callable[[object], None]]] = {
+        spec.name: lazy_callable(spec.installer)
+        for spec in INTEGRATION_SPECS
+        if spec.installer is not None
     }
 
     # Hub trackers: record download provenance (where models came from).
     SUPPORTED_HUBS = supported_hubs()
-    HUB_TRACKER_CLASSES: dict[str, type[BaseHubTracker]] = {
-        "huggingface": HuggingFaceHubTracker,
-        "torchhub": TorchHubTracker,
+    HUB_TRACKER_CLASSES: ClassVar[dict[str, Callable[[], BaseHubTracker]]] = {
+        spec.name: lazy_callable(spec.tracker) for spec in HUB_SPECS
     }
 
     def __init__(
@@ -304,10 +286,14 @@ class WildEdge:
         dsn = env.dsn
         debug = env.debug
         self.noop = False
+        # (secret, host, project_key), so init(dsn=...) can tell when a
+        # requested destination matches this client. None for a no-op client.
+        self.destination: tuple[str, str, str] | None = None
         if not dsn:
             self._init_noop(debug=debug, device=device)
             return
         api_key, host, project_key = parse_dsn(dsn)
+        self.destination = (api_key, host, project_key)
         app_identity = resolve_app_identity(
             explicit=env.app_identity,
             project_key=project_key,
@@ -482,6 +468,15 @@ class WildEdge:
 
     def publish(self, event_dict: dict) -> None:
         if self.closed or self.noop:
+            if (
+                not self.noop
+                and event_dict.get("event_type") in ("inference", "error")
+                and not getattr(self, "_closed_publish_warned", False)
+            ):
+                self._closed_publish_warned = True
+                logger.warning(
+                    "wildedge: event belongs to a closed SDK client; recreate models after initializing its replacement"
+                )
             return
 
         if self.debug:
@@ -686,10 +681,7 @@ class WildEdge:
         return correlation["span_id"]
 
     def _find_extractor(self, model_obj: object) -> BaseExtractor | None:
-        for candidate in DEFAULT_EXTRACTORS:
-            if candidate.can_handle(model_obj):
-                return candidate
-        return None
+        return find_extractor(model_obj)
 
     def _memory_bytes_for(self, model_obj: object) -> int | None:
         extractor = self._find_extractor(model_obj)
@@ -707,10 +699,30 @@ class WildEdge:
                 "wildedge: hub '%s' library not installed; skipping", hub_name
             )
             return
-        tracker.install_patch(weakref.ref(self))
+        route = self._claim_instrumentation("hub:" + hub_name)
+        if route is None:
+            return
+        tracker.install_patch(route)
         self.hub_trackers[hub_name] = tracker
         if self.debug:
             logger.debug("wildedge: hub tracker '%s' activated", hub_name)
+
+    def _claim_instrumentation(self, name: str) -> ClientRoute | None:
+        """Claim process-wide instrumentation, or warn and skip if owned."""
+        try:
+            return claim_instrumentation(self, name)
+        except InstrumentationOwnedError:
+            if strict_ownership():
+                raise
+            logger.warning(
+                "wildedge: another WildEdge client (for example the one "
+                "`wildedge run` installed) already owns automatic tracking, so "
+                "'%s' events keep going to that client's project. Call "
+                "wildedge.init() without dsn to reuse that client, or close it "
+                "before enabling integrations on this one.",
+                name,
+            )
+            return None
 
     def _snapshot_hub_caches(self) -> dict[str, dict[str, int]]:
         """Return a before-snapshot of all active hub cache directories."""
@@ -758,7 +770,7 @@ class WildEdge:
         Pass ``hubs=`` alongside a framework name to activate download provenance
         tracking for the hub(s) your code downloads from::
 
-            client.instrument("gguf", hubs=["huggingface"])
+            client.instrument("llama_cpp", hubs=["huggingface"])
             client.instrument("onnx", hubs=["huggingface"])
             client.instrument("timm", hubs=["huggingface", "torchhub"])
 
@@ -772,11 +784,13 @@ class WildEdge:
 
         Supported framework integrations
         ---------------------------------
-        ``"gguf"``
+        ``"llama_cpp"`` (``"gguf"`` remains a compatibility alias)
             Patches ``llama_cpp.Llama.__init__``. Requires ``llama-cpp-python``.
         ``"onnx"``
             Replaces ``ort.InferenceSession`` with a timed subclass.
             Requires ``onnxruntime``.
+        ``"mlx_whisper"`` / ``"faster_whisper"``
+            Tracks local speech recognition, including lazy segment consumption.
         ``"timm"``
             Patches ``timm.create_model``. Requires ``timm``.
         ``"tensorflow"``
@@ -814,6 +828,8 @@ class WildEdge:
             if self.debug:
                 logger.debug("wildedge: instrument skipped (no DSN configured)")
             return
+        if self.closed:
+            raise RuntimeError("Cannot instrument with a closed WildEdge client")
         if integration is None:
             if not hubs:
                 raise ValueError(
@@ -831,6 +847,7 @@ class WildEdge:
                 self._activate_hub(hub_name)
             return
 
+        integration = canonical_integration(integration)
         if integration in self.SUPPORTED_HUBS:
             raise ValueError(
                 f"{integration!r} is a hub, not a framework integration. "
@@ -859,7 +876,9 @@ class WildEdge:
                 logger.debug(LOG_INSTRUMENT_TORCH_KERAS, integration)
         else:
             installer = self.PATCH_INSTALLERS[integration]
-            installer(weakref.ref(self))
+            route = self._claim_instrumentation(integration)
+            if route is not None:
+                installer(route)
         for hub_name in hubs or []:
             self._activate_hub(hub_name)
 
@@ -871,8 +890,14 @@ class WildEdge:
         downloads: list[dict] | None = None,
         model_id: str | None = None,
         load_kwargs: dict | None = None,
+        reload: bool = False,
     ) -> None:
-        """Callback invoked by auto-patches after a model is constructed."""
+        """Callback invoked by auto-patches after a model is constructed.
+
+        A model ID seen before normally means a wrapper around a model that is
+        already loaded, so no second load event is sent. ``reload=True`` says
+        the weights were loaded again and records the load anyway.
+        """
         if self.closed:
             return
         # Always drain thread-local hub buffers to keep them clean.
@@ -884,7 +909,7 @@ class WildEdge:
             downloads = thread_records
 
         handle = self.register_model(obj, model_id=model_id)
-        already_tracked = handle.model_id in self.auto_loaded
+        already_tracked = handle.model_id in self.auto_loaded and not reload
         self.auto_loaded.add(handle.model_id)
 
         if already_tracked:
@@ -994,20 +1019,44 @@ class WildEdge:
         return obj
 
     def flush(self, timeout: float = 5.0) -> None:
-        """Block until the event queue drains or timeout expires."""
+        """Block until queued events and attachments are sent or timeout expires.
+
+        Events go first; buffered attachments use the time that is left.
+        """
+        deadline = time.monotonic() + timeout
         self.consumer.flush(timeout=timeout)
+        self._drain_attachments(deadline)
 
     def close(self, timeout: float | None = None) -> None:
-        """Best-effort shutdown; pass timeout to attempt bounded flush first."""
+        """Best-effort shutdown; pass timeout to attempt bounded flush first.
+
+        With a timeout, buffered attachments are uploaded in the time left after
+        the event flush. Without one, they stay on disk for the next start.
+        """
+        if self.closed:
+            return
         self.closed = True
-        if not self.noop:
+        if not self.noop and not has_other_live_owner(self):
             stop_sampler()
         if self.attachment_uploader is not None:
             self.attachment_uploader.stop()
         if timeout is None:
             self.consumer.close()
         else:
+            deadline = time.monotonic() + timeout
             self.consumer.close(timeout=timeout)
+            self._drain_attachments(deadline)
+
+    def _drain_attachments(self, deadline: float) -> None:
+        if self.attachment_uploader is None:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            self.attachment_uploader.drain(remaining)
+        except Exception as exc:
+            logger.warning("wildedge: attachment upload on flush failed: %s", exc)
 
     def pending_count(self) -> int:
         """Return the number of events currently buffered."""

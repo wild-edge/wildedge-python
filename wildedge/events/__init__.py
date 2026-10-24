@@ -22,9 +22,9 @@ from wildedge.events.model_unload import ModelUnloadEvent
 from wildedge.events.span import SpanEvent
 
 __all__ = [
-    "ApiMeta",
     "AdapterDownload",
     "AdapterLoad",
+    "ApiMeta",
     "AudioInputMeta",
     "ClassificationOutputMeta",
     "DetectionOutputMeta",

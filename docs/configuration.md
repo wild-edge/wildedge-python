@@ -41,4 +41,17 @@ event flushes never block on an upload.
 | `attachment_filter` | `None` | - | `Callable[[list[Attachment]], list[Attachment]]` to redact/drop before buffering |
 | `attachment_dir` | per `app_identity` | - | Override the local buffer directory |
 
+`attachments_enabled=True` permits uploads of attachments explicitly supplied to
+`track_inference(attachments=[...])`. Automatic integrations do not attach raw
+inputs or outputs.
+
 See [Track attachments](manual-tracking.md#track-attachments) for usage.
+
+### When ML libraries are imported
+
+`import wildedge` does not import any ML framework or API client. The SDK imports a library only when you use it:
+
+- activating an integration (`wildedge.init(integrations=[...])`, `client.instrument(...)` or `wildedge run`) imports that library;
+- registering a model imports the library the model came from, and nothing else. For example, registering a PyTorch model does not import timm (unless it is a 1000-class classifier, for which timm supplies the ImageNet labels), and registering a Keras model does not import TensorFlow.
+
+Which integrations are activated by default is unchanged. `wildedge.init()` activates only the ones you list, while `wildedge run` activates every installed one unless you pass `--integrations`.

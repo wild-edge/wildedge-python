@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from wildedge.events.inference import ApiMeta, GenerationOutputMeta, TextInputMeta
+from wildedge.instrumentation import bind_client_reference
 from wildedge.integrations.base import BaseExtractor
 from wildedge.integrations.common import (
     AsyncStreamWrapper,
     SyncStreamWrapper,
     debug_failure,
+    stream_error_code,
     track_api_error,
 )
 from wildedge.model import ModelInfo
@@ -152,10 +155,20 @@ def make_anthropic_stream_callbacks(
     cached_tokens: list[int | None] = [None]
     stop_reason: list[str | None] = [None]
     resolved_model: list[str | None] = [None]
+    message_stopped = False
 
     def on_chunk(event: object) -> None:
+        nonlocal message_stopped
         event_type = type(event).__name__
-        if event_type == "RawMessageStartEvent":
+        if (
+            getattr(event, "type", None) == "message_stop"
+            or event_type == "RawMessageStopEvent"
+        ):
+            message_stopped = True
+        if (
+            event_type == "RawMessageStartEvent"
+            or getattr(event, "type", None) == "message_start"
+        ):
             msg = getattr(event, "message", None)
             if msg is not None:
                 usage = getattr(msg, "usage", None)
@@ -163,7 +176,10 @@ def make_anthropic_stream_callbacks(
                     tokens_in[0] = getattr(usage, "input_tokens", None)
                     cached_tokens[0] = getattr(usage, "cache_read_input_tokens", None)
                 resolved_model[0] = getattr(msg, "model", None)
-        elif event_type == "RawMessageDeltaEvent":
+        elif (
+            event_type == "RawMessageDeltaEvent"
+            or getattr(event, "type", None) == "message_delta"
+        ):
             usage = getattr(event, "usage", None)
             if usage is not None:
                 tokens_out[0] = getattr(usage, "output_tokens", None)
@@ -173,7 +189,11 @@ def make_anthropic_stream_callbacks(
                 if reason:
                     stop_reason[0] = reason
 
-    def on_done(duration_ms: int, ttft_ms: int | None) -> None:
+    def on_done(
+        duration_ms: int, ttft_ms: int | None, *, outcome: str = "completed"
+    ) -> None:
+        if outcome == "completed" and not message_stopped:
+            outcome = "incomplete"
         ti, to, cr, sr = tokens_in[0], tokens_out[0], cached_tokens[0], stop_reason[0]
         tps = round(to / duration_ms * 1000, 1) if duration_ms > 0 and to else None
         api_meta = (
@@ -183,7 +203,8 @@ def make_anthropic_stream_callbacks(
             duration_ms=duration_ms,
             input_modality="text",
             output_modality="generation",
-            success=True,
+            success=outcome == "completed",
+            error_code=stream_error_code(outcome),
             input_meta=build_input_meta(messages, ti),
             output_meta=GenerationOutputMeta(
                 task="generation",
@@ -221,19 +242,18 @@ def wrap_sync_messages(messages_obj: object, client_ref: object) -> None:
                         handle, messages
                     )
                     return SyncStreamWrapper(result, handle, t0, on_chunk, on_done)
-                else:
-                    duration = elapsed_ms(t0)
-                    usage = getattr(result, "usage", None)
-                    tokens_in = getattr(usage, "input_tokens", None) if usage else None
-                    handle.track_inference(
-                        duration_ms=duration,
-                        input_modality="text",
-                        output_modality="generation",
-                        success=True,
-                        input_meta=build_input_meta(messages, tokens_in),
-                        output_meta=build_output_meta(result, duration),
-                        api_meta=build_api_meta(result),
-                    )
+                duration = elapsed_ms(t0)
+                usage = getattr(result, "usage", None)
+                tokens_in = getattr(usage, "input_tokens", None) if usage else None
+                handle.track_inference(
+                    duration_ms=duration,
+                    input_modality="text",
+                    output_modality="generation",
+                    success=True,
+                    input_meta=build_input_meta(messages, tokens_in),
+                    output_meta=build_output_meta(result, duration),
+                    api_meta=build_api_meta(result),
+                )
             return result
         except Exception as exc:
             if handle is not None:
@@ -241,6 +261,7 @@ def wrap_sync_messages(messages_obj: object, client_ref: object) -> None:
             raise
 
     messages_obj.create = patched_create  # type: ignore[attr-defined]
+    wrap_native_stream(messages_obj, client_ref)
 
 
 def wrap_async_messages(messages_obj: object, client_ref: object) -> None:
@@ -264,19 +285,18 @@ def wrap_async_messages(messages_obj: object, client_ref: object) -> None:
                         handle, messages
                     )
                     return AsyncStreamWrapper(result, handle, t0, on_chunk, on_done)
-                else:
-                    duration = elapsed_ms(t0)
-                    usage = getattr(result, "usage", None)
-                    tokens_in = getattr(usage, "input_tokens", None) if usage else None
-                    handle.track_inference(
-                        duration_ms=duration,
-                        input_modality="text",
-                        output_modality="generation",
-                        success=True,
-                        input_meta=build_input_meta(messages, tokens_in),
-                        output_meta=build_output_meta(result, duration),
-                        api_meta=build_api_meta(result),
-                    )
+                duration = elapsed_ms(t0)
+                usage = getattr(result, "usage", None)
+                tokens_in = getattr(usage, "input_tokens", None) if usage else None
+                handle.track_inference(
+                    duration_ms=duration,
+                    input_modality="text",
+                    output_modality="generation",
+                    success=True,
+                    input_meta=build_input_meta(messages, tokens_in),
+                    output_meta=build_output_meta(result, duration),
+                    api_meta=build_api_meta(result),
+                )
             return result
         except Exception as exc:
             if handle is not None:
@@ -284,6 +304,121 @@ def wrap_async_messages(messages_obj: object, client_ref: object) -> None:
             raise
 
     messages_obj.create = patched_create  # type: ignore[attr-defined]
+    wrap_native_stream(messages_obj, client_ref)
+
+
+class AnthropicStreamManager:
+    """Instrument the native helper's raw iterator while preserving its public API."""
+
+    def __init__(self, manager: Any, handle: ModelHandle, messages: list) -> None:
+        self._manager = manager
+        self._handle = handle
+        self._messages = messages
+        self._tracked = None
+
+    def _safe(self, callback, *args, **kwargs) -> None:
+        try:
+            callback(*args, **kwargs)
+        except Exception as exc:
+            debug_anthropic_failure("native stream telemetry", exc)
+
+    def _wrap(self, stream: Any, t0: float, asynchronous: bool) -> Any:
+        # Both old and current SDKs route event/text/final-message helpers
+        # through _iterator. Preserve the SDK parser and returned stream object.
+        try:
+            callbacks = make_anthropic_stream_callbacks(self._handle, self._messages)
+            wrapper = AsyncStreamWrapper if asynchronous else SyncStreamWrapper
+            tracked = wrapper(stream._iterator, self._handle, t0, *callbacks)
+            original_close = stream.close
+            if asynchronous:
+
+                @functools.wraps(original_close)
+                async def close():
+                    try:
+                        return await original_close()
+                    finally:
+                        tracked._finish("closed")
+            else:
+
+                @functools.wraps(original_close)
+                def close():
+                    try:
+                        return original_close()
+                    finally:
+                        tracked._finish("closed")
+
+            stream._iterator = tracked
+            stream.close = close
+            self._tracked = tracked
+        except Exception as exc:
+            debug_anthropic_failure("native stream wrap", exc)
+        return stream
+
+    def __enter__(self) -> Any:
+        t0 = time.perf_counter()
+        try:
+            stream = self._manager.__enter__()
+        except Exception as exc:
+            self._safe(track_api_error, self._handle, exc, elapsed_ms(t0))
+            raise
+        return self._wrap(stream, t0, False)
+
+    def __exit__(self, *args: Any) -> Any:
+        return self._manager.__exit__(*args)
+
+    async def __aenter__(self) -> Any:
+        t0 = time.perf_counter()
+        try:
+            stream = await self._manager.__aenter__()
+        except asyncio.CancelledError:
+            self._safe(
+                self._handle.track_inference,
+                duration_ms=elapsed_ms(t0),
+                success=False,
+                error_code="STREAM_CANCELLED",
+            )
+            raise
+        except Exception as exc:
+            self._safe(track_api_error, self._handle, exc, elapsed_ms(t0))
+            raise
+        return self._wrap(stream, t0, True)
+
+    async def __aexit__(self, *args: Any) -> Any:
+        if (
+            self._tracked is not None
+            and args
+            and args[0] is not None
+            and issubclass(args[0], asyncio.CancelledError)
+        ):
+            self._tracked._finish("cancelled")
+        return await self._manager.__aexit__(*args)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._manager, name)
+
+
+def wrap_native_stream(messages_obj: object, client_ref: object) -> None:
+    original_stream = getattr(messages_obj, "stream", None)
+    if original_stream is None:
+        return
+    model_handles: dict[str, ModelHandle] = {}
+
+    @functools.wraps(original_stream)
+    def patched_stream(*args, **kwargs):
+        client = client_ref()
+        model_id = kwargs.get("model")
+        if client is None or client.closed or not model_id:
+            return original_stream(*args, **kwargs)
+        handle = resolve_handle(model_id, messages_obj, model_handles, client)
+        manager = original_stream(*args, **kwargs)
+        if handle is None:
+            return manager
+        messages = kwargs.get("messages", [])
+        return AnthropicStreamManager(
+            manager, handle, messages if isinstance(messages, list) else []
+        )
+
+    messages_obj.stream = patched_stream
 
 
 class AnthropicExtractor(BaseExtractor):
@@ -337,8 +472,9 @@ class AnthropicExtractor(BaseExtractor):
                 original_sync_init(self_inner, *args, **kwargs)
                 c = client_ref()  # type: ignore[call-arg]
                 if c is not None and not c.closed:
+                    bound_ref = bind_client_reference(client_ref, c)
                     try:
-                        wrap_sync_messages(self_inner.messages, client_ref)
+                        wrap_sync_messages(self_inner.messages, bound_ref)
                     except Exception as exc:
                         debug_anthropic_failure("sync client wrap", exc)
 
@@ -346,8 +482,9 @@ class AnthropicExtractor(BaseExtractor):
                 original_async_init(self_inner, *args, **kwargs)
                 c = client_ref()  # type: ignore[call-arg]
                 if c is not None and not c.closed:
+                    bound_ref = bind_client_reference(client_ref, c)
                     try:
-                        wrap_async_messages(self_inner.messages, client_ref)
+                        wrap_async_messages(self_inner.messages, bound_ref)
                     except Exception as exc:
                         debug_anthropic_failure("async client wrap", exc)
 
@@ -359,3 +496,7 @@ class AnthropicExtractor(BaseExtractor):
             _anthropic.Anthropic.__init__ = patched_sync_init
             _anthropic.AsyncAnthropic.__init__ = patched_async_init
             _anthropic_patched = True
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = AnthropicExtractor.install_auto_load_patch

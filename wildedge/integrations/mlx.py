@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import functools
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING
 
-from wildedge import constants
+from wildedge import quantizations
 from wildedge.events.inference import GenerationOutputMeta, TextInputMeta
 from wildedge.integrations.base import BaseExtractor, patch_instance_call_once
-from wildedge.integrations.common import debug_failure
+from wildedge.integrations.common import (
+    debug_failure,
+    mlx_accelerator,
+    mlx_layer_quantization,
+)
+from wildedge.loading import optional_module
 from wildedge.model import ModelInfo
 from wildedge.timing import elapsed_ms
 
@@ -23,10 +29,9 @@ except ImportError:
     _mlx_nn = None  # type: ignore[assignment]
     _tree_flatten = None  # type: ignore[assignment]
 
-try:
-    import mlx_lm as _mlx_lm
-except ImportError:
-    _mlx_lm = None  # type: ignore[assignment]
+# Imported when the integration is activated, so registering an MLX model
+# does not import mlx-lm.
+_mlx_lm = sys.modules.get("mlx_lm")
 
 if TYPE_CHECKING:
     from wildedge.model import ModelHandle
@@ -64,7 +69,7 @@ def extract_model_args(obj: object) -> tuple[str | None, str | None]:
         quant = getattr(args, "quantization", None)
         if quant is not None:
             bits = getattr(quant, "bits", None)
-            q_str = f"q{int(bits)}" if bits else "quantized"
+            q_str = quantizations.int_bits(bits) if bits else quantizations.QUANTIZED
         else:
             q_str = detect_quantization_from_layers(obj)
         return model_type, q_str
@@ -74,15 +79,11 @@ def extract_model_args(obj: object) -> tuple[str | None, str | None]:
 
 
 def detect_quantization_from_layers(obj: object) -> str | None:
-    """Inspect layer class names for quantized linear layers."""
     try:
-        for _, module in obj.named_modules():  # type: ignore[union-attr]
-            cls_name = type(module).__name__
-            if "Quantized" in cls_name or "quantized" in cls_name:
-                return "quantized"
-    except Exception:
-        pass
-    return None
+        return mlx_layer_quantization(obj)
+    except Exception as exc:
+        debug_mlx_failure("quantization detection", exc)
+        return None
 
 
 def count_tokens(tokenizer: object, text: str) -> int | None:
@@ -115,7 +116,7 @@ def build_mlx_call_patch(original_call):  # type: ignore[no-untyped-def]
         except Exception as exc:
             handle.track_error(
                 error_code="UNKNOWN",
-                error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                error_message=str(exc),
             )
             raise
 
@@ -171,6 +172,7 @@ class MlxExtractor(BaseExtractor):
             return None
 
     def install_hooks(self, obj: object, handle: ModelHandle) -> None:
+        handle.detected_accelerator = mlx_accelerator()
         setattr(obj, MLX_HANDLE_ATTR, handle)
         patch_instance_call_once(
             obj,
@@ -195,8 +197,11 @@ class MlxExtractor(BaseExtractor):
           tokens/second. The autoregressive ``model()`` loop inside generate
           is suppressed via a thread-local guard so it does not double-count.
         """
-        global _mlx_patched
-        if _mlx_patched or _mlx_lm is None:
+        global _mlx_patched, _mlx_lm
+        if _mlx_patched:
+            return
+        _mlx_lm = _mlx_lm or optional_module("mlx_lm")
+        if _mlx_lm is None:
             return
 
         with _MLX_PATCH_LOCK:
@@ -244,7 +249,7 @@ class MlxExtractor(BaseExtractor):
         _mlx_lm.load = patched_load
 
     @classmethod
-    def _patch_generate(cls, client_ref: object) -> None:  # noqa: ARG003
+    def _patch_generate(cls, client_ref: object) -> None:
         original_generate = _mlx_lm.generate
         if (
             getattr(original_generate, "__wildedge_patch_name__", None)
@@ -268,7 +273,7 @@ class MlxExtractor(BaseExtractor):
                 if handle is not None:
                     handle.track_error(
                         error_code="UNKNOWN",
-                        error_message=str(exc)[: constants.ERROR_MSG_MAX_LEN],
+                        error_message=str(exc),
                     )
                 raise
             finally:
@@ -306,3 +311,7 @@ class MlxExtractor(BaseExtractor):
         patched_generate.__wildedge_patch_name__ = MLX_GENERATE_PATCH_NAME  # type: ignore[attr-defined]
         patched_generate.__wildedge_original_call__ = original_generate  # type: ignore[attr-defined]
         _mlx_lm.generate = patched_generate
+
+
+# Entry point named by the integration registry.
+install_auto_load_patch = MlxExtractor.install_auto_load_patch
