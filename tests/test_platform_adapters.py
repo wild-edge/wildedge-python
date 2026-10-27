@@ -52,6 +52,20 @@ def test_macos_gpu_accelerators_for_arm64(monkeypatch):
     assert gpu_name is None
 
 
+def test_macos_lists_the_neural_engine_on_arm64_only(monkeypatch):
+    platform = MacOSPlatform()
+    monkeypatch.setattr("platform.machine", lambda: "arm64")
+    assert platform.npu_accelerators() == ["npu"]
+    monkeypatch.setattr("platform.machine", lambda: "x86_64")
+    assert platform.npu_accelerators() == []
+
+
+def test_other_platforms_list_no_npu():
+    assert LinuxPlatform().npu_accelerators() == []
+    assert WindowsPlatform().npu_accelerators() == []
+    assert UnknownPlatform().npu_accelerators() == []
+
+
 def test_unknown_platform_disk_bytes_failure_returns_none(monkeypatch):
     platform = UnknownPlatform()
 
@@ -223,3 +237,11 @@ def test_platform_adapters_expose_state_and_cache_paths():
     ):
         assert adapter.state_base()
         assert adapter.cache_base()
+
+
+def test_apple_silicon_device_lists_cpu_gpu_and_neural_engine(monkeypatch):
+    platform = MacOSPlatform()
+    monkeypatch.setattr("platform.machine", lambda: "arm64")
+    monkeypatch.setattr(platform, "load_or_create_device_uuid", lambda: "uuid")
+    info = platform.detect_device(api_key="k", app_version="1.0")
+    assert info.accelerators == ["cpu", "mps", "npu"]

@@ -46,6 +46,9 @@ class Platform(ABC):
 
     # Optional hardware introspection — subclasses override what they support.
 
+    def npu_accelerators(self) -> list[str]:
+        return []
+
     def meminfo(self) -> tuple[int | None, int | None]:
         return None, None
 
@@ -113,7 +116,7 @@ class Platform(ABC):
             cpu_cores=os.cpu_count(),
             ram_total_bytes=self.ram_bytes(),
             disk_total_bytes=self.disk_bytes(),
-            accelerators=[accelerators.CPU, *gpu_accs],
+            accelerators=[accelerators.CPU, *gpu_accs, *self.npu_accelerators()],
             gpu_name=gpu_name,
         )
         if overrides:
